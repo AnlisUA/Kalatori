@@ -14,7 +14,7 @@ jobs:
     name:                     Validate PR title
     runs-on:                  ubuntu-latest
     permissions:
-      pull-requests:          read
+      pull-requests:          write
     steps:
 
       # Documentation: https://github.com/amannn/action-semantic-pull-request
