@@ -110,7 +110,6 @@ pub enum SeedEnvError {
 }
 
 #[derive(Debug, Error)]
-#[expect(clippy::module_name_repetitions)]
 pub enum TaskError {}
 
 #[derive(Debug, Error)]

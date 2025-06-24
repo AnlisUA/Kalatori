@@ -77,7 +77,7 @@ impl State {
             let order_list = db_wakeup.order_list().await?;
             task_tracker.spawn("Restore saved orders", async move {
                 for (order, order_details) in order_list {
-                    chain_manager_wakeup
+                    let _unused = chain_manager_wakeup
                         .add_invoice(order, order_details, state.recipient)
                         .await;
                 }

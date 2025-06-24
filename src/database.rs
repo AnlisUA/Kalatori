@@ -511,88 +511,92 @@ fn record_transaction(
 
 fn mark_paid(order: String, orders: &Tree) -> Result<OrderInfo, DbError> {
     let order_key = order.encode();
-    if let Some(order_info) = orders.get(order_key)? {
-        let mut order_info = OrderInfo::decode(&mut &order_info[..])?;
-        if order_info.payment_status == PaymentStatus::Pending {
-            order_info.payment_status = PaymentStatus::Paid;
-            orders.insert(order.encode(), order_info.encode())?;
-            Ok(order_info)
-        } else {
-            Err(DbError::AlreadyPaid(order))
+    match orders.get(order_key)? {
+        Some(order_info) => {
+            let mut order_info = OrderInfo::decode(&mut &order_info[..])?;
+            if order_info.payment_status == PaymentStatus::Pending {
+                order_info.payment_status = PaymentStatus::Paid;
+                orders.insert(order.encode(), order_info.encode())?;
+                Ok(order_info)
+            } else {
+                Err(DbError::AlreadyPaid(order))
+            }
         }
-    } else {
-        Err(DbError::OrderNotFound(order))
+        None => Err(DbError::OrderNotFound(order)),
     }
 }
 
 fn is_marked_paid(orders: &Tree, order: String) -> Result<bool, DbError> {
     let order_key = order.encode();
-    if let Some(order_info) = orders.get(order_key)? {
-        let order_info = OrderInfo::decode(&mut &order_info[..])?;
-
-        Ok(order_info.payment_status == PaymentStatus::Paid)
-    } else {
-        Err(DbError::OrderNotFound(order))
+    match orders.get(order_key)? {
+        Some(order_info) => {
+            let order_info = OrderInfo::decode(&mut &order_info[..])?;
+            Ok(order_info.payment_status == PaymentStatus::Paid)
+        }
+        None => Err(DbError::OrderNotFound(order)),
     }
 }
 
 fn mark_withdrawn(order: String, orders: &Tree) -> Result<(), DbError> {
     let order_key = order.encode();
-    if let Some(order_info) = orders.get(order_key)? {
-        let mut order_info = OrderInfo::decode(&mut &order_info[..])?;
-        if order_info.payment_status == PaymentStatus::Paid {
-            if order_info.withdrawal_status == WithdrawalStatus::Waiting {
-                order_info.withdrawal_status = WithdrawalStatus::Completed;
-                orders.insert(order.encode(), order_info.encode())?;
-                Ok(())
+    match orders.get(order_key)? {
+        Some(order_info) => {
+            let mut order_info = OrderInfo::decode(&mut &order_info[..])?;
+            if order_info.payment_status == PaymentStatus::Paid {
+                if order_info.withdrawal_status == WithdrawalStatus::Waiting {
+                    order_info.withdrawal_status = WithdrawalStatus::Completed;
+                    orders.insert(order.encode(), order_info.encode())?;
+                    Ok(())
+                } else {
+                    Err(DbError::WithdrawalWasAttempted(order))
+                }
             } else {
-                Err(DbError::WithdrawalWasAttempted(order))
+                Err(DbError::NotPaid(order))
             }
-        } else {
-            Err(DbError::NotPaid(order))
         }
-    } else {
-        Err(DbError::OrderNotFound(order))
+        None => Err(DbError::OrderNotFound(order)),
     }
 }
 
 fn mark_forced(order: String, orders: &Tree) -> Result<(), DbError> {
     let order_key = order.encode();
-    if let Some(order_info) = orders.get(order_key)? {
-        let mut order_info = OrderInfo::decode(&mut &order_info[..])?;
-        if order_info.payment_status == PaymentStatus::Pending
-            || order_info.payment_status == PaymentStatus::Paid
-        {
-            if order_info.withdrawal_status == WithdrawalStatus::Waiting {
-                order_info.withdrawal_status = WithdrawalStatus::Forced;
-                orders.insert(order.encode(), order_info.encode())?;
-                Ok(())
+    match orders.get(order_key)? {
+        Some(order_info) => {
+            let mut order_info = OrderInfo::decode(&mut &order_info[..])?;
+            if order_info.payment_status == PaymentStatus::Pending
+                || order_info.payment_status == PaymentStatus::Paid
+            {
+                if order_info.withdrawal_status == WithdrawalStatus::Waiting {
+                    order_info.withdrawal_status = WithdrawalStatus::Forced;
+                    orders.insert(order.encode(), order_info.encode())?;
+                    Ok(())
+                } else {
+                    Err(DbError::WithdrawalWasAttempted(order))
+                }
             } else {
-                Err(DbError::WithdrawalWasAttempted(order))
+                Err(DbError::NotPaid(order))
             }
-        } else {
-            Err(DbError::NotPaid(order))
         }
-    } else {
-        Err(DbError::OrderNotFound(order))
+        None => Err(DbError::OrderNotFound(order)),
     }
 }
 fn mark_stuck(order: String, orders: &Tree) -> Result<(), DbError> {
-    if let Some(order_info) = orders.get(order.clone())? {
-        let mut order_info = OrderInfo::decode(&mut &order_info[..])?;
-        if order_info.payment_status == PaymentStatus::Paid {
-            if order_info.withdrawal_status == WithdrawalStatus::Waiting {
-                order_info.withdrawal_status = WithdrawalStatus::Failed;
-                orders.insert(order.encode(), order_info.encode())?;
-                Ok(())
+    match orders.get(order.clone())? {
+        Some(order_info) => {
+            let mut order_info = OrderInfo::decode(&mut &order_info[..])?;
+            if order_info.payment_status == PaymentStatus::Paid {
+                if order_info.withdrawal_status == WithdrawalStatus::Waiting {
+                    order_info.withdrawal_status = WithdrawalStatus::Failed;
+                    orders.insert(order.encode(), order_info.encode())?;
+                    Ok(())
+                } else {
+                    Err(DbError::WithdrawalWasAttempted(order))
+                }
             } else {
-                Err(DbError::WithdrawalWasAttempted(order))
+                Err(DbError::NotPaid(order))
             }
-        } else {
-            Err(DbError::NotPaid(order))
         }
-    } else {
-        Err(DbError::OrderNotFound(order))
+        None => Err(DbError::OrderNotFound(order)),
     }
 }
 
