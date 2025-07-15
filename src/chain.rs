@@ -22,7 +22,7 @@ pub mod rpc;
 pub mod tracker;
 pub mod utils;
 
-use crate::definitions::api_v2::{Health, RpcInfo, ServerHealth};
+use crate::definitions::api_v2::{Health, RpcInfo};
 use definitions::{ChainRequest, ChainTrackerRequest, WatchAccount};
 use tracker::start_chain_watch;
 

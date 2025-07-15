@@ -24,9 +24,6 @@ use crate::{
     signer::Signer,
     state::State,
 };
-use frame_metadata::v15::RuntimeMetadataV15;
-use jsonrpsee::ws_client::WsClientBuilder;
-use substrate_constructor::fill_prepare::TypeContentToFill;
 use substrate_crypto_light::common::AsBase58;
 
 /// Single function that should completely handle payout attmept. Just do not call anything else.
@@ -43,7 +40,7 @@ pub async fn payout(
     // TODO: make this retry and rotate RPCs maybe
     //
     // after some retries record a failure
-    if let Ok(client) = WsClientBuilder::default().build(&rpc).await {
+    if let Ok(client) = crate::runtime::create_client(&rpc).await {
         let block = block_hash(&client, None).await?; // TODO should retry instead
         let block_number = current_block_number(&client, &chain.metadata, &block).await?;
         let balance = order.balance(&client, &chain, &block).await?; // TODO same
@@ -141,16 +138,11 @@ pub async fn payout(
 
         let signature = signer.sign(order.id.clone(), sign_this).await?;
 
-        if let TypeContentToFill::Variant(ref mut multisig) = batch_transaction.signature.content {
-            if let TypeContentToFill::ArrayU8(ref mut sr25519) =
-                multisig.selected.fields_to_fill[0].type_to_fill.content
-            {
-                sr25519.content = signature.0.to_vec();
-            }
-        }
+        // Assign signature to transaction
+        batch_transaction.set_signature(signature.0.to_vec());
 
         let extrinsic = batch_transaction
-            .send_this_signed::<(), RuntimeMetadataV15>(&chain.metadata)?
+            .send_this_signed(&chain.metadata)?
             .ok_or(ChainError::NothingToSend)?;
         let encoded_extrinsic = const_hex::encode_prefixed(extrinsic);
 

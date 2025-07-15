@@ -1,6 +1,6 @@
 use crate::{
     definitions::api_v2::{
-        InvalidParameter, OrderQuery, OrderResponse, OrderStatus, AMOUNT, CURRENCY,
+        InvalidParameter, OrderQuery, OrderResponse, AMOUNT, CURRENCY,
     },
     error::{ForceWithdrawalError, OrderError},
     state::State,

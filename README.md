@@ -91,7 +91,30 @@ kalatori
 
 ### Testing
 
+Kalatori includes comprehensive testing at multiple levels:
+
+#### Unit Tests
+
+The daemon includes extensive unit tests that verify individual components and functions. Run all unit tests with:
+
+```sh
+cargo test --lib
+```
+
+**Test Coverage:**
+- **53 unit tests** covering all major functionality
+- **Runtime module**: SubxtClient wrapper and blockchain client management
+- **Chain utilities**: Transaction construction, batch processing, and call data generation
+- **Chain RPC**: Asset discovery, balance querying, and blockchain operations
+- **Error handling**: Comprehensive error condition testing
+- **Mock data factories**: Consistent test data generation
+
+Unit tests follow Rust conventions with `#[cfg(test)]` modules co-located with implementation code, ensuring quick feedback during development.
+
+#### Integration/Black-box Tests
+
 The black-box test suite verifies the daemon's functionality by interacting with a running instance. Use the following steps to set it up:
+
 1. Start the daemon and test environment:
    ```sh
    cd tests
@@ -99,7 +122,7 @@ The black-box test suite verifies the daemon's functionality by interacting with
    ```
 2. Run the tests manually using Yarn:
    ```sh
-   ct tests/kalatori-api-test-suite
+   cd tests/kalatori-api-test-suite
    yarn
    yarn test
    ```

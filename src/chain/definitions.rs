@@ -6,13 +6,12 @@ use crate::{
         tracker::ChainWatcher,
     },
     definitions::{
-        api_v2::{BlockNumber, CurrencyInfo, Decimals, OrderInfo, RpcInfo, Timestamp},
+        api_v2::{BlockNumber, CurrencyInfo, OrderInfo, RpcInfo, Timestamp},
         Balance,
     },
     error::{ChainError, NotHexError},
     utils::unhex,
 };
-use jsonrpsee::ws_client::WsClient;
 use primitive_types::H256;
 use substrate_crypto_light::common::{AccountId32, AsBase58};
 use tokio::sync::oneshot;
@@ -118,7 +117,7 @@ impl Invoice {
 
     pub async fn balance(
         &self,
-        client: &WsClient,
+        client: &crate::runtime::SubxtClient,
         chain_watcher: &ChainWatcher,
         block: &BlockHash,
     ) -> Result<Balance, ChainError> {
@@ -146,7 +145,7 @@ impl Invoice {
 
     pub async fn check(
         &self,
-        client: &WsClient,
+        client: &crate::runtime::SubxtClient,
         chain_watcher: &ChainWatcher,
         block: &BlockHash,
     ) -> Result<bool, ChainError> {

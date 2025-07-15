@@ -37,7 +37,7 @@ axum-macros = "0.4"
 primitive-types = { version = "0.13", features = ["codec", "serde"] }
 jsonrpsee = { version = "0.24", features = ["ws-client"] }
 thiserror = "2"
-frame-metadata = "18"
+frame-metadata = { version = "18", features = ["unstable"] }
 const-hex = "1"
 codec = { package = "parity-scale-codec", version = "3", features = [
     "chain-error",
@@ -68,10 +68,24 @@ async-lock = "3"
 time = "0.3"
 reqwest = "0.12"
 
-substrate_parser = "0.7.0"
-substrate-constructor = "0.2.0"
+subxt = "0.42"
+subxt-signer = "0.42"
+subxt-metadata = "0.42"
+hex = "0.4"
+sp-core = "34"
+futures = "0.3"
 mnemonic-external = "0.1.0"
-substrate-crypto-light = "0.1.0"
+substrate-crypto-light = "0.2.0"
+
+[dev-dependencies]
+tokio-test = "0.4"
+mockall = "0.12"
+serde_json = "1.0"
+tempfile = "3.0"
+
+[[bin]]
+name = "kalatori"
+path = "src/main.rs"
 
 [build-dependencies]
 # Don't forget to update me in `[dependencies]`!
@@ -105,3 +119,5 @@ arithmetic_side_effects = "warn"
 mod_module_files = "warn"
 # TODO: https://github.com/rust-lang/cargo/issues/12918
 pedantic = { level = "warn", priority = -1 }
+
+

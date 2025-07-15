@@ -1,19 +1,16 @@
 use crate::{
     arguments::{OLD_SEED, SEED},
-    definitions::api_v2::OrderStatus,
     utils::task_tracker::TaskName,
 };
 use codec::Error as ScaleError;
-use frame_metadata::v15::RuntimeMetadataV15;
 use jsonrpsee::core::ClientError;
 use mnemonic_external::error::ErrorMnemonic;
 use serde_json::Error as JsonError;
 use serde_json::Value;
 use sled::Error as DatabaseError;
 use std::{borrow::Cow, io::Error as IoError, net::SocketAddr};
-use substrate_constructor::error::{ErrorFixMe, StorageRegistryError};
 use substrate_crypto_light::error::Error as CryptoError;
-use substrate_parser::error::{MetaVersionErrorPallets, ParserError, RegistryError, StorageError};
+use subxt::Error as SubxtError;
 use thiserror::Error;
 use tokio::task::JoinError;
 use toml_edit::de::Error as TomlError;
@@ -253,11 +250,8 @@ pub enum ChainError {
     #[error("block subscription is terminated")]
     BlockSubscriptionTerminated,
 
-    #[error("metadata error is occurred")]
-    MetaVersionErrorPallets(#[from] MetaVersionErrorPallets),
-
-    #[error("storage registry error is occurred")]
-    StorageRegistryError(#[from] StorageRegistryError),
+    #[error("subxt error is occurred")]
+    Subxt(#[from] SubxtError),
 
     #[error("balance wasn't found")]
     BalanceNotFound,
@@ -270,18 +264,6 @@ pub enum ChainError {
 
     #[error("no events in this chain")]
     EventsNonexistant,
-
-    #[error("substrate parser error is occurred")]
-    ParserError(#[from] ParserError<()>),
-
-    #[error("storage entry decoding error is occurred")]
-    StorageDecodeError(#[from] StorageError<()>),
-
-    #[error("type registry error is occurred")]
-    RegistryError(#[from] RegistryError<()>),
-
-    #[error("substrate constructor error is occurred")]
-    SubstrateConstructor(#[from] ErrorFixMe<(), RuntimeMetadataV15>),
 
     #[error("transaction isn't ready to be signed: {0:?}")]
     TransactionNotSignable(String),
@@ -324,6 +306,12 @@ pub enum ChainError {
 
     #[error("transfer event has no matching extrinsic")]
     TransferEventNoExtrinsic,
+
+    #[error("metadata version is not supported")]
+    UnsupportedMetadataVersion,
+
+    #[error("transaction construction is disabled during subxt migration")]
+    TransactionConstructionDisabled,
 }
 
 #[derive(Debug, Error)]

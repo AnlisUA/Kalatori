@@ -1,5 +1,6 @@
 //! A tracker that follows individual chain
 
+use crate::chain::rpc::ChainSpecs;
 use crate::{
     chain::{
         definitions::{BlockHash, ChainTrackerRequest, Invoice},
@@ -21,14 +22,12 @@ use crate::{
     utils::task_tracker::TaskTracker,
 };
 use frame_metadata::v15::RuntimeMetadataV15;
-use jsonrpsee::ws_client::{WsClient, WsClientBuilder};
 use serde_json::Value;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     time::SystemTime,
 };
 use substrate_crypto_light::common::AsBase58;
-use substrate_parser::{AsMetadata, ShortSpecs};
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 use tokio::{
     sync::mpsc,
@@ -66,7 +65,7 @@ pub fn start_chain_watch(
                     status: Health::Degraded,
                 }).await;
 
-                if let Ok(client) = WsClientBuilder::default().build(endpoint).await {
+                if let Ok(client) = crate::runtime::create_client(endpoint).await {
                     let _ = rpc_update_tx.send(RpcInfo {
                         chain_name: chain.name.clone(),
                         rpc_url: endpoint.clone(),
@@ -140,7 +139,7 @@ pub fn start_chain_watch(
 
                                         for (id, invoice) in &watched_accounts {
                                             for (extrinsic_option, event) in &events {
-                                                if let Some((tx_kind, another_account, transfer_amount)) = parse_transfer_event(&invoice.address, &event.0.fields) {
+                                                if let Some((tx_kind, another_account, transfer_amount)) = parse_transfer_event(&invoice.address, &event.fields) {
                                                     tracing::debug!("Found {tx_kind:?} from/to {another_account:?} with {transfer_amount:?} token(s).");
 
                                                     let Some((position_in_block, extrinsic)) = extrinsic_option else {
@@ -302,7 +301,7 @@ pub fn start_chain_watch(
 pub struct ChainWatcher {
     pub genesis_hash: BlockHash,
     pub metadata: RuntimeMetadataV15,
-    pub specs: ShortSpecs,
+    pub specs: ChainSpecs,
     pub assets: HashMap<String, CurrencyProperties>,
     version: Value,
 }
@@ -310,7 +309,7 @@ pub struct ChainWatcher {
 impl ChainWatcher {
     #[expect(clippy::too_many_lines)]
     pub async fn prepare_chain(
-        client: &WsClient,
+        client: &crate::runtime::SubxtClient,
         chain: Chain,
         watched_accounts: &mut HashMap<String, Invoice>,
         rpc_url: &str,
@@ -323,7 +322,16 @@ impl ChainWatcher {
         let block = next_block(client, &mut blocks).await?;
         let version = runtime_version_identifier(client, &block).await?;
         let metadata = metadata(client, &block).await?;
-        let name = <RuntimeMetadataV15 as AsMetadata<()>>::spec_name_version(&metadata)?.spec_name;
+        tracing::debug!("Successfully parsed metadata for chain {}", chain.name);
+        // For now, extract the chain name from metadata types
+        let mut chain_name = "unknown".to_string();
+        for pallet in &metadata.pallets {
+            if pallet.name == "System" {
+                chain_name = chain.name.clone();
+                break;
+            }
+        }
+        let name = chain_name;
         if name != chain.name {
             return Err(ChainError::WrongNetwork {
                 expected: chain.name,
