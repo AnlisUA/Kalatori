@@ -1,4 +1,4 @@
-FROM rust:1.82 as builder
+FROM rust:latest as builder
 
 WORKDIR /usr/src/kalatori
 

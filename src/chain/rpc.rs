@@ -645,11 +645,11 @@ pub async fn assets_set_at_block(
     client: &SubxtClient,
     block_hash: &BlockHash,
     metadata_v15: &frame_metadata::v15::RuntimeMetadataV15,
+    chain_name: &str,
     rpc_url: &str,
     specs: ChainSpecs,
 ) -> Result<HashMap<String, CurrencyProperties>, ChainError> {
     let mut assets_set = HashMap::new();
-    let chain_name = rpc_url.split('/').nth(2).unwrap_or("unknown").to_string();
 
     // Try to use subxt for proper asset discovery
     if let Some(subxt_client) = client.subxt() {
@@ -683,7 +683,7 @@ pub async fn assets_set_at_block(
         assets_set.insert(
             "USDC".to_string(),
             CurrencyProperties {
-                chain_name: "statemint".to_string(),
+                chain_name: chain_name.to_string(),
                 kind: TokenKind::Asset,
                 decimals: 6,
                 rpc_url: rpc_url.to_string(),
@@ -696,7 +696,7 @@ pub async fn assets_set_at_block(
         assets_set.insert(
             "USDt".to_string(),
             CurrencyProperties {
-                chain_name: "statemint".to_string(),
+                chain_name: chain_name.to_string(),
                 kind: TokenKind::Asset,
                 decimals: 6,
                 rpc_url: rpc_url.to_string(),

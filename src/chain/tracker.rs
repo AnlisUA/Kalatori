@@ -341,7 +341,7 @@ impl ChainWatcher {
         }
         let specs = specs(client, &metadata, &block).await?;
         let mut assets =
-            assets_set_at_block(client, &block, &metadata, rpc_url, specs.clone()).await?;
+            assets_set_at_block(client, &block, &metadata, &chain.name, rpc_url, specs.clone()).await?;
 
         // TODO: make this verbosity less annoying
         tracing::info!(

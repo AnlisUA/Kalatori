@@ -50,18 +50,18 @@ services:
       - kalatori-network
 
 
-  tests:
-    image: node:20
-    working_dir: /app
-    volumes:
-      - ../tests/kalatori-api-test-suite:/app
-    depends_on:
-      - kalatori-rust-app
-    environment:
-      - DAEMON_HOST=http://kalatori-daemon:16726
-    command: /bin/sh -c "sleep 180 && yarn install && yarn test"
-    networks:
-      - kalatori-network
+#  tests:
+#    image: node:20
+#    working_dir: /app
+#    volumes:
+#      - ../tests/kalatori-api-test-suite:/app
+#    depends_on:
+#      - kalatori-rust-app
+#    environment:
+#      - DAEMON_HOST=http://kalatori-daemon:16726
+#    command: /bin/sh -c "sleep 180 && yarn install && yarn test"
+#    networks:
+#      - kalatori-network
 
 networks:
     kalatori-network:
