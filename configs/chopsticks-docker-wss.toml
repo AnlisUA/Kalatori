@@ -1,0 +1,28 @@
+account-lifetime = 86400000 # 1 day.
+depth = 3600000 # 1 hour.
+debug = true
+
+[[chain]]
+name = "polkadot"
+native-token = "DOT"
+decimals = 10
+endpoints = [
+    "wss://wss-polkadot:443",
+]
+
+[[chain]]
+name = "statemint"
+endpoints = [
+    "wss://wss-statemint:443",
+]
+
+[[chain.asset]]
+name = "USDC"
+id = 1337
+
+[[chain.asset]]
+name = "USDt"
+id = 1984
+
+
+

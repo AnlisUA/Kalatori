@@ -1,6 +1,5 @@
-use jsonrpsee::ws_client::WsClientBuilder;
-use jsonrpsee::core::client::ClientT;
-use jsonrpsee::rpc_params;
+use subxt::OnlineClient;
+use subxt::PolkadotConfig;
 use serde_json::Value;
 
 #[tokio::main]
@@ -15,18 +14,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for endpoint in endpoints {
         println!("\nTesting connection to: {}", endpoint);
         
-        match WsClientBuilder::default().build(endpoint).await {
+        match OnlineClient::<PolkadotConfig>::from_url(endpoint).await {
             Ok(client) => {
                 println!("✓ Successfully connected to {}", endpoint);
-                
-                // Test a simple RPC call
-                match client.request::<Value, _>("system_name", rpc_params![]).await {
-                    Ok(response) => {
-                        println!("✓ RPC call successful: {:?}", response);
-                    }
-                    Err(e) => {
-                        println!("✗ RPC call failed: {}", e);
-                    }
+                let name = client.backend().legacy_rpc_methods().system_chain().await;
+                match name {
+                    Ok(n) => println!("✓ RPC call successful: {:?}", n.0),
+                    Err(e) => println!("✗ RPC call failed: {}", e),
                 }
             }
             Err(e) => {

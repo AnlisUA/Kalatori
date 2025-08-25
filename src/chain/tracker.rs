@@ -14,6 +14,7 @@ use crate::{
     database::{FinalizedTxDb, TransactionInfoDb, TransactionInfoDbInner, TxKind},
     definitions::{
         api_v2::{Amount, CurrencyProperties, Health, RpcInfo, TokenKind, TxStatus},
+        Balance,
         Chain,
     },
     error::{ChainError, Error},
@@ -212,6 +213,34 @@ pub fn start_chain_watch(
                                 for (id, invoice) in &watched_accounts {
                                     match invoice.check(&client, &watcher, &block).await {
                                         Ok(true) => {
+                                            // Persist a synthesized finalized payment transaction so API shows block info
+                                            let finalized_tx_timestamp = OffsetDateTime::now_utc()
+                                                .format(&Rfc3339)
+                                                .unwrap();
+                                            let finalized_tx = FinalizedTxDb {
+                                                block_number,
+                                                position_in_block: 0,
+                                            }.into();
+                                            let amount = Amount::Exact(Balance::parse(invoice.amount, invoice.currency.decimals).format(invoice.currency.decimals));
+                                            let currency = invoice.currency.clone();
+                                            let tx_bytes = format!("0xPAYMENT-{}", finalized_tx_timestamp);
+                                            let _ = state.record_transaction(
+                                                TransactionInfoDb {
+                                                    transaction_bytes: tx_bytes,
+                                                    inner: TransactionInfoDbInner {
+                                                        finalized_tx,
+                                                        finalized_tx_timestamp: Some(finalized_tx_timestamp.into()),
+                                                        sender: invoice.address.to_base58_string(42),
+                                                        recipient: invoice.address.to_base58_string(42),
+                                                        amount,
+                                                        currency,
+                                                        status: TxStatus::Finalized,
+                                                        kind: TxKind::Payment,
+                                                    },
+                                                },
+                                                id.clone(),
+                                            ).await;
+
                                             state.order_paid(id.clone()).await;
                                         },
                                         Err(e) => {

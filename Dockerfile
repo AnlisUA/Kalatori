@@ -1,4 +1,4 @@
-FROM rust:latest as builder
+FROM rust:1.82 as builder
 
 WORKDIR /usr/src/kalatori
 
@@ -13,11 +13,17 @@ COPY . .
 
 RUN cargo build --release
 
-FROM ubuntu:latest
+FROM ubuntu:24.04
 
 WORKDIR /app
 
 COPY --from=builder /usr/src/kalatori/target/release/kalatori /app/kalatori
+
+# Install CA certificates to allow HTTPS callbacks
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates && \
+    update-ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
 
 EXPOSE 16726
 

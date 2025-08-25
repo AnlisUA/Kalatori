@@ -130,6 +130,26 @@ pub async fn payout(
             currency.asset_id,
         )?;
 
+        // Fill nonce using latest state
+        if let Some(tx_data) = &mut batch_transaction.transaction_data {
+            // Query latest block hash for payload context
+            let latest_block = crate::chain::rpc::block_hash(&client, None).await?;
+            // Get runtime versions for completeness (not used in current payload, reserved)
+            if let Ok((spec_version, tx_version)) =
+                crate::chain::rpc::runtime_versions(&client, &latest_block).await
+            {
+                tx_data.spec_version = spec_version;
+                tx_data.transaction_version = tx_version;
+            }
+            // Nonce from account
+            let account_hex = format!("0x{}", const_hex::encode(order.address.0));
+            if let Ok(nonce) = crate::chain::rpc::get_nonce(&client, &account_hex).await {
+                tx_data.nonce = nonce;
+            }
+            // Use latest block hash for mortal check (we keep immortal era, but include hash in sign payload)
+            tx_data.block_hash = latest_block;
+        }
+
         let sign_this = batch_transaction
             .sign_this()
             .ok_or(ChainError::TransactionNotSignable(format!(

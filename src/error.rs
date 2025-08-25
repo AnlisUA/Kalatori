@@ -3,7 +3,6 @@ use crate::{
     utils::task_tracker::TaskName,
 };
 use codec::Error as ScaleError;
-use jsonrpsee::core::ClientError;
 use mnemonic_external::error::ErrorMnemonic;
 use serde_json::Error as JsonError;
 use serde_json::Value;
@@ -162,7 +161,7 @@ pub enum ChainError {
     BlockHashLength,
 
     #[error("WS client error is occurred")]
-    Client(#[from] ClientError),
+    Client(#[from] subxt::error::RpcError),
 
     #[error("threading error is occurred")]
     Tokio(#[from] JoinError),

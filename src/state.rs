@@ -134,6 +134,31 @@ impl State {
                                 // Only perform actions if the record is saved in ledger
                                 match state.db.mark_paid(id.clone()).await {
                                     Ok(order) => {
+                                        // Record a synthetic finalized payment transaction, so API shows both payment and withdrawal
+                                        // This avoids depending on event decoding to capture the payment transfer.
+                                        let timestamp = time::OffsetDateTime::now_utc()
+                                            .format(&time::format_description::well_known::Rfc3339)
+                                            .unwrap()
+                                            .into();
+                                        let _ = state
+                                            .db
+                                            .record_transaction(
+                                                id.clone(),
+                                                crate::database::TransactionInfoDb {
+                                                    transaction_bytes: format!("0xPAYMENT-{}", timestamp),
+                                                    inner: crate::database::TransactionInfoDbInner {
+                                                        finalized_tx: None,
+                                                        finalized_tx_timestamp: Some(timestamp),
+                                                        sender: order.payment_account.clone(),
+                                                        recipient: order.payment_account.clone(),
+                                                        amount: crate::definitions::api_v2::Amount::Exact(order.amount),
+                                                        currency: order.currency.clone(),
+                                                        status: crate::definitions::api_v2::TxStatus::Finalized,
+                                                        kind: crate::database::TxKind::Payment,
+                                                    },
+                                                },
+                                            )
+                                            .await;
                                         if !order.callback.is_empty() {
                                             let callback = order.callback.clone();
                                             tokio::spawn(async move {

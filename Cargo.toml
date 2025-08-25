@@ -35,7 +35,7 @@ tracing = "0.1"
 scale-info = "2"
 axum-macros = "0.4"
 primitive-types = { version = "0.13", features = ["codec", "serde"] }
-jsonrpsee = { version = "0.24", features = ["ws-client"] }
+jsonrpsee = { version = "0.24", features = ["ws-client"], optional = true }
 thiserror = "2"
 frame-metadata = { version = "18", features = ["unstable"] }
 const-hex = "1"
@@ -68,14 +68,17 @@ async-lock = "3"
 time = "0.3"
 reqwest = "0.12"
 
-subxt = "0.42"
-subxt-signer = "0.42"
-subxt-metadata = "0.42"
+subxt = { version = "0.43", features = ["jsonrpsee", "native"] }
+subxt-signer = "0.43"
+subxt-metadata = "0.43"
+subxt-rpcs = "0.43"
 hex = "0.4"
 sp-core = "34"
 futures = "0.3"
 mnemonic-external = "0.1.0"
 substrate-crypto-light = "0.2.0"
+rustls = { version = "0.22", optional = true }
+rustls-pemfile = { version = "2.1", optional = true }
 
 [dev-dependencies]
 tokio-test = "0.4"
@@ -119,5 +122,13 @@ arithmetic_side_effects = "warn"
 mod_module_files = "warn"
 # TODO: https://github.com/rust-lang/cargo/issues/12918
 pedantic = { level = "warn", priority = -1 }
+
+[features]
+tls = ["rustls", "rustls-pemfile"]
+jsonrpsee-backend = ["jsonrpsee"]
+
+
+[patch.crates-io]
+base64ct = "=1.7.3"
 
 

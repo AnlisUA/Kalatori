@@ -223,7 +223,42 @@ pub fn parse_transfer_event(
     _invoice_address: &AccountId32,
     _event_fields: &[u8],
 ) -> Option<(TxKind, AccountId32, Balance)> {
-    // This is a stub implementation - needs to be replaced with proper event parsing
+    // Heuristic parser for common transfer event layouts:
+    // Many Substrate transfer-like events encode fields as (from: AccountId32, to: AccountId32, amount: Balance)
+    // Extract first two 32-byte chunks as accounts, followed by a u128 amount if present.
+    let bytes = _event_fields;
+
+    if bytes.len() < 64 {
+        return None;
+    }
+
+    // Try to read 32-byte accounts
+    let mut from_bytes = [0u8; 32];
+    let mut to_bytes = [0u8; 32];
+    from_bytes.copy_from_slice(&bytes[0..32]);
+    to_bytes.copy_from_slice(&bytes[32..64]);
+    let from_account = AccountId32(from_bytes);
+    let to_account = AccountId32(to_bytes);
+
+    // Try to read amount (u128) if available; otherwise assume zero and let higher layers ignore
+    let mut amount_le_bytes = [0u8; 16];
+    if bytes.len() >= 80 {
+        amount_le_bytes.copy_from_slice(&bytes[64..80]);
+    }
+    let amount_u128 = u128::from_le_bytes(amount_le_bytes);
+    let amount = Balance(amount_u128);
+
+    // Classify by whether invoice address is the sender or recipient
+    if to_account == *_invoice_address {
+        // Incoming payment to the invoice address
+        return Some((TxKind::Payment, from_account, amount));
+    }
+
+    if from_account == *_invoice_address {
+        // Outgoing withdrawal from the invoice address
+        return Some((TxKind::Withdrawal, to_account, amount));
+    }
+
     None
 }
 
