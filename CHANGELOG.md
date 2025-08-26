@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [0.3] - 2024-11-28
 
-This is a public beta release of the Kalatori daemon. While it adheres to the [API specs](https://alzymologist.github.io/kalatori-api), it is still under active development. We encourage you to test it and provide feedback.
+This is a public beta release of the Kalatori daemon. While it adheres to the [API specs](https://kalapaja.github.io/kalatori-api), it is still under active development. We encourage you to test it and provide feedback.
 
 
 ## [0.2.8] - 2024-11-13
@@ -80,7 +80,7 @@ This is a public beta release of the Kalatori daemon. While it adheres to the [A
 
 ## [0.2.1] - 2024-10-07
 
-Making the order request work according to specs in the [specs](https://alzymologist.github.io/kalatori-api/#/).
+Making the order request work according to specs in the [specs](https://kalapaja.github.io/kalatori-api/#/).
 Using the tests from [kalatori-api-test-suite]() in order to validate.
 Added git cliff and configuration for it to generate CHANGELOG like this one, see [CONTRIBUTING.md](CONTRIBUTING.md)
 

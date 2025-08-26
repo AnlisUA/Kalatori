@@ -1,6 +1,6 @@
 ## Issues
 
-You can find issues waiting to be solved or create a new one in the [issues](https://github.com/Alzymologist/Kalatori-backend/issues) section.
+You can find issues waiting to be solved or create a new one in the [issues](https://github.com/Kalapaja/Kalatori/issues) section.
 
 ## Prerequisites
 
