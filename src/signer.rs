@@ -11,7 +11,7 @@
 
 use crate::{
     definitions::Entropy,
-    error::{Error, SignerError},
+    error::SignerError,
     utils::task_tracker::TaskTracker,
 };
 
@@ -30,16 +30,19 @@ pub struct Signer {
 
 impl Signer {
     /// Run once to initialize; this should do **all** secret management
+    // TODO: check if it's DEFINITELY won't break something. Check `ZeroizeOnDrop` marco implementation
+    #[expect(tail_expr_drop_order)]
     pub fn init(
         recipient: AccountId32,
-        task_tracker: TaskTracker,
+        task_tracker: &TaskTracker,
         seed: String,
-    ) -> Result<Self, Error> {
+    ) -> Self {
         let (tx, mut rx) = mpsc::channel(16);
         task_tracker.spawn("Signer", async move {
             let mut seed_entropy = entropy_from_phrase(&seed)?; // TODO: shutdown on failure
-            while let Some(request) = rx.recv().await {
-                match request {
+
+            while let Some(req) = rx.recv().await {
+                match req {
                     SignerRequest::PublicKey(request) => {
                         let _unused = request.res.send(
                             match Pair::from_entropy_and_full_derivation(
@@ -71,10 +74,11 @@ impl Signer {
                     }
                 }
             }
+
             Ok("Signer module cleared and is shutting down!")
         });
 
-        Ok(Self { tx })
+        Self { tx }
     }
 
     pub async fn public(&self, id: String, ss58: u16) -> Result<String, SignerError> {
@@ -141,7 +145,7 @@ struct Sign {
 pub fn entropy_from_phrase(seed: &str) -> Result<Entropy, SignerError> {
     let mut word_set = WordSet::new();
     for word in seed.split(' ') {
-        word_set.add_word(&word, &InternalWordList)?;
+        word_set.add_word(word, &InternalWordList)?;
     }
     Ok(word_set.to_entropy()?)
 }

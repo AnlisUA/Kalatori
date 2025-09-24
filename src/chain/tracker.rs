@@ -24,7 +24,7 @@ use frame_metadata::v15::RuntimeMetadataV15;
 use jsonrpsee::ws_client::{WsClient, WsClientBuilder};
 use serde_json::Value;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     time::SystemTime,
 };
 use substrate_crypto_light::common::AsBase58;
@@ -36,7 +36,9 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
-#[allow(clippy::too_many_lines)]
+// TODO: check if it's DEFINITELY won't break something
+#[expect(tail_expr_drop_order)]
+#[expect(clippy::too_many_lines, clippy::too_many_arguments)]
 pub fn start_chain_watch(
     chain: Chain,
     chain_tx: mpsc::Sender<ChainTrackerRequest>,
@@ -50,7 +52,7 @@ pub fn start_chain_watch(
     task_tracker
         .clone()
         .spawn(format!("Chain {} watcher", chain.name.clone()), async move {
-            let watchdog = 120000;
+            let watchdog = 120_000;
             let mut watched_accounts = HashMap::new();
             let mut shutdown = false;
             // TODO: random pick instead
@@ -60,18 +62,22 @@ pub fn start_chain_watch(
                     break;
                 }
 
-                let _ = rpc_update_tx.send(RpcInfo {
+                // TODO: handle error?
+                drop(rpc_update_tx.send(RpcInfo {
                     chain_name: chain.name.clone(),
                     rpc_url: endpoint.clone(),
                     status: Health::Degraded,
-                }).await;
+                }).await);
 
-                if let Ok(client) = WsClientBuilder::default().build(endpoint).await {
-                    let _ = rpc_update_tx.send(RpcInfo {
+                let client_result = WsClientBuilder::default().build(endpoint).await;
+
+                if let Ok(client) = client_result {
+                    // TODO: handle error?
+                    drop(rpc_update_tx.send(RpcInfo {
                         chain_name: chain.name.clone(),
                         rpc_url: endpoint.clone(),
                         status: Health::Ok,
-                    }).await;
+                    }).await);
 
                     // prepare chain
                     let watcher = match ChainWatcher::prepare_chain(
@@ -96,12 +102,11 @@ pub fn start_chain_watch(
                         }
                     };
 
-
                     // fulfill requests
-                    while let Ok(Some(request)) =
+                    while let Ok(Some(req)) =
                         timeout(Duration::from_millis(watchdog), chain_rx.recv()).await
                     {
-                        match request {
+                        match req {
                             ChainTrackerRequest::NewBlock(block_number) => {
                                 // TODO: hide this under rpc module
                                 let block = match block_hash(&client, Some(block_number)).await {
@@ -125,6 +130,7 @@ pub fn start_chain_watch(
 
                                 tracing::debug!("Watched accounts: {watched_accounts:?}");
 
+                                #[expect(clippy::cast_possible_truncation)]
                                 let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis() as u64;
 
                                 let mut id_remove_list = Vec::new();
@@ -147,6 +153,7 @@ pub fn start_chain_watch(
                                                         return Err(Error::from(ChainError::TransferEventNoExtrinsic));
                                                     };
 
+                                                    #[expect(clippy::arithmetic_side_effects)]
                                                     let finalized_tx_timestamp = (OffsetDateTime::UNIX_EPOCH + Duration::from_millis(timestamp.0))
                                                         .format(&Rfc3339).unwrap().into();
                                                     let finalized_tx = FinalizedTxDb {
@@ -302,6 +309,7 @@ pub fn start_chain_watch(
 pub struct ChainWatcher {
     pub genesis_hash: BlockHash,
     pub metadata: RuntimeMetadataV15,
+    #[expect(dead_code)]
     pub specs: ShortSpecs,
     pub assets: HashMap<String, CurrencyProperties>,
     version: Value,
@@ -386,6 +394,7 @@ impl ChainWatcher {
         //
         // TODO: maybe check if at least one endpoint responds with proper assets and if not, shut
         // down
+        #[expect(clippy::arithmetic_side_effects)]
         if assets.len() != chain.asset.len() + usize::from(chain.native_token.is_some()) {
             return Err(ChainError::AssetsInvalid(chain.name));
         }
@@ -393,7 +402,7 @@ impl ChainWatcher {
 
         state.connect_chain(assets.clone()).await;
 
-        let chain = ChainWatcher {
+        let chain_watcher = ChainWatcher {
             genesis_hash,
             metadata,
             specs,
@@ -404,7 +413,9 @@ impl ChainWatcher {
         // check monitored accounts
         let mut id_remove_list = Vec::new();
         for (id, account) in watched_accounts.iter() {
-            match account.check(client, &chain, &block).await {
+            let result = account.check(client, &chain_watcher, &block).await;
+
+            match result {
                 Ok(true) => {
                     state.order_paid(id.clone()).await;
                     id_remove_list.push(id.to_owned());
@@ -422,10 +433,13 @@ impl ChainWatcher {
         let rpc = rpc_url.to_string();
         task_tracker.spawn(format!("watching blocks at {rpc}"), async move {
             loop {
-                match next_block_number(&mut blocks).await {
-                    Ok(block) => {
-                        tracing::debug!("received block {block} from {rpc}");
-                        if let Err(e) = chain_tx.send(ChainTrackerRequest::NewBlock(block)).await {
+                let next_block_number = next_block_number(&mut blocks).await;
+                match next_block_number {
+                    Ok(block_number) => {
+                        tracing::debug!("received block {block_number} from {rpc}");
+                        let result= chain_tx.send(ChainTrackerRequest::NewBlock(block_number)).await;
+
+                        if let Err(e) = result {
                             tracing::warn!(
                                 "Block watch internal communication error: {e} at {rpc}"
                             );
@@ -443,6 +457,6 @@ impl ChainWatcher {
             Ok(format!("Block watch at {rpc} stopped"))
         });
 
-        Ok(chain)
+        Ok(chain_watcher)
     }
 }

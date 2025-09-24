@@ -8,11 +8,16 @@ pub async fn status(
     [(axum::http::header::HeaderName, &'static str); 1],
     Json<ServerStatus>,
 ) {
+    #[expect(clippy::match_wild_err_arm)]
     match state.server_status().await {
         Ok(status) => (
             [(axum::http::header::CACHE_CONTROL, "no-store")],
             Json(status),
         ),
+        // TODO: change panic to something else? 
+        // Probably this handler should return some error status in response and k8s must make a decision about killing it.
+        // If we need behaviour of panic in case of db connection lost, it's better to do it in some background task, 
+        // not in the status handler
         Err(_) => panic!("db connection is down, state is lost"), // You can modify this as needed
     }
 }
@@ -23,11 +28,13 @@ pub async fn health(
     [(axum::http::header::HeaderName, &'static str); 1],
     Json<ServerHealth>,
 ) {
+    #[expect(clippy::match_wild_err_arm)]
     match state.server_health().await {
         Ok(status) => (
             [(axum::http::header::CACHE_CONTROL, "no-store")],
             Json(status),
         ),
+        // TODO: same as for status handler
         Err(_) => panic!("db connection is down, state is lost"),
     }
 }

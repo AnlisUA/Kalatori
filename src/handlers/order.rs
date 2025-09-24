@@ -1,6 +1,6 @@
 use crate::{
     definitions::api_v2::{
-        InvalidParameter, OrderQuery, OrderResponse, OrderStatus, AMOUNT, CURRENCY,
+        InvalidParameter, OrderQuery, OrderResponse, AMOUNT, CURRENCY,
     },
     error::{ForceWithdrawalError, OrderError},
     state::State,
@@ -24,36 +24,37 @@ pub struct OrderPayload {
 pub async fn process_order(
     state: State,
     order_id: String,
-    payload: Option<OrderPayload>,
+    order_payload: Option<OrderPayload>,
 ) -> Result<OrderResponse, OrderError> {
-    if let Some(payload) = payload {
+    if let Some(payload) = order_payload {
         // AMOUNT validation
-        if payload.amount.is_none() {
+        let Some(amount) = payload.amount else {
             return Err(OrderError::MissingParameter(AMOUNT.to_string()));
-        } else if payload.amount.unwrap() < EXISTENTIAL_DEPOSIT {
+        };
+
+        if amount < EXISTENTIAL_DEPOSIT {
             return Err(OrderError::LessThanExistentialDeposit(EXISTENTIAL_DEPOSIT));
         }
 
         // CURRENCY validation
-        if payload.currency.is_none() {
+        let Some(currency) = payload.currency else {
             return Err(OrderError::MissingParameter(CURRENCY.to_string()));
-        } else {
-            let currency = payload.currency.clone().unwrap();
-            if !state
-                .is_currency_supported(&currency)
-                .await
-                .map_err(|_| OrderError::InternalError)?
-            {
-                return Err(OrderError::UnknownCurrency);
-            }
+        };
+
+        if !state
+            .is_currency_supported(&currency)
+            .await
+            .map_err(|_| OrderError::InternalError)?
+        {
+            return Err(OrderError::UnknownCurrency);
         }
 
         state
             .create_order(OrderQuery {
                 order: order_id,
-                amount: payload.amount.unwrap(),
                 callback: payload.callback.unwrap_or_default(),
-                currency: payload.currency.unwrap(),
+                amount,
+                currency,
             })
             .await
             .map_err(|_| OrderError::InternalError)
@@ -70,11 +71,14 @@ pub async fn order(
     Path(order_id): Path<String>,
     payload: Option<Json<OrderPayload>>,
 ) -> Response {
-    let payload = payload.map(|p| p.0);
-    match process_order(state, order_id, payload).await {
+    let data = payload.map(|p| p.0);
+
+    match process_order(state, order_id, data).await {
         Ok(order) => match order {
             OrderResponse::NewOrder(order_status) => (StatusCode::CREATED, Json(order_status)).into_response(),
-            OrderResponse::FoundOrder(order_status) => (StatusCode::OK, Json(order_status)).into_response(),
+            // TODO: behaviour is exactly the same for the quite different cases. 
+            // Perhaps need to identify what exactly happened by additional flag or status code?
+            OrderResponse::FoundOrder(order_status) | 
             OrderResponse::ModifiedOrder(order_status) => (StatusCode::OK, Json(order_status)).into_response(),
             OrderResponse::CollidedOrder(order_status) => (StatusCode::CONFLICT, Json(order_status)).into_response(),
             OrderResponse::NotFound => (StatusCode::NOT_FOUND, "").into_response(),

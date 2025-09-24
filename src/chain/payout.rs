@@ -32,7 +32,7 @@ use substrate_crypto_light::common::AsBase58;
 /// Single function that should completely handle payout attmept. Just do not call anything else.
 ///
 /// TODO: make this an additional runner independent from chain monitors
-#[expect(clippy::too_many_lines)]
+#[expect(clippy::too_many_lines, clippy::arithmetic_side_effects)]
 pub async fn payout(
     rpc: String,
     order: Invoice,

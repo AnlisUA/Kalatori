@@ -122,6 +122,8 @@ impl TaskTracker {
     ///
     /// If any errors would occur in awaited tasks, `shutdown_notification` is triggered to shut
     /// down all listening it tasks, and, eventually, the program.
+    // TODO: check if it won't break something
+    #[expect(tail_expr_drop_order)]
     pub async fn wait_and_shutdown(
         self,
         mut error_rx: UnboundedReceiver<(TaskName, Error)>,
@@ -168,6 +170,7 @@ pub struct ShortTaskTracker {
     error_channel: ErrorChannel,
 }
 
+#[expect(dead_code)]
 impl ShortTaskTracker {
     pub fn new() -> Self {
         Self {

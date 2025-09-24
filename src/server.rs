@@ -11,7 +11,7 @@ use axum::{
     response::Response,
     routing, Router,
 };
-use axum_macros::debug_handler;
+// use axum_macros::debug_handler;
 use std::{borrow::Cow, collections::HashMap, future::Future, net::SocketAddr};
 
 use tokio::net::TcpListener;
@@ -59,12 +59,12 @@ pub async fn new(
 }
 
 // TODO: Clarify what this is doing
-#[debug_handler]
+// #[debug_handler]
 async fn public_payment_account(
-    extract::State(state): extract::State<State>,
-    matched_path: MatchedPath,
-    path_result: Result<RawPathParams, RawPathParamsRejection>,
-    query: Query<HashMap<String, String>>,
+    extract::State(_state): extract::State<State>,
+    _matched_path: MatchedPath,
+    _path_result: Result<RawPathParams, RawPathParamsRejection>,
+    _query: Query<HashMap<String, String>>,
 ) -> Response {
     todo!()
 }
