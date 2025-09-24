@@ -22,37 +22,14 @@ use tokio::sync::{mpsc, oneshot};
 
 pub const MODULE: &str = module_path!();
 
-// const DB_VERSION: Version = 0;
-
 // Tables
-// const ACCOUNTS: &str = "accounts";
-
-//type ACCOUNTS_KEY = (Option<AssetId>, Account);
-//type ACCOUNTS_VALUE = InvoiceKey;
-
 const PENDING_TRANSACTIONS: &str = "pending_transactions";
 const TRANSACTIONS: &str = "transactions";
 
-// const HIT_LIST: &str = "hit_list";
-
-// The database version must be stored in a separate slot to be used by the not implemented yet
-// database migration logic.
-// const DB_VERSION_KEY: &str = "db_version";
 const SERVER_INFO_ID: &str = "instance_id";
 
 const ORDERS_TABLE: &[u8] = b"orders";
 const SERVER_INFO_TABLE: &[u8] = b"server_info";
-
-// Slots
-
-// type InvoiceKey = &'static [u8];
-// type U256Slot = [u64; 4];
-// type BlockHash = [u8; 32];
-// type ChainHash = [u8; 32];
-// type PublicSlot = [u8; 32];
-// type BalanceSlot = u128;
-// type Derivation = [u8; 32];
-// pub type Account = [u8; 32];
 
 pub struct ConfigWoChains {
     pub recipient: AccountId32,
