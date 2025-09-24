@@ -128,8 +128,7 @@ async fn async_try_main(
 
     let signer = Signer::init(recipient, &task_tracker, seed_env_vars.seed);
 
-    let db =
-        database::Database::init(database_path, &task_tracker, config.account_lifetime)?;
+    let db = database::Database::init(database_path, &task_tracker, config.account_lifetime)?;
 
     let instance_id = db.initialize_server_info().await?;
 

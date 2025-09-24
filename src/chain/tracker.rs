@@ -23,10 +23,7 @@ use crate::{
 use frame_metadata::v15::RuntimeMetadataV15;
 use jsonrpsee::ws_client::{WsClient, WsClientBuilder};
 use serde_json::Value;
-use std::{
-    collections::HashMap,
-    time::SystemTime,
-};
+use std::{collections::HashMap, time::SystemTime};
 use substrate_crypto_light::common::AsBase58;
 use substrate_parser::{AsMetadata, ShortSpecs};
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
@@ -437,7 +434,9 @@ impl ChainWatcher {
                 match next_block_number {
                     Ok(block_number) => {
                         tracing::debug!("received block {block_number} from {rpc}");
-                        let result= chain_tx.send(ChainTrackerRequest::NewBlock(block_number)).await;
+                        let result = chain_tx
+                            .send(ChainTrackerRequest::NewBlock(block_number))
+                            .await;
 
                         if let Err(e) = result {
                             tracing::warn!(

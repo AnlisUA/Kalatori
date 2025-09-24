@@ -5,12 +5,10 @@
 //! are spawned here other than main database server thread that does everything in series.
 
 use crate::{
-    definitions::{
-        api_v2::{
-            Amount, BlockNumber, CurrencyInfo, ExtrinsicIndex, FinalizedTx, OrderCreateResponse,
-            OrderInfo, OrderQuery, PaymentStatus, ServerInfo, Timestamp, TransactionInfo, TxStatus,
-            WithdrawalStatus,
-        },
+    definitions::api_v2::{
+        Amount, BlockNumber, CurrencyInfo, ExtrinsicIndex, FinalizedTx, OrderCreateResponse,
+        OrderInfo, OrderQuery, PaymentStatus, ServerInfo, Timestamp, TransactionInfo, TxStatus,
+        WithdrawalStatus,
     },
     error::DbError,
     utils::task_tracker::TaskTracker,
@@ -112,8 +110,10 @@ impl Database {
                             .iter()
                             .filter_map(Result::ok)
                             .filter_map(|(encoded_id, encoded_order)| {
-                                match (String::decode(&mut &encoded_id[..]), OrderInfo::decode(&mut &encoded_order[..]))
-                                {
+                                match (
+                                    String::decode(&mut &encoded_id[..]),
+                                    OrderInfo::decode(&mut &encoded_order[..]),
+                                ) {
                                     (Ok(a), Ok(b)) => Some((a, b)),
                                     _ => None,
                                 }
@@ -154,7 +154,11 @@ impl Database {
                     DbRequest::MarkStuck(request) => {
                         let _unused = request.res.send(mark_stuck(request.order, &orders));
                     }
-                    DbRequest::RecordTransaction { order, tx: transaction_info_db, res } => {
+                    DbRequest::RecordTransaction {
+                        order,
+                        tx: transaction_info_db,
+                        res,
+                    } => {
                         let _unused = res.send(record_transaction(
                             &transactions,
                             &pending_transactions,
@@ -167,7 +171,8 @@ impl Database {
                             .open_tree(SERVER_INFO_TABLE)
                             .map_err(DbError::DbStartError);
                         let result = server_info_tree.and_then(|tree| {
-                            let data = tree.get(SERVER_INFO_ID).map_err(DbError::DbInternalError)?;
+                            let data =
+                                tree.get(SERVER_INFO_ID).map_err(DbError::DbInternalError)?;
 
                             if let Some(server_info_data) = data {
                                 let server_info: ServerInfo =
@@ -214,8 +219,7 @@ impl Database {
     pub async fn initialize_server_info(&self) -> Result<String, DbError> {
         let (res, rx) = oneshot::channel();
 
-        self
-            .tx
+        self.tx
             .send(DbRequest::InitializeServerInfo(res))
             .await
             .map_err(|_| DbError::DbEngineDown)?;
@@ -226,8 +230,7 @@ impl Database {
     pub async fn order_list(&self) -> Result<Vec<(String, OrderInfo)>, DbError> {
         let (res, rx) = oneshot::channel();
 
-        self
-            .tx
+        self.tx
             .send(DbRequest::ActiveOrderList(res))
             .await
             .map_err(|_| DbError::DbEngineDown)?;
@@ -244,8 +247,7 @@ impl Database {
     ) -> Result<OrderCreateResponse, DbError> {
         let (res, rx) = oneshot::channel();
 
-        self
-            .tx
+        self.tx
             .send(DbRequest::CreateOrder(CreateOrder {
                 order,
                 query,
@@ -262,8 +264,7 @@ impl Database {
     pub async fn read_order(&self, order: String) -> Result<Option<OrderInfo>, DbError> {
         let (res, rx) = oneshot::channel();
 
-        self
-            .tx
+        self.tx
             .send(DbRequest::ReadOrder(ReadOrder { order, res }))
             .await
             .map_err(|_| DbError::DbEngineDown)?;
@@ -278,8 +279,7 @@ impl Database {
     ) -> Result<(), DbError> {
         let (res, rx) = oneshot::channel();
 
-        self
-            .tx
+        self.tx
             .send(DbRequest::RecordTransaction { order, tx, res })
             .await
             .map_err(|_| DbError::DbEngineDown)?;
@@ -290,8 +290,7 @@ impl Database {
     pub async fn mark_paid(&self, order: String) -> Result<OrderInfo, DbError> {
         let (res, rx) = oneshot::channel();
 
-        self
-            .tx
+        self.tx
             .send(DbRequest::MarkPaid(MarkPaid { order, res }))
             .await
             .map_err(|_| DbError::DbEngineDown)?;
@@ -301,8 +300,7 @@ impl Database {
 
     pub async fn is_marked_paid(&self, order: String) -> Result<bool, DbError> {
         let (res, rx) = oneshot::channel();
-        self
-            .tx
+        self.tx
             .send(DbRequest::IsMarkedPaid(order, res))
             .await
             .map_err(|_| DbError::DbEngineDown)?;
@@ -311,8 +309,7 @@ impl Database {
 
     pub async fn mark_withdrawn(&self, order: String) -> Result<(), DbError> {
         let (res, rx) = oneshot::channel();
-        self
-            .tx
+        self.tx
             .send(DbRequest::MarkWithdrawn(ModifyOrder { order, res }))
             .await
             .map_err(|_| DbError::DbEngineDown)?;
@@ -320,8 +317,7 @@ impl Database {
     }
     pub async fn mark_forced(&self, order: String) -> Result<(), DbError> {
         let (res, rx) = oneshot::channel();
-        self
-            .tx
+        self.tx
             .send(DbRequest::MarkForced(ModifyOrder { order, res }))
             .await
             .map_err(|_| DbError::DbEngineDown)?;
@@ -331,8 +327,7 @@ impl Database {
     #[expect(dead_code)]
     pub async fn mark_stuck(&self, order: String) -> Result<(), DbError> {
         let (res, rx) = oneshot::channel();
-        self
-            .tx
+        self.tx
             .send(DbRequest::MarkStuck(ModifyOrder { order, res }))
             .await
             .map_err(|_| DbError::DbEngineDown)?;
@@ -410,20 +405,18 @@ fn create_order(
 
     let resp = match get_order(orders, order) {
         // If order already exists, update it
-        Ok(mut old_order_info) => {
-            match old_order_info.payment_status {
-                PaymentStatus::Pending => {
-                    let death = calculate_death_ts(account_lifetime);
+        Ok(mut old_order_info) => match old_order_info.payment_status {
+            PaymentStatus::Pending => {
+                let death = calculate_death_ts(account_lifetime);
 
-                    old_order_info.death = death;
-                    old_order_info.currency = currency;
-                    old_order_info.amount = query.amount;
+                old_order_info.death = death;
+                old_order_info.currency = currency;
+                old_order_info.amount = query.amount;
 
-                    orders.insert(&order_key, old_order_info.encode())?;
-                    OrderCreateResponse::Modified(old_order_info)
-                }
-                PaymentStatus::Paid => OrderCreateResponse::Collision(old_order_info),
+                orders.insert(&order_key, old_order_info.encode())?;
+                OrderCreateResponse::Modified(old_order_info)
             }
+            PaymentStatus::Paid => OrderCreateResponse::Collision(old_order_info),
         },
         // If order not exists, create it
         Err(DbError::OrderNotFound(_)) => {
@@ -432,9 +425,9 @@ fn create_order(
 
             orders.insert(&order_key, order_info_new.encode())?;
             OrderCreateResponse::New(order_info_new)
-        },
+        }
         // Return any else database errors
-        Err(e) => return Err(e)
+        Err(e) => return Err(e),
     };
 
     Ok(resp)

@@ -14,9 +14,9 @@ pub async fn status(
             [(axum::http::header::CACHE_CONTROL, "no-store")],
             Json(status),
         ),
-        // TODO: change panic to something else? 
+        // TODO: change panic to something else?
         // Probably this handler should return some error status in response and k8s must make a decision about killing it.
-        // If we need behaviour of panic in case of db connection lost, it's better to do it in some background task, 
+        // If we need behaviour of panic in case of db connection lost, it's better to do it in some background task,
         // not in the status handler
         Err(_) => panic!("db connection is down, state is lost"), // You can modify this as needed
     }

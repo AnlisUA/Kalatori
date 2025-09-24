@@ -42,11 +42,7 @@ pub struct AssetTransferConstructor<'a> {
     pub to_account: &'a AccountId32,
 }
 
-#[expect(
-    clippy::shadow_reuse,
-    clippy::match_same_arms,
-    clippy::too_many_lines,
-)]
+#[expect(clippy::shadow_reuse, clippy::match_same_arms, clippy::too_many_lines)]
 pub fn construct_single_asset_transfer_call(
     metadata: &RuntimeMetadataV15,
     asset_transfer_constructor: &AssetTransferConstructor<'_>,
@@ -219,7 +215,7 @@ pub struct CallToFill(pub TypeToFill);
 #[expect(
     clippy::shadow_reuse,
     clippy::too_many_arguments,
-    clippy::needless_pass_by_value,
+    clippy::needless_pass_by_value
 )]
 pub fn construct_batch_transaction(
     metadata: &RuntimeMetadataV15,
@@ -390,10 +386,8 @@ pub fn construct_batch_call(
                                     .type_to_fill
                                     .content
                             {
-                                calls_sequence.content = call_set
-                                    .iter()
-                                    .map(|call| call.0.content.clone())
-                                    .collect();
+                                calls_sequence.content =
+                                    call_set.iter().map(|call| call.0.content.clone()).collect();
                             }
                         }
                     }
@@ -404,11 +398,7 @@ pub fn construct_batch_call(
     Ok(CallToFill(call))
 }
 
-#[expect(
-    clippy::shadow_reuse,
-    clippy::match_same_arms,
-    clippy::too_many_lines,
-)]
+#[expect(clippy::shadow_reuse, clippy::match_same_arms, clippy::too_many_lines)]
 pub fn construct_single_balance_transfer_call(
     metadata: &RuntimeMetadataV15,
     balance_transfer_constructor: &BalanceTransferConstructor<'_>,

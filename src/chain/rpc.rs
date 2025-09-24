@@ -547,11 +547,7 @@ pub struct BlockInner {
 }
 
 /// Get all sufficient assets from a chain
-#[expect(
-    clippy::too_many_lines,
-    clippy::shadow_unrelated,
-    clippy::shadow_reuse
-)]
+#[expect(clippy::too_many_lines, clippy::shadow_unrelated, clippy::shadow_reuse)]
 pub async fn assets_set_at_block(
     client: &WsClient,
     block: &BlockHash,
@@ -1150,7 +1146,8 @@ async fn events_at_block(
                                                 ..
                                             },
                                         ..
-                                    }) = next_field {
+                                    }) = next_field
+                                    {
                                         extrinsic_index = Some(value);
                                     }
                                 }

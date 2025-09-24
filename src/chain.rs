@@ -69,12 +69,18 @@ impl ChainManager {
 
             // this MUST assert that there are no duplicates in requested assets
             if let Some(ref a) = c.native_token {
-                if currency_map.insert(a.name.clone(), c.name.clone()).is_some() {
+                if currency_map
+                    .insert(a.name.clone(), c.name.clone())
+                    .is_some()
+                {
                     return Err(Error::DuplicateCurrency(a.name.clone()));
                 }
             }
             for a in &c.asset {
-                if currency_map.insert(a.name.clone(), c.name.clone()).is_some() {
+                if currency_map
+                    .insert(a.name.clone(), c.name.clone())
+                    .is_some()
+                {
                     return Err(Error::DuplicateCurrency(a.name.clone()));
                 }
             }
@@ -138,7 +144,7 @@ impl ChainManager {
                                     for (name, chain) in watch_chain.drain() {
                                         let (oneshot_tx, oneshot_rx) = oneshot::channel();
                                         if chain.send(ChainTrackerRequest::Shutdown(oneshot_tx)).await.is_ok() &&
-                                            timeout(SHUTDOWN_TIMEOUT, oneshot_rx).await.is_err() 
+                                            timeout(SHUTDOWN_TIMEOUT, oneshot_rx).await.is_err()
                                         {
                                             tracing::error!("Chain monitor for {name} took too much time to wind down, probably it was frozen. Discarding it.");
                                         }

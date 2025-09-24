@@ -1,7 +1,5 @@
 use crate::{
-    definitions::api_v2::{
-        InvalidParameter, OrderQuery, OrderResponse, AMOUNT, CURRENCY,
-    },
+    definitions::api_v2::{InvalidParameter, OrderQuery, OrderResponse, AMOUNT, CURRENCY},
     error::{ForceWithdrawalError, OrderError},
     state::State,
 };
@@ -76,9 +74,9 @@ pub async fn order(
     match process_order(state, order_id, data).await {
         Ok(order) => match order {
             OrderResponse::NewOrder(order_status) => (StatusCode::CREATED, Json(order_status)).into_response(),
-            // TODO: behaviour is exactly the same for the quite different cases. 
+            // TODO: behaviour is exactly the same for the quite different cases.
             // Perhaps need to identify what exactly happened by additional flag or status code?
-            OrderResponse::FoundOrder(order_status) | 
+            OrderResponse::FoundOrder(order_status) |
             OrderResponse::ModifiedOrder(order_status) => (StatusCode::OK, Json(order_status)).into_response(),
             OrderResponse::CollidedOrder(order_status) => (StatusCode::CONFLICT, Json(order_status)).into_response(),
             OrderResponse::NotFound => (StatusCode::NOT_FOUND, "").into_response(),

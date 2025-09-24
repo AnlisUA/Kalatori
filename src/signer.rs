@@ -9,11 +9,7 @@
 //!
 //! Also this abstraction could be used to implement off-system signer
 
-use crate::{
-    definitions::Entropy,
-    error::SignerError,
-    utils::task_tracker::TaskTracker,
-};
+use crate::{definitions::Entropy, error::SignerError, utils::task_tracker::TaskTracker};
 
 use mnemonic_external::{regular::InternalWordList, WordSet};
 use substrate_crypto_light::{
@@ -32,11 +28,7 @@ impl Signer {
     /// Run once to initialize; this should do **all** secret management
     // TODO: check if it's DEFINITELY won't break something. Check `ZeroizeOnDrop` marco implementation
     #[expect(tail_expr_drop_order)]
-    pub fn init(
-        recipient: AccountId32,
-        task_tracker: &TaskTracker,
-        seed: String,
-    ) -> Self {
+    pub fn init(recipient: AccountId32, task_tracker: &TaskTracker, seed: String) -> Self {
         let (tx, mut rx) = mpsc::channel(16);
         task_tracker.spawn("Signer", async move {
             let mut seed_entropy = entropy_from_phrase(&seed)?; // TODO: shutdown on failure
