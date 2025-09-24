@@ -300,11 +300,21 @@ pub mod api_v2 {
         pub timestamp: String,
     }
 
-    #[derive(Clone, Debug, Decode, Encode)]
-    pub enum Amount {
-        All,
-        Exact(f64),
+    // TODO: `Encode` macro generates some code which cast usize to u8 and trigger clippy.
+    // It seems to be old issue happened again, https://github.com/paritytech/parity-scale-codec/issues/713
+    // Check for updates periodically and remove this module when problem is fixed
+    #[expect(clippy::cast_possible_truncation)]
+    mod amount {
+        use super::{Decode, Encode};
+
+        #[derive(Clone, Debug, Decode, Encode)]
+        pub enum Amount {
+            All,
+            Exact(f64),
+        }
     }
+
+    pub use amount::Amount;
 
     fn amount_serializer<S: Serializer>(amount: &Amount, serializer: S) -> Result<S::Ok, S::Error> {
         match amount {
