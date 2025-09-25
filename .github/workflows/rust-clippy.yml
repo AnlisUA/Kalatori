@@ -27,6 +27,7 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
+          components: clippy
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2.7.5
       - name: cargo clippy
