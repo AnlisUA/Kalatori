@@ -5,7 +5,7 @@ authors = [
     	"Vova Lando <vova.lando@gmail.com>",
      	"Artyom Sheviakov <fluidcells@pm.me>",
 ]
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
 description = "A gateway daemon for Kalatori."
 license = "GPL-3.0-or-later"
