@@ -56,6 +56,7 @@ pub fn start_chain_watch(
             for endpoint in chain.endpoints.clone().iter().cycle() {
                 // not restarting chain if shutdown is in progress
                 if shutdown || cancellation_token.is_cancelled() {
+                    tracing::info!("Received {} signal, shut down ChainWatch", if shutdown { "shutdown" } else { "task cancellation" });
                     break;
                 }
 
@@ -66,9 +67,12 @@ pub fn start_chain_watch(
                     status: Health::Degraded,
                 }).await);
 
+                tracing::info!("Trying to establish connection to endpoint {:?}...", endpoint);
                 let client_result = WsClientBuilder::default().build(endpoint).await;
 
+                // TODO: rewrite to match. SKip for now to avoid large diff in git because of spacing
                 if let Ok(client) = client_result {
+                    tracing::info!("Connection to endpoint {:?} established, start watching", endpoint);
                     // TODO: handle error?
                     drop(rpc_update_tx.send(RpcInfo {
                         chain_name: chain.name.clone(),
@@ -291,6 +295,9 @@ pub fn start_chain_watch(
                         }
                     }
                 } else {
+                    let error = client_result.unwrap_err();
+                    tracing::error!("Error while initialize WS client for endpoint {:?}: {:?}", endpoint, error);
+
                     drop(rpc_update_tx.send(RpcInfo {
                         chain_name: chain.name.clone(),
                         rpc_url: endpoint.clone(),
