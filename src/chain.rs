@@ -22,15 +22,16 @@ pub mod rpc;
 pub mod tracker;
 pub mod utils;
 
-use crate::definitions::api_v2::{Health, RpcInfo, ServerHealth};
+use crate::definitions::api_v2::{Health, RpcInfo};
 use definitions::{ChainRequest, ChainTrackerRequest, WatchAccount};
 use tracker::start_chain_watch;
 
 /// Logging filter
+#[expect(dead_code)]
 pub const MODULE: &str = module_path!();
 
 /// Wait this long before forgetting about stuck chain watcher
-const SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(120000);
+const SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(120_000);
 
 /// RPC server handle
 #[derive(Clone, Debug)]
@@ -41,12 +42,13 @@ pub struct ChainManager {
 impl ChainManager {
     /// Run once to start all chain connections; this should be very robust, if manager fails
     /// - all modules should be restarted, probably.
+    #[expect(clippy::too_many_lines)]
     pub fn ignite(
-        chain: Vec<Chain>,
-        state: State,
-        signer: Signer,
-        task_tracker: TaskTracker,
-        cancellation_token: CancellationToken,
+        chains: Vec<Chain>,
+        state: &State,
+        signer: &Signer,
+        task_tracker: &TaskTracker,
+        cancellation_token: &CancellationToken,
     ) -> Result<Self, Error> {
         let (tx, mut rx) = mpsc::channel(1024);
 
@@ -58,7 +60,7 @@ impl ChainManager {
         let (rpc_update_tx, mut rpc_update_rx) = mpsc::channel(1024);
 
         // start network monitors
-        for c in chain {
+        for c in chains {
             if c.endpoints.is_empty() {
                 return Err(Error::EmptyEndpoints(c.name));
             }
@@ -67,12 +69,18 @@ impl ChainManager {
 
             // this MUST assert that there are no duplicates in requested assets
             if let Some(ref a) = c.native_token {
-                if let Some(_) = currency_map.insert(a.name.clone(), c.name.clone()) {
+                if currency_map
+                    .insert(a.name.clone(), c.name.clone())
+                    .is_some()
+                {
                     return Err(Error::DuplicateCurrency(a.name.clone()));
                 }
             }
             for a in &c.asset {
-                if let Some(_) = currency_map.insert(a.name.clone(), c.name.clone()) {
+                if currency_map
+                    .insert(a.name.clone(), c.name.clone())
+                    .is_some()
+                {
                     return Err(Error::DuplicateCurrency(a.name.clone()));
                 }
             }
@@ -94,12 +102,11 @@ impl ChainManager {
             .spawn("Blockchain connections manager", async move {
                 let mut rpc_statuses: HashMap<(String, String), Health> = HashMap::new();
 
-
                 // start requests engine
                 loop {
                     tokio::select! {
-                        Some(request) = rx.recv() => {
-                            match request {
+                        Some(chain_request) = rx.recv() => {
+                            match chain_request {
                                 ChainRequest::WatchAccount(request) => {
                                     if let Some(chain) = currency_map.get(&request.currency.currency) {
                                         if let Some(receiver) = watch_chain.get(chain) {
@@ -135,11 +142,11 @@ impl ChainManager {
                                 }
                                 ChainRequest::Shutdown(res) => {
                                     for (name, chain) in watch_chain.drain() {
-                                        let (tx, rx) = oneshot::channel();
-                                        if chain.send(ChainTrackerRequest::Shutdown(tx)).await.is_ok() {
-                                            if timeout(SHUTDOWN_TIMEOUT, rx).await.is_err() {
-                                                tracing::error!("Chain monitor for {name} took too much time to wind down, probably it was frozen. Discarding it.");
-                                            };
+                                        let (oneshot_tx, oneshot_rx) = oneshot::channel();
+                                        if chain.send(ChainTrackerRequest::Shutdown(oneshot_tx)).await.is_ok() &&
+                                            timeout(SHUTDOWN_TIMEOUT, oneshot_rx).await.is_err()
+                                        {
+                                            tracing::error!("Chain monitor for {name} took too much time to wind down, probably it was frozen. Discarding it.");
                                         }
                                     }
                                     let _ = res.send(());
@@ -154,7 +161,8 @@ impl ChainManager {
                                             status: *status,
                                         }
                                     }).collect();
-                                    let _ = res_tx.send(connected_rpcs);
+                                    // TODO: handle error?
+                                    drop(res_tx.send(connected_rpcs));
                                 }
                             }
                         }
@@ -219,6 +227,5 @@ impl ChainManager {
         let (tx, rx) = oneshot::channel();
         let _unused = self.tx.send(ChainRequest::Shutdown(tx)).await;
         let _ = rx.await;
-        ()
     }
 }

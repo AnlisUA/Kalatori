@@ -1,4 +1,4 @@
-name:                     Check cargo deny
+name: Check cargo deny
 
 on:
   pull_request:
@@ -9,21 +9,19 @@ on:
 
 jobs:
   cargo-deny:
-    name:                 Cargo deny
-    runs-on:              ubuntu-latest
+    name: Cargo deny
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         checks:
           - advisories
-
-    continue-on-error:    ${{ matrix.checks == 'advisories' }}
-
+          - bans licenses sources
+    continue-on-error: ${{ matrix.checks == 'advisories' }}
     steps:
-      - name:               Checkout Sources
-        uses:               actions/checkout@v4.2.2
-
-      - name:               Run cargo-deny
-        uses:               EmbarkStudios/cargo-deny-action@v2
+      - name: Checkout Sources
+        uses: actions/checkout@v4.2.2
+      - name: Run cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@v2
         with:
-          command:          check ${{ matrix.checks }}
+          command: check ${{ matrix.checks }}
 

@@ -21,7 +21,6 @@ mod signer;
 mod state;
 mod utils;
 
-use crate::error::ChainError;
 use arguments::{CliArgs, Config, SeedEnvVars, DATABASE_DEFAULT};
 use chain::ChainManager;
 use database::ConfigWoChains;
@@ -36,7 +35,9 @@ fn main() -> ExitCode {
     // initialized yet.
     shutdown::set_panic_hook(|panic| eprintln!("{panic}"), shutdown_notification.clone());
 
-    if let Err(error) = try_main(shutdown_notification.clone()) {
+    let result = try_main(shutdown_notification.clone());
+
+    if let Err(error) = result {
         // TODO: https://github.com/rust-lang/rust/issues/92698
         // An equilibristic to conditionally print an error message without storing it as `String`
         // on the heap.
@@ -125,10 +126,9 @@ async fn async_try_main(
         .map_err(|e| Error::RecipientAccount(e.to_string()))?
         .0;
 
-    let signer = Signer::init(recipient, task_tracker.clone(), seed_env_vars.seed)?;
+    let signer = Signer::init(recipient, &task_tracker, seed_env_vars.seed);
 
-    let db =
-        database::Database::init(database_path, task_tracker.clone(), config.account_lifetime)?;
+    let db = database::Database::init(database_path, &task_tracker, config.account_lifetime)?;
 
     let instance_id = db.initialize_server_info().await?;
 
@@ -152,10 +152,10 @@ async fn async_try_main(
     cm_tx
         .send(ChainManager::ignite(
             config.chain,
-            state.interface(),
-            signer.interface(),
-            task_tracker.clone(),
-            shutdown_notification.token.clone(),
+            &state,
+            &signer,
+            &task_tracker,
+            &shutdown_notification.token,
         )?)
         .map_err(|_| Error::Fatal)?;
 

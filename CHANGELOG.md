@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 **Please note:**
 This is a public beta release of the Kalatori daemon. While it adheres to the [API specs](https://kalapaja.github.io/kalatori-api), it is still under active development. We encourage you to test it and provide feedback.
 
+## [0.4.1] - 2025-09-26
+
+### 🐛 Bug Fixes
+
+- Base64ct bumbed MSRV in minor update, pin older version to avoid compability issues
+- Increase delay in integration test to 40 seconds cause test fails on CI and can not be reproduced locally
+- Add rustfmt and clippy components installation to respective jobs
+- Daemon wasn't able to connect to nodes because of lack of certificates. Added ca-certificates installation to the Dockerfile. Also added some logs around Chain Tracker connection
+
+### 🚜 Refactor
+
+- Remove unused commented consts from database.rs
+
+### ⚙️ Miscellaneous Tasks
+
+- Remove  option from semantic PR check job. This option require PR write permission which caused pipeline failures
+- Bump semantic PR action version to 6
+- Change semantic trigger from pull_request_target to pull_request, updated workflows formatting
+- Bump version to 0.4.1
+
+### Fix
+
+- Upgraded version of  Encode macro generates warning. Applied temporary fix for that
 
 
 ## [0.4] - 2025-09-14

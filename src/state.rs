@@ -32,7 +32,7 @@ impl State {
             remark,
         }: ConfigWoChains,
         db: Database,
-        chain_manager: oneshot::Receiver<ChainManager>,
+        chain_manager_receiver: oneshot::Receiver<ChainManager>,
         instance_id: String,
         task_tracker: TaskTracker,
         shutdown_notification: CancellationToken,
@@ -53,14 +53,14 @@ impl State {
         let server_info = ServerInfo {
             // TODO
             version: env!("CARGO_PKG_VERSION").to_string(),
-            instance_id: instance_id.clone(),
             debug: debug.unwrap_or_default(),
-            kalatori_remark: remark.clone(),
+            kalatori_remark: remark,
+            instance_id,
         };
 
         // Remember to always spawn async here or things might deadlock
         task_tracker.clone().spawn("State Handler", async move {
-            let chain_manager = chain_manager.await.map_err(|_| Error::Fatal)?;
+            let chain_manager = chain_manager_receiver.await.map_err(|_| Error::Fatal)?;
             let db_wakeup = db.clone();
             let chain_manager_wakeup = chain_manager.clone();
             let currencies = HashMap::new();
@@ -77,9 +77,10 @@ impl State {
             let order_list = db_wakeup.order_list().await?;
             task_tracker.spawn("Restore saved orders", async move {
                 for (order, order_details) in order_list {
-                    chain_manager_wakeup
+                    // TODO: handle error?
+                    drop(chain_manager_wakeup
                         .add_invoice(order, order_details, state.recipient)
-                        .await;
+                        .await);
                 }
                 Ok("All saved orders restored")
             });
@@ -88,11 +89,11 @@ impl State {
                 tokio::select! {
                     biased;
                     request_option = rx.recv() => {
-                        let Some(request) = request_option else {
+                        let Some(state_request) = request_option else {
                             break;
                         };
 
-                        match request {
+                        match state_request {
                             StateAccessRequest::ConnectChain(assets) => {
                                 // it MUST be asserted in chain tracker that assets are those and only
                                 // those that user requested
@@ -132,7 +133,9 @@ impl State {
                             }
                             StateAccessRequest::OrderPaid(id) => {
                                 // Only perform actions if the record is saved in ledger
-                                match state.db.mark_paid(id.clone()).await {
+                                let marked = state.db.mark_paid(id.clone()).await;
+
+                                match marked {
                                     Ok(order) => {
                                         if !order.callback.is_empty() {
                                             let callback = order.callback.clone();
@@ -150,36 +153,44 @@ impl State {
                                     Err(e) => {
                                         tracing::error!(
                                             "Order was paid but this could not be recorded! {e:?}"
-                                        )
+                                        );
                                     }
                                 }
                             }
                             StateAccessRequest::RecordTransaction { order, tx: new_tx } => {
-                                if let Err(e) = state.db.record_transaction(order, new_tx).await {
+                                let record = state.db.record_transaction(order, new_tx).await;
+
+                                if let Err(e) = record {
                                     tracing::error!(
                                         "Found a transaction related to an order, but this could not be recorded! {e:?}"
-                                    )
+                                    );
                                 }
                             }
                             StateAccessRequest::OrderWithdrawn(id) => {
                                 match state.db.mark_withdrawn(id.clone()).await {
-                                    Ok(order) => {
+                                    Ok(_order) => {
                                         tracing::info!("Order {id} successfully marked as withdrawn");
                                     }
                                     Err(e) => {
                                         tracing::error!(
                                             "Order was withdrawn but this could not be recorded! {e:?}"
-                                        )
+                                        );
                                     }
-                                }
+                                };
                             }
                             StateAccessRequest::ForceWithdrawal(id) => {
-                                match state.db.read_order(id.clone()).await {
+                                let order = state.db.read_order(id.clone()).await;
+
+                                match order {
                                     Ok(Some(order_info)) => {
-                                        match state.chain_manager.reap(id.clone(), order_info.clone(), state.recipient).await {
-                                            Ok(_) => {
-                                                match state.db.mark_forced(id.clone()).await {
-                                                    Ok(_) => {
+                                        let result = state.chain_manager.reap(id.clone(), order_info, state.recipient).await;
+
+                                        match result {
+                                            Ok(()) => {
+                                                let marked = state.db.mark_forced(id.clone()).await;
+
+                                                match marked {
+                                                    Ok(()) => {
                                                         tracing::info!("Order {id} successfully marked as force withdrawn");
                                                     }
                                                     Err(e) => {
@@ -201,18 +212,20 @@ impl State {
                                 }
                             }
                             StateAccessRequest::IsOrderPaid(id, res) => {
-                                match state.db.is_marked_paid(id).await {
+                                let is_marked_paid = state.db.is_marked_paid(id).await;
+
+                                match is_marked_paid {
                                     Ok(paid) => {
                                         res.send(paid).map_err(|_| Error::Fatal)?;
                                     }
                                     Err(e) => {
                                         tracing::error!(
                                             "Failed to read the order state! {e:?}"
-                                        )
+                                        );
                                     }
                                 }
                             }
-                        };
+                        }
                     }
                     // Orchestrate shutdown from here
                     () = shutdown_notification.cancelled() => {
@@ -239,7 +252,7 @@ impl State {
 
         Self { tx }
     }
-    fn overall_health(connected_rpcs: &Vec<RpcInfo>) -> Health {
+    fn overall_health(connected_rpcs: &[RpcInfo]) -> Health {
         if connected_rpcs.iter().all(|rpc| rpc.status == Health::Ok) {
             Health::Ok
         } else if connected_rpcs.iter().any(|rpc| rpc.status == Health::Ok) {
@@ -337,7 +350,7 @@ impl State {
             .is_err()
         {
             tracing::warn!("Data race on shutdown; please restart the daemon for cleaning up");
-        };
+        }
     }
 
     pub async fn order_withdrawn(&self, order: String) {
@@ -348,7 +361,7 @@ impl State {
             .is_err()
         {
             tracing::warn!("Data race on shutdown; please restart the daemon for cleaning up");
-        };
+        }
     }
 
     pub async fn force_withdrawal(
@@ -446,11 +459,11 @@ impl StateData {
 
     async fn create_invoice(&self, order_query: OrderQuery) -> Result<OrderResponse, Error> {
         let order = order_query.order.clone();
-        let currency = self
+        let currency_properties = self
             .currencies
             .get(&order_query.currency)
             .ok_or(OrderError::UnknownCurrency)?;
-        let currency = currency.info(order_query.currency.clone());
+        let currency = currency_properties.info(order_query.currency.clone());
         let payment_account = self.signer.public(order.clone(), currency.ss58).await?;
         match self
             .db

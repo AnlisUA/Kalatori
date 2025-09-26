@@ -4,7 +4,9 @@ use std::ops::{Deref, Sub};
 
 use serde::Deserialize;
 
+#[expect(dead_code)]
 pub type Version = u64;
+#[expect(dead_code)]
 pub type Nonce = u32;
 
 pub type Entropy = Vec<u8>; // TODO: maybe enforce something here
@@ -49,14 +51,15 @@ impl Sub for Balance {
     type Output = Self;
 
     fn sub(self, r: Self) -> Self {
+        // TODO: it's better to replace u128 with Decimal
+        #[expect(clippy::arithmetic_side_effects)]
         Balance(self.0 - r.0)
     }
 }
 
 impl Balance {
-    #[allow(dead_code)] // TODO: remove once populated
     pub fn format(&self, decimals: api_v2::Decimals) -> f64 {
-        #[allow(clippy::cast_precision_loss)]
+        #[expect(clippy::cast_precision_loss)]
         let float = **self as f64;
 
         float / decimal_exponent_product(decimals)
@@ -65,7 +68,7 @@ impl Balance {
     pub fn parse(float: f64, decimals: api_v2::Decimals) -> Self {
         let parsed_float = (float * decimal_exponent_product(decimals)).round();
 
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         Self(parsed_float as _)
     }
 }
@@ -222,6 +225,7 @@ pub mod api_v2 {
     }
 
     impl CurrencyInfo {
+        #[expect(dead_code)]
         pub fn properties(&self) -> CurrencyProperties {
             CurrencyProperties {
                 chain_name: self.chain_name.clone(),
@@ -296,11 +300,21 @@ pub mod api_v2 {
         pub timestamp: String,
     }
 
-    #[derive(Clone, Debug, Decode, Encode)]
-    pub enum Amount {
-        All,
-        Exact(f64),
+    // TODO: `Encode` macro generates some code which cast usize to u8 and trigger clippy.
+    // It seems to be old issue happened again, https://github.com/paritytech/parity-scale-codec/issues/713
+    // Check for updates periodically and remove this module when problem is fixed
+    #[expect(clippy::cast_possible_truncation)]
+    mod amount {
+        use super::{Decode, Encode};
+
+        #[derive(Clone, Debug, Decode, Encode)]
+        pub enum Amount {
+            All,
+            Exact(f64),
+        }
     }
+
+    pub use amount::Amount;
 
     fn amount_serializer<S: Serializer>(amount: &Amount, serializer: S) -> Result<S::Ok, S::Error> {
         match amount {
@@ -320,12 +334,11 @@ pub mod api_v2 {
 
 #[cfg(test)]
 #[test]
-#[allow(
+#[expect(
     clippy::inconsistent_digit_grouping,
     clippy::unreadable_literal,
     clippy::float_cmp
 )]
-
 fn balance_insufficient_precision() {
     const DECIMALS: api_v2::Decimals = 10;
 

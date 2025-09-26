@@ -42,9 +42,10 @@ pub struct AssetTransferConstructor<'a> {
     pub to_account: &'a AccountId32,
 }
 
+#[expect(clippy::shadow_reuse, clippy::match_same_arms, clippy::too_many_lines)]
 pub fn construct_single_asset_transfer_call(
     metadata: &RuntimeMetadataV15,
-    asset_transfer_constructor: &AssetTransferConstructor,
+    asset_transfer_constructor: &AssetTransferConstructor<'_>,
 ) -> Result<CallToFill, ChainError> {
     let mut call = prepare_type::<(), RuntimeMetadataV15>(
         &Ty::Symbol(&metadata.extrinsic.call_ty),
@@ -97,7 +98,7 @@ pub fn construct_single_asset_transfer_call(
                             index_transfer_in_methods,
                         )?;
 
-                        for field in method_selector.selected.fields_to_fill.iter_mut() {
+                        for field in &mut method_selector.selected.fields_to_fill {
                             if let Some(ref mut field_name) = field.field_name {
                                 match field_name.as_str() {
                                     "target" => {
@@ -142,7 +143,7 @@ pub fn construct_single_asset_transfer_call(
                                                             asset_transfer_constructor
                                                                 .to_account
                                                                 .to_owned(),
-                                                        )
+                                                        );
                                                     }
                                                 }
                                             }
@@ -211,6 +212,11 @@ pub struct BalanceTransferConstructor<'a> {
 #[derive(Clone, Debug)]
 pub struct CallToFill(pub TypeToFill);
 
+#[expect(
+    clippy::shadow_reuse,
+    clippy::too_many_arguments,
+    clippy::needless_pass_by_value
+)]
 pub fn construct_batch_transaction(
     metadata: &RuntimeMetadataV15,
     genesis_hash: BlockHash,
@@ -274,7 +280,7 @@ pub fn construct_batch_transaction(
     transaction_to_fill.call = construct_batch_call(metadata, call_set)?.0;
 
     // set era to mortal
-    for ext in transaction_to_fill.extensions.iter_mut() {
+    for ext in &mut transaction_to_fill.extensions {
         match ext.content {
             TypeContentToFill::Composite(ref mut fields) => {
                 if fields.len() == 1 {
@@ -306,7 +312,7 @@ pub fn construct_batch_transaction(
         transaction_to_fill.try_default_tip_assets_in_given_asset(&mut (), metadata, asset);
     }
 
-    for ext in transaction_to_fill.extensions.iter_mut() {
+    for ext in &mut transaction_to_fill.extensions {
         if ext.finalize().is_none() {
             println!("{ext:?}");
         }
@@ -315,6 +321,7 @@ pub fn construct_batch_transaction(
     Ok(transaction_to_fill)
 }
 
+#[expect(clippy::shadow_reuse, clippy::shadow_unrelated)]
 pub fn construct_batch_call(
     metadata: &RuntimeMetadataV15,
     call_set: &[CallToFill],
@@ -379,10 +386,8 @@ pub fn construct_batch_call(
                                     .type_to_fill
                                     .content
                             {
-                                calls_sequence.content = call_set
-                                    .iter()
-                                    .map(|call| call.0.content.to_owned())
-                                    .collect();
+                                calls_sequence.content =
+                                    call_set.iter().map(|call| call.0.content.clone()).collect();
                             }
                         }
                     }
@@ -393,9 +398,10 @@ pub fn construct_batch_call(
     Ok(CallToFill(call))
 }
 
+#[expect(clippy::shadow_reuse, clippy::match_same_arms, clippy::too_many_lines)]
 pub fn construct_single_balance_transfer_call(
     metadata: &RuntimeMetadataV15,
-    balance_transfer_constructor: &BalanceTransferConstructor,
+    balance_transfer_constructor: &BalanceTransferConstructor<'_>,
 ) -> Result<CallToFill, ChainError> {
     let mut call = prepare_type::<(), RuntimeMetadataV15>(
         &Ty::Symbol(&metadata.extrinsic.call_ty),
@@ -437,12 +443,12 @@ pub fn construct_single_balance_transfer_call(
                         match variant_method.name.as_str() {
                             "transfer_keep_alive" => {
                                 if !balance_transfer_constructor.is_clearing {
-                                    index_transfer_in_methods = Some(index_method)
+                                    index_transfer_in_methods = Some(index_method);
                                 }
                             }
                             "transfer_all" => {
                                 if balance_transfer_constructor.is_clearing {
-                                    index_transfer_in_methods = Some(index_method)
+                                    index_transfer_in_methods = Some(index_method);
                                 }
                             }
                             _ => {}
@@ -460,7 +466,7 @@ pub fn construct_single_balance_transfer_call(
                             index_transfer_in_methods,
                         )?;
 
-                        for field in method_selector.selected.fields_to_fill.iter_mut() {
+                        for field in &mut method_selector.selected.fields_to_fill {
                             if let Some(ref mut field_name) = field.field_name {
                                 match field_name.as_str() {
                                     "dest" => {
@@ -505,7 +511,7 @@ pub fn construct_single_balance_transfer_call(
                                                             balance_transfer_constructor
                                                                 .to_account
                                                                 .to_owned(),
-                                                        )
+                                                        );
                                                     }
                                                 }
                                             }
@@ -554,6 +560,7 @@ pub fn construct_single_balance_transfer_call(
     Ok(CallToFill(call))
 }
 
+#[expect(clippy::shadow_reuse)]
 pub fn block_number_query(
     metadata_v15: &RuntimeMetadataV15,
 ) -> Result<FinalizedStorageQuery, ChainError> {
@@ -689,6 +696,7 @@ pub fn parse_transfer_event(
     }
 }
 
+#[expect(clippy::shadow_reuse, clippy::match_same_arms)]
 pub fn asset_balance_query(
     metadata_v15: &RuntimeMetadataV15,
     account_id: &AccountId32,
@@ -704,10 +712,10 @@ pub fn asset_balance_query(
             .iter()
             .enumerate()
         {
-            match pallet.prefix.as_str() {
-                "Assets" => index_assets_in_pallet_selector = Some(index),
-                _ => {}
+            if pallet.prefix.as_str() == "Assets" {
+                index_assets_in_pallet_selector = Some(index);
             }
+
             if index_assets_in_pallet_selector.is_some() {
                 break;
             }
@@ -792,6 +800,7 @@ pub fn asset_balance_query(
     }
 }
 
+#[expect(clippy::shadow_reuse)]
 pub fn system_balance_query(
     metadata_v15: &RuntimeMetadataV15,
     account_id: &AccountId32,
@@ -805,10 +814,10 @@ pub fn system_balance_query(
             .iter()
             .enumerate()
         {
-            match pallet.prefix.as_str() {
-                "System" => index_system_in_pallet_selector = Some(index),
-                _ => {}
+            if pallet.prefix.as_str() == "System" {
+                index_system_in_pallet_selector = Some(index);
             }
+
             if index_system_in_pallet_selector.is_some() {
                 break;
             }
@@ -854,7 +863,7 @@ pub fn system_balance_query(
                             ref mut account_to_fill,
                         )) = key_to_fill.content
                         {
-                            *account_to_fill = Some(*account_id)
+                            *account_to_fill = Some(*account_id);
                         }
                     }
                 }
@@ -881,16 +890,17 @@ pub fn hashed_key_element(data: &[u8], hasher: &StorageHasher) -> Vec<u8> {
     }
 }
 
+#[expect(dead_code)]
 pub fn whole_key_u32_value(
     prefix: &str,
     storage_name: &str,
     metadata_v15: &RuntimeMetadataV15,
     entered_data: u32,
 ) -> Result<String, ChainError> {
-    for pallet in metadata_v15.pallets.iter() {
+    for pallet in &metadata_v15.pallets {
         if let Some(storage) = &pallet.storage {
             if storage.prefix == prefix {
-                for entry in storage.entries.iter() {
+                for entry in &storage.entries {
                     if entry.name == storage_name {
                         match &entry.ty {
                             StorageEntryType::Plain(_) => {
@@ -923,9 +933,9 @@ pub fn whole_key_u32_value(
                                         }
                                         _ => return Err(ChainError::StorageKeyNotU32),
                                     }
-                                } else {
-                                    return Err(ChainError::StorageEntryMapMultiple);
                                 }
+
+                                return Err(ChainError::StorageEntryMapMultiple);
                             }
                         }
                     }
@@ -937,6 +947,7 @@ pub fn whole_key_u32_value(
     Err(ChainError::NoPallet)
 }
 
+#[expect(clippy::many_single_char_names)]
 pub fn decimals(x: &Map<String, Value>) -> Result<u8, ChainError> {
     match x.get("tokenDecimals") {
         // decimals info is fetched in `system_properties` rpc call
@@ -1016,10 +1027,10 @@ pub fn optional_prefix_from_meta(metadata: &RuntimeMetadataV15) -> Option<u16> {
             break;
         }
     }
-    if let Some((value, ty_symbol)) = base58_prefix_data {
+    if let Some((val, ty_symbol)) = base58_prefix_data {
         match decode_all_as_type::<&[u8], (), RuntimeMetadataV15>(
             ty_symbol,
-            &value.as_ref(),
+            &val.as_ref(),
             &mut (),
             &metadata.types,
         ) {
@@ -1053,6 +1064,7 @@ pub fn optional_prefix_from_meta(metadata: &RuntimeMetadataV15) -> Option<u16> {
     }
 }
 
+#[expect(dead_code)]
 pub fn fetch_constant(
     metadata: &RuntimeMetadataV15,
     pallet_name: &str,
@@ -1098,15 +1110,18 @@ pub fn system_properties_to_short_specs(
     })
 }
 
+#[expect(dead_code)]
 pub fn pallet_index(metadata: &RuntimeMetadataV15, name: &str) -> Option<u8> {
     for pallet in &metadata.pallets {
         if pallet.name == name {
             return Some(pallet.index);
         }
     }
-    return None;
+
+    None
 }
 
+#[expect(dead_code)]
 pub fn storage_key(prefix: &str, storage_name: &str) -> String {
     format!(
         "0x{}{}",
@@ -1115,6 +1130,7 @@ pub fn storage_key(prefix: &str, storage_name: &str) -> String {
     )
 }
 
+#[expect(clippy::many_single_char_names)]
 pub fn base58prefix(
     x: &Map<String, Value>,
     optional_prefix_from_meta: Option<u16>,

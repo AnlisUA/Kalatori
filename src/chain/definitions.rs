@@ -1,12 +1,14 @@
 //! Common objects for chain interaction system
 
+use std::fmt::Display;
+
 use crate::{
     chain::{
         rpc::{asset_balance_at_account, system_balance_at_account},
         tracker::ChainWatcher,
     },
     definitions::{
-        api_v2::{BlockNumber, CurrencyInfo, Decimals, OrderInfo, RpcInfo, Timestamp},
+        api_v2::{BlockNumber, CurrencyInfo, OrderInfo, RpcInfo, Timestamp},
         Balance,
     },
     error::{ChainError, NotHexError},
@@ -21,17 +23,19 @@ use tokio::sync::oneshot;
 #[derive(Debug, Clone)]
 pub struct BlockHash(pub H256);
 
-impl BlockHash {
+impl Display for BlockHash {
     /// Convert block hash to RPC-friendly format
-    pub fn to_string(&self) -> String {
-        format!("0x{}", const_hex::encode(&self.0))
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "0x{}", const_hex::encode(self.0))
     }
+}
 
+impl BlockHash {
     /// Convert string returned by RPC to typesafe block
     ///
     /// TODO: integrate nicely with serde
     pub fn from_str(s: &str) -> Result<Self, crate::error::ChainError> {
-        let block_hash_raw = unhex(&s, NotHexError::BlockHash)?;
+        let block_hash_raw = unhex(s, NotHexError::BlockHash)?;
         Ok(BlockHash(H256(
             block_hash_raw
                 .try_into()
@@ -89,6 +93,7 @@ pub enum ChainTrackerRequest {
     WatchAccount(WatchAccount),
     NewBlock(BlockNumber),
     Reap(WatchAccount),
+    #[expect(dead_code)]
     ForceReap(WatchAccount),
     Shutdown(oneshot::Sender<()>),
 }
@@ -129,7 +134,7 @@ impl Invoice {
         if let Some(asset_id) = currency.asset_id {
             let balance = asset_balance_at_account(
                 client,
-                &block,
+                block,
                 &chain_watcher.metadata,
                 &self.address,
                 asset_id,
@@ -138,7 +143,7 @@ impl Invoice {
             Ok(balance)
         } else {
             let balance =
-                system_balance_at_account(client, &block, &chain_watcher.metadata, &self.address)
+                system_balance_at_account(client, block, &chain_watcher.metadata, &self.address)
                     .await?;
             Ok(balance)
         }

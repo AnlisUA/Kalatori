@@ -1,4 +1,4 @@
-name:                         Rust test
+name: Rust test
 
 on:
   pull_request:
@@ -9,36 +9,30 @@ on:
 
 jobs:
   check:
-    name:                     Cargo test
-    runs-on:                  ubuntu-latest
+    name: Cargo test
+    runs-on: ubuntu-latest
     steps:
-
-      - name:                 Cancel Previous Runs
-        uses:                 styfle/cancel-workflow-action@0.12.1
+      - name: Cancel Previous Runs
+        uses: styfle/cancel-workflow-action@0.12.1
         with:
-          access_token:       ${{ github.token }}
-
-      - name:                 Checkout sources
-        uses:                 actions/checkout@v4.2.2
+          access_token: ${{ github.token }}
+      - name: Checkout sources
+        uses: actions/checkout@v4.2.2
         with:
-          fetch-depth:        50
-          submodules:         'recursive'
-
-      - name:                 Install Rust stable toolchain
-        uses:                 actions-rs/toolchain@v1.0.7
+          fetch-depth: 50
+          submodules: 'recursive'
+      - name: Install Rust stable toolchain
+        uses: actions-rs/toolchain@v1.0.7
         with:
-          profile:            minimal
-          toolchain:          stable
-          override:           true
-
-      - name:                 Install cargo-nextest
-        uses:                 baptiste0928/cargo-install@v3
+          profile: minimal
+          toolchain: stable
+          override: true
+      - name: Install cargo-nextest
+        uses: baptiste0928/cargo-install@v3
         with:
-          crate:              cargo-nextest
-          version:            0.9
-
-      - name:                 Rust Cache
-        uses:                 Swatinem/rust-cache@v2.7.5
-
-      - name:                 cargo nextest
-        run:                  cargo nextest run
+          crate: cargo-nextest
+          version: 0.9
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2.7.5
+      - name: cargo nextest
+        run: cargo nextest run

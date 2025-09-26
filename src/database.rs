@@ -5,13 +5,10 @@
 //! are spawned here other than main database server thread that does everything in series.
 
 use crate::{
-    definitions::{
-        api_v2::{
-            Amount, BlockNumber, CurrencyInfo, ExtrinsicIndex, FinalizedTx, OrderCreateResponse,
-            OrderInfo, OrderQuery, PaymentStatus, ServerInfo, Timestamp, TransactionInfo, TxStatus,
-            WithdrawalStatus,
-        },
-        Version,
+    definitions::api_v2::{
+        Amount, BlockNumber, CurrencyInfo, ExtrinsicIndex, FinalizedTx, OrderCreateResponse,
+        OrderInfo, OrderQuery, PaymentStatus, ServerInfo, Timestamp, TransactionInfo, TxStatus,
+        WithdrawalStatus,
     },
     error::DbError,
     utils::task_tracker::TaskTracker,
@@ -25,37 +22,14 @@ use tokio::sync::{mpsc, oneshot};
 
 pub const MODULE: &str = module_path!();
 
-const DB_VERSION: Version = 0;
-
 // Tables
-const ACCOUNTS: &str = "accounts";
-
-//type ACCOUNTS_KEY = (Option<AssetId>, Account);
-//type ACCOUNTS_VALUE = InvoiceKey;
-
 const PENDING_TRANSACTIONS: &str = "pending_transactions";
 const TRANSACTIONS: &str = "transactions";
 
-const HIT_LIST: &str = "hit_list";
-
-// The database version must be stored in a separate slot to be used by the not implemented yet
-// database migration logic.
-const DB_VERSION_KEY: &str = "db_version";
 const SERVER_INFO_ID: &str = "instance_id";
 
 const ORDERS_TABLE: &[u8] = b"orders";
 const SERVER_INFO_TABLE: &[u8] = b"server_info";
-
-// Slots
-
-type InvoiceKey = &'static [u8];
-type U256Slot = [u64; 4];
-type BlockHash = [u8; 32];
-type ChainHash = [u8; 32];
-type PublicSlot = [u8; 32];
-type BalanceSlot = u128;
-type Derivation = [u8; 32];
-pub type Account = [u8; 32];
 
 pub struct ConfigWoChains {
     pub recipient: AccountId32,
@@ -72,9 +46,11 @@ pub struct Database {
 
 impl Database {
     #[expect(clippy::too_many_lines)]
+    // TODO: check if it's DEFINITELY won't break something. Check `ZeroizeOnDrop` marco implementation
+    #[expect(tail_expr_drop_order)]
     pub fn init(
         path_option: Option<String>,
-        task_tracker: TaskTracker,
+        task_tracker: &TaskTracker,
         account_lifetime: Timestamp,
     ) -> Result<Self, DbError> {
         let (tx, mut rx) = tokio::sync::mpsc::channel(1024);
@@ -102,15 +78,19 @@ impl Database {
 
         task_tracker.spawn("Database server", async move {
             // No process forking beyond this point!
-            while let Some(request) = rx.recv().await {
-                match request {
+            while let Some(req) = rx.recv().await {
+                match req {
                     DbRequest::ActiveOrderList(res) => {
+                        // TODO: require optimization? If yes, can create another table or just in-memory map
+                        // like HashMap<PaymentStatus, OrderId> to efficiently search orders by status.
                         let _unused = res.send(Ok(orders
                             .iter()
-                            .filter_map(|a| a.ok())
-                            .filter_map(|(a, b)| {
-                                match (String::decode(&mut &a[..]), OrderInfo::decode(&mut &b[..]))
-                                {
+                            .filter_map(Result::ok)
+                            .filter_map(|(encoded_id, encoded_order)| {
+                                match (
+                                    String::decode(&mut &encoded_id[..]),
+                                    OrderInfo::decode(&mut &encoded_order[..]),
+                                ) {
                                     (Ok(a), Ok(b)) => Some((a, b)),
                                     _ => None,
                                 }
@@ -120,7 +100,7 @@ impl Database {
                     }
                     DbRequest::CreateOrder(request) => {
                         let _unused = request.res.send(create_order(
-                            request.order,
+                            &request.order,
                             request.query,
                             request.currency,
                             request.payment_account,
@@ -140,7 +120,7 @@ impl Database {
                         let _unused = request.res.send(mark_paid(request.order, &orders));
                     }
                     DbRequest::IsMarkedPaid(order, res) => {
-                        let _unused = res.send(is_marked_paid(&orders, order));
+                        let _unused = res.send(is_marked_paid(&orders, &order));
                     }
                     DbRequest::MarkWithdrawn(request) => {
                         let _unused = request.res.send(mark_withdrawn(request.order, &orders));
@@ -151,12 +131,16 @@ impl Database {
                     DbRequest::MarkStuck(request) => {
                         let _unused = request.res.send(mark_stuck(request.order, &orders));
                     }
-                    DbRequest::RecordTransaction { order, tx, res } => {
+                    DbRequest::RecordTransaction {
+                        order,
+                        tx: transaction_info_db,
+                        res,
+                    } => {
                         let _unused = res.send(record_transaction(
                             &transactions,
                             &pending_transactions,
                             order,
-                            tx,
+                            transaction_info_db,
                         ));
                     }
                     DbRequest::InitializeServerInfo(res) => {
@@ -164,9 +148,10 @@ impl Database {
                             .open_tree(SERVER_INFO_TABLE)
                             .map_err(DbError::DbStartError);
                         let result = server_info_tree.and_then(|tree| {
-                            if let Some(server_info_data) =
-                                tree.get(SERVER_INFO_ID).map_err(DbError::DbInternalError)?
-                            {
+                            let data =
+                                tree.get(SERVER_INFO_ID).map_err(DbError::DbInternalError)?;
+
+                            if let Some(server_info_data) = data {
                                 let server_info: ServerInfo =
                                     serde_json::from_slice(&server_info_data).map_err(|e| {
                                         DbError::DeserializationError(e.to_string())
@@ -197,7 +182,7 @@ impl Database {
                         let _ = res.send(());
                         break;
                     }
-                };
+                }
             }
 
             drop(database.flush());
@@ -210,13 +195,23 @@ impl Database {
 
     pub async fn initialize_server_info(&self) -> Result<String, DbError> {
         let (res, rx) = oneshot::channel();
-        let _unused = self.tx.send(DbRequest::InitializeServerInfo(res)).await;
+
+        self.tx
+            .send(DbRequest::InitializeServerInfo(res))
+            .await
+            .map_err(|_| DbError::DbEngineDown)?;
+
         rx.await.map_err(|_| DbError::DbEngineDown)?
     }
 
     pub async fn order_list(&self) -> Result<Vec<(String, OrderInfo)>, DbError> {
         let (res, rx) = oneshot::channel();
-        let _unused = self.tx.send(DbRequest::ActiveOrderList(res)).await;
+
+        self.tx
+            .send(DbRequest::ActiveOrderList(res))
+            .await
+            .map_err(|_| DbError::DbEngineDown)?;
+
         rx.await.map_err(|_| DbError::DbEngineDown)?
     }
 
@@ -228,8 +223,8 @@ impl Database {
         payment_account: String,
     ) -> Result<OrderCreateResponse, DbError> {
         let (res, rx) = oneshot::channel();
-        let _unused = self
-            .tx
+
+        self.tx
             .send(DbRequest::CreateOrder(CreateOrder {
                 order,
                 query,
@@ -237,16 +232,20 @@ impl Database {
                 payment_account,
                 res,
             }))
-            .await;
+            .await
+            .map_err(|_| DbError::DbEngineDown)?;
+
         rx.await.map_err(|_| DbError::DbEngineDown)?
     }
 
     pub async fn read_order(&self, order: String) -> Result<Option<OrderInfo>, DbError> {
         let (res, rx) = oneshot::channel();
-        let _unused = self
-            .tx
+
+        self.tx
             .send(DbRequest::ReadOrder(ReadOrder { order, res }))
-            .await;
+            .await
+            .map_err(|_| DbError::DbEngineDown)?;
+
         rx.await.map_err(|_| DbError::DbEngineDown)?
     }
 
@@ -256,52 +255,59 @@ impl Database {
         tx: TransactionInfoDb,
     ) -> Result<(), DbError> {
         let (res, rx) = oneshot::channel();
-        let _unused = self
-            .tx
+
+        self.tx
             .send(DbRequest::RecordTransaction { order, tx, res })
-            .await;
+            .await
+            .map_err(|_| DbError::DbEngineDown)?;
 
         rx.await.map_err(|_| DbError::DbEngineDown)?
     }
 
     pub async fn mark_paid(&self, order: String) -> Result<OrderInfo, DbError> {
         let (res, rx) = oneshot::channel();
-        let _unused = self
-            .tx
+
+        self.tx
             .send(DbRequest::MarkPaid(MarkPaid { order, res }))
-            .await;
+            .await
+            .map_err(|_| DbError::DbEngineDown)?;
+
         rx.await.map_err(|_| DbError::DbEngineDown)?
     }
 
     pub async fn is_marked_paid(&self, order: String) -> Result<bool, DbError> {
         let (res, rx) = oneshot::channel();
-        let _unused = self.tx.send(DbRequest::IsMarkedPaid(order, res)).await;
+        self.tx
+            .send(DbRequest::IsMarkedPaid(order, res))
+            .await
+            .map_err(|_| DbError::DbEngineDown)?;
         rx.await.map_err(|_| DbError::DbEngineDown)?
     }
 
     pub async fn mark_withdrawn(&self, order: String) -> Result<(), DbError> {
         let (res, rx) = oneshot::channel();
-        let _unused = self
-            .tx
+        self.tx
             .send(DbRequest::MarkWithdrawn(ModifyOrder { order, res }))
-            .await;
+            .await
+            .map_err(|_| DbError::DbEngineDown)?;
         rx.await.map_err(|_| DbError::DbEngineDown)?
     }
     pub async fn mark_forced(&self, order: String) -> Result<(), DbError> {
         let (res, rx) = oneshot::channel();
-        let _unused = self
-            .tx
+        self.tx
             .send(DbRequest::MarkForced(ModifyOrder { order, res }))
-            .await;
+            .await
+            .map_err(|_| DbError::DbEngineDown)?;
         rx.await.map_err(|_| DbError::DbEngineDown)?
     }
 
+    #[expect(dead_code)]
     pub async fn mark_stuck(&self, order: String) -> Result<(), DbError> {
         let (res, rx) = oneshot::channel();
-        let _unused = self
-            .tx
+        self.tx
             .send(DbRequest::MarkStuck(ModifyOrder { order, res }))
-            .await;
+            .await
+            .map_err(|_| DbError::DbEngineDown)?;
         rx.await.map_err(|_| DbError::DbEngineDown)?
     }
 
@@ -354,16 +360,18 @@ pub struct MarkPaid {
 }
 
 fn calculate_death_ts(account_lifetime: Timestamp) -> Timestamp {
+    #[expect(clippy::cast_possible_truncation)]
     let start = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()
         .as_millis() as u64;
 
+    #[expect(clippy::arithmetic_side_effects)]
     Timestamp(start + account_lifetime.0)
 }
 
 fn create_order(
-    order: String,
+    order: &str,
     query: OrderQuery,
     currency: CurrencyInfo,
     payment_account: String,
@@ -371,9 +379,10 @@ fn create_order(
     account_lifetime: Timestamp,
 ) -> Result<OrderCreateResponse, DbError> {
     let order_key = order.encode();
-    Ok(if let Some(record) = orders.get(&order_key)? {
-        let mut old_order_info = OrderInfo::decode(&mut &record[..])?;
-        match old_order_info.payment_status {
+
+    let resp = match get_order(orders, order) {
+        // If order already exists, update it
+        Ok(mut old_order_info) => match old_order_info.payment_status {
             PaymentStatus::Pending => {
                 let death = calculate_death_ts(account_lifetime);
 
@@ -385,14 +394,20 @@ fn create_order(
                 OrderCreateResponse::Modified(old_order_info)
             }
             PaymentStatus::Paid => OrderCreateResponse::Collision(old_order_info),
-        }
-    } else {
-        let death = calculate_death_ts(account_lifetime);
-        let order_info_new = OrderInfo::new(query, currency, payment_account, death);
+        },
+        // If order not exists, create it
+        Err(DbError::OrderNotFound(_)) => {
+            let death = calculate_death_ts(account_lifetime);
+            let order_info_new = OrderInfo::new(query, currency, payment_account, death);
 
-        orders.insert(&order_key, order_info_new.encode())?;
-        OrderCreateResponse::New(order_info_new)
-    })
+            orders.insert(&order_key, order_info_new.encode())?;
+            OrderCreateResponse::New(order_info_new)
+        }
+        // Return any else database errors
+        Err(e) => return Err(e),
+    };
+
+    Ok(resp)
 }
 
 fn read_order(
@@ -465,7 +480,9 @@ fn record_transaction(
 
     // Search the given transaction among pending ones and update it or move it to finalized
     // transactions.
-    if let Some(_encoded_tx_inner) = pending_tx_table.get(&pending_tx_key)? {
+    let encoded_tx_inner = pending_tx_table.get(&pending_tx_key)?;
+
+    if let Some(_encoded_tx_inner) = encoded_tx_inner {
         if let Some((finalized_tx, _finalized_tx_timestamp)) = finalized_info {
             tracing::debug!("moving pending tx to finalized");
 
@@ -509,90 +526,79 @@ fn record_transaction(
     Ok(())
 }
 
-fn mark_paid(order: String, orders: &Tree) -> Result<OrderInfo, DbError> {
+fn get_order(orders_tree: &Tree, order: &str) -> Result<OrderInfo, DbError> {
     let order_key = order.encode();
-    if let Some(order_info) = orders.get(order_key)? {
-        let mut order_info = OrderInfo::decode(&mut &order_info[..])?;
-        if order_info.payment_status == PaymentStatus::Pending {
-            order_info.payment_status = PaymentStatus::Paid;
-            orders.insert(order.encode(), order_info.encode())?;
-            Ok(order_info)
-        } else {
-            Err(DbError::AlreadyPaid(order))
-        }
-    } else {
-        Err(DbError::OrderNotFound(order))
+
+    match orders_tree.get(order_key)? {
+        Some(value) => Ok(OrderInfo::decode(&mut &value[..])?),
+        None => Err(DbError::OrderNotFound(order.to_string())),
     }
 }
 
-fn is_marked_paid(orders: &Tree, order: String) -> Result<bool, DbError> {
-    let order_key = order.encode();
-    if let Some(order_info) = orders.get(order_key)? {
-        let order_info = OrderInfo::decode(&mut &order_info[..])?;
+fn mark_paid(order: String, orders: &Tree) -> Result<OrderInfo, DbError> {
+    let mut order_info = get_order(orders, &order)?;
 
-        Ok(order_info.payment_status == PaymentStatus::Paid)
+    if order_info.payment_status == PaymentStatus::Pending {
+        order_info.payment_status = PaymentStatus::Paid;
+        orders.insert(order.encode(), order_info.encode())?;
+        Ok(order_info)
     } else {
-        Err(DbError::OrderNotFound(order))
+        Err(DbError::AlreadyPaid(order))
     }
+}
+
+fn is_marked_paid(orders: &Tree, order: &str) -> Result<bool, DbError> {
+    let order_info = get_order(orders, order)?;
+    Ok(order_info.payment_status == PaymentStatus::Paid)
 }
 
 fn mark_withdrawn(order: String, orders: &Tree) -> Result<(), DbError> {
-    let order_key = order.encode();
-    if let Some(order_info) = orders.get(order_key)? {
-        let mut order_info = OrderInfo::decode(&mut &order_info[..])?;
-        if order_info.payment_status == PaymentStatus::Paid {
-            if order_info.withdrawal_status == WithdrawalStatus::Waiting {
-                order_info.withdrawal_status = WithdrawalStatus::Completed;
-                orders.insert(order.encode(), order_info.encode())?;
-                Ok(())
-            } else {
-                Err(DbError::WithdrawalWasAttempted(order))
-            }
+    let mut order_info = get_order(orders, &order)?;
+
+    if order_info.payment_status == PaymentStatus::Paid {
+        if order_info.withdrawal_status == WithdrawalStatus::Waiting {
+            order_info.withdrawal_status = WithdrawalStatus::Completed;
+            orders.insert(order.encode(), order_info.encode())?;
+            Ok(())
         } else {
-            Err(DbError::NotPaid(order))
+            Err(DbError::WithdrawalWasAttempted(order))
         }
     } else {
-        Err(DbError::OrderNotFound(order))
+        Err(DbError::NotPaid(order))
     }
 }
 
 fn mark_forced(order: String, orders: &Tree) -> Result<(), DbError> {
-    let order_key = order.encode();
-    if let Some(order_info) = orders.get(order_key)? {
-        let mut order_info = OrderInfo::decode(&mut &order_info[..])?;
-        if order_info.payment_status == PaymentStatus::Pending
-            || order_info.payment_status == PaymentStatus::Paid
-        {
-            if order_info.withdrawal_status == WithdrawalStatus::Waiting {
-                order_info.withdrawal_status = WithdrawalStatus::Forced;
-                orders.insert(order.encode(), order_info.encode())?;
-                Ok(())
-            } else {
-                Err(DbError::WithdrawalWasAttempted(order))
-            }
+    let mut order_info = get_order(orders, &order)?;
+
+    if order_info.payment_status == PaymentStatus::Pending
+        || order_info.payment_status == PaymentStatus::Paid
+    {
+        if order_info.withdrawal_status == WithdrawalStatus::Waiting {
+            order_info.withdrawal_status = WithdrawalStatus::Forced;
+            orders.insert(order.encode(), order_info.encode())?;
+            Ok(())
         } else {
-            Err(DbError::NotPaid(order))
+            Err(DbError::WithdrawalWasAttempted(order))
         }
     } else {
-        Err(DbError::OrderNotFound(order))
+        Err(DbError::NotPaid(order))
     }
 }
+
 fn mark_stuck(order: String, orders: &Tree) -> Result<(), DbError> {
-    if let Some(order_info) = orders.get(order.clone())? {
-        let mut order_info = OrderInfo::decode(&mut &order_info[..])?;
-        if order_info.payment_status == PaymentStatus::Paid {
-            if order_info.withdrawal_status == WithdrawalStatus::Waiting {
-                order_info.withdrawal_status = WithdrawalStatus::Failed;
-                orders.insert(order.encode(), order_info.encode())?;
-                Ok(())
-            } else {
-                Err(DbError::WithdrawalWasAttempted(order))
-            }
+    let mut order_info = get_order(orders, &order)?;
+
+    if order_info.payment_status == PaymentStatus::Paid {
+        if order_info.withdrawal_status == WithdrawalStatus::Waiting {
+            order_info.withdrawal_status = WithdrawalStatus::Failed;
+            orders.insert(order.encode(), order_info.encode())?;
+            Ok(())
         } else {
-            Err(DbError::NotPaid(order))
+            Err(DbError::WithdrawalWasAttempted(order))
         }
     } else {
-        Err(DbError::OrderNotFound(order))
+        Err(DbError::NotPaid(order))
     }
 }
 

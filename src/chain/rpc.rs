@@ -145,9 +145,11 @@ pub async fn get_keys_from_storage(
     for _ in 0..MAX_KEY_PAGES {
         let mut params = params_template.clone();
         params.push(serde_json::to_value(start_key.clone()).unwrap());
-
         params.push(serde_json::to_value(block.to_string()).unwrap());
-        if let Ok(keys) = client.request("state_getKeysPaged", params).await {
+
+        let keys_result = client.request("state_getKeysPaged", params).await;
+
+        if let Ok(keys) = keys_result {
             if let Value::Array(keys_inside) = &keys {
                 if let Some(Value::String(key_string)) = keys_inside.last() {
                     start_key.clone_from(key_string);
@@ -179,7 +181,7 @@ pub async fn genesis_hash(client: &WsClient) -> Result<BlockHash, ChainError> {
         .map_err(ChainError::Client)?;
     match genesis_hash_request {
         Value::String(x) => BlockHash::from_str(&x),
-        _ => return Err(ChainError::GenesisHashFormat),
+        _ => Err(ChainError::GenesisHashFormat),
     }
 }
 
@@ -200,7 +202,7 @@ pub async fn block_hash(
         .map_err(ChainError::Client)?;
     match block_hash_request {
         Value::String(x) => BlockHash::from_str(&x),
-        _ => return Err(ChainError::BlockHashFormat),
+        _ => Err(ChainError::BlockHashFormat),
     }
 }
 
@@ -280,6 +282,7 @@ pub async fn metadata(
     }
 }
 
+#[expect(clippy::needless_pass_by_value)]
 fn map_storage_hasher(h: StorageHasherV16) -> StorageHasherV15 {
     match h {
         StorageHasherV16::Blake2_128 => StorageHasherV15::Blake2_128,
@@ -309,6 +312,7 @@ fn map_storage_entry_type(
     }
 }
 
+#[expect(clippy::too_many_lines)]
 fn v16_to_v15(meta: RuntimeMetadataV16) -> RuntimeMetadataV15 {
     let pallets: Vec<PalletMetadataV15<PortableForm>> = meta
         .pallets
@@ -384,7 +388,7 @@ fn v16_to_v15(meta: RuntimeMetadataV16) -> RuntimeMetadataV15 {
     {
         indexes
             .iter()
-            .filter_map(|idx| ext_v16.transaction_extensions.get((*idx).0 as usize))
+            .filter_map(|idx| ext_v16.transaction_extensions.get((idx).0 as usize))
             .map(
                 |e: &TransactionExtensionMetadataV16<PortableForm>| SignedExtensionMetadataV15 {
                     identifier: e.identifier.clone(),
@@ -486,8 +490,8 @@ pub async fn specs(
         .request("system_properties", rpc_params![block.to_string()])
         .await?;
     match specs_request {
-        Value::Object(properties) => system_properties_to_short_specs(&properties, &metadata),
-        _ => return Err(ChainError::PropertiesFormat),
+        Value::Object(properties) => system_properties_to_short_specs(&properties, metadata),
+        _ => Err(ChainError::PropertiesFormat),
     }
 }
 
@@ -505,7 +509,7 @@ pub async fn next_block(
     client: &WsClient,
     blocks: &mut Subscription<BlockHead>,
 ) -> Result<BlockHash, ChainError> {
-    block_hash(&client, Some(next_block_number(blocks).await?)).await
+    block_hash(client, Some(next_block_number(blocks).await?)).await
 }
 
 #[derive(Deserialize, Debug)]
@@ -526,6 +530,7 @@ fn deserialize_block_number<'d, D: Deserializer<'d>>(d: D) -> Result<BlockNumber
         .map_err(|_| de::Error::custom("failed to convert `U256` to a block number"))
 }
 
+#[expect(dead_code)]
 #[derive(Deserialize)]
 pub struct BlockDetails {
     block: Block,
@@ -542,7 +547,7 @@ pub struct BlockInner {
 }
 
 /// Get all sufficient assets from a chain
-#[expect(clippy::too_many_lines)]
+#[expect(clippy::too_many_lines, clippy::shadow_unrelated, clippy::shadow_reuse)]
 pub async fn assets_set_at_block(
     client: &WsClient,
     block: &BlockHash,
@@ -556,10 +561,10 @@ pub async fn assets_set_at_block(
     let mut assets_asset_storage_metadata = None;
     let mut assets_metadata_storage_metadata = None;
 
-    for pallet in metadata_v15.pallets.iter() {
+    for pallet in &metadata_v15.pallets {
         if let Some(storage) = &pallet.storage {
             if storage.prefix == "Assets" {
-                for entry in storage.entries.iter() {
+                for entry in &storage.entries {
                     if entry.name == "Asset" {
                         assets_asset_storage_metadata = Some(entry);
                     }
@@ -585,7 +590,7 @@ pub async fn assets_set_at_block(
             get_keys_from_storage(client, "Assets", "Asset", block).await?;
         for available_keys_assets_asset in available_keys_assets_asset_vec {
             if let Value::Array(ref keys_array) = available_keys_assets_asset {
-                for key in keys_array.iter() {
+                for key in keys_array {
                     if let Value::String(string_key) = key {
                         let value_fetch = get_value_from_storage(client, string_key, block).await?;
                         if let Value::String(ref string_value) = value_fetch {
@@ -620,7 +625,7 @@ pub async fn assets_set_at_block(
                             }?;
                             let mut verified_sufficient = false;
                             if let ParsedData::Composite(fields) = storage_entry.value.data {
-                                for field_data in fields.iter() {
+                                for field_data in &fields {
                                     if let Some(field_name) = &field_data.field_name {
                                         if field_name == "is_sufficient" {
                                             if let ParsedData::PrimitiveBool(is_it) =
@@ -695,7 +700,7 @@ pub async fn assets_set_at_block(
                                                         if let ParsedData::Composite(fields) =
                                                             value.data
                                                         {
-                                                            for field_data in fields.iter() {
+                                                            for field_data in &fields {
                                                                 if let Some(field_name) =
                                                                     &field_data.field_name
                                                                 {
@@ -829,17 +834,17 @@ pub async fn asset_balance_at_account(
     let value_fetch = get_value_from_storage(client, &query.key, block).await?;
     match value_fetch {
         // Storage key not present => zero balance
-        Value::Null => return Ok(Balance(0)),
+        Value::Null => Ok(Balance(0)),
         Value::String(ref string_value) => {
             let value_data = unhex(string_value, NotHexError::StorageValue)?;
-            let value = decode_all_as_type::<&[u8], (), RuntimeMetadataV15>(
+            let value_with_data = decode_all_as_type::<&[u8], (), RuntimeMetadataV15>(
                 &query.value_ty,
                 &value_data.as_ref(),
                 &mut (),
                 &metadata_v15.types,
             )?;
-            if let ParsedData::Composite(fields) = value.data {
-                for field in fields.iter() {
+            if let ParsedData::Composite(fields) = value_with_data.data {
+                for field in &fields {
                     if let ParsedData::PrimitiveU128 {
                         value,
                         specialty: SpecialtyUnsignedInteger::Balance,
@@ -857,6 +862,7 @@ pub async fn asset_balance_at_account(
     }
 }
 
+#[expect(clippy::shadow_unrelated, clippy::match_same_arms)]
 pub async fn system_balance_at_account(
     client: &WsClient,
     block: &BlockHash,
@@ -868,7 +874,7 @@ pub async fn system_balance_at_account(
     let value_fetch = get_value_from_storage(client, &query.key, block).await?;
     match value_fetch {
         // Storage key not present => zero balance (account does not exist yet)
-        Value::Null => return Ok(Balance(0)),
+        Value::Null => Ok(Balance(0)),
         Value::String(ref string_value) => {
             let value_data = unhex(string_value, NotHexError::StorageValue)?;
             let value = decode_all_as_type::<&[u8], (), RuntimeMetadataV15>(
@@ -878,6 +884,7 @@ pub async fn system_balance_at_account(
                 &metadata_v15.types,
             )?;
             // Fallback recursive search for a balance-typed U128
+            #[expect(clippy::items_after_statements)]
             fn find_balance(data: &ParsedData) -> Option<u128> {
                 match data {
                     ParsedData::PrimitiveU128 { value, specialty } => {
@@ -907,10 +914,10 @@ pub async fn system_balance_at_account(
                 }
             }
             if let ParsedData::Composite(fields) = value.data {
-                for field in fields.iter() {
+                for field in &fields {
                     if field.field_name == Some("data".to_string()) {
                         if let ParsedData::Composite(inner_fields) = &field.data.data {
-                            for inner_field in inner_fields.iter() {
+                            for inner_field in inner_fields {
                                 if inner_field.field_name == Some("free".to_string()) {
                                     if let ParsedData::PrimitiveU128 {
                                         value,
@@ -995,7 +1002,7 @@ async fn match_extrinsics_with_events_at_block(
         .iter()
         .find_map(|encoded| {
             // Try decoding using provided metadata first.
-            let mut try_decode = |meta: &RuntimeMetadataV15| {
+            let try_decode = |meta: &RuntimeMetadataV15| {
                 substrate_parser::decode_as_unchecked_extrinsic(&encoded.as_ref(), &mut (), meta)
             };
 
@@ -1005,6 +1012,7 @@ async fn match_extrinsics_with_events_at_block(
                     // Fallback: if the chain uses a different extrinsic version (e.g., 5),
                     // retry with a local copy of metadata adjusted to that version.
                     let masked = version_byte & 0b0111_1111;
+                    #[expect(clippy::if_not_else)]
                     if masked != metadata_v15.extrinsic.version {
                         let mut override_meta = metadata_v15.clone();
                         override_meta.extrinsic.version = masked;
@@ -1081,12 +1089,12 @@ async fn events_at_block(
         const_hex::encode(twox_128("Events".as_bytes()))
     );
     let mut out = Vec::new();
-    let data_from_storage = get_value_from_storage(client, &key, block).await?;
+    let data_from_storage_value = get_value_from_storage(client, &key, block).await?;
     let key_bytes = unhex(&key, NotHexError::StorageValue)?;
-    let value_bytes = if let Value::String(data_from_storage) = data_from_storage {
+    let value_bytes = if let Value::String(data_from_storage) = data_from_storage_value {
         unhex(&data_from_storage, NotHexError::StorageValue)?
     } else {
-        return Err(ChainError::StorageValueFormat(data_from_storage));
+        return Err(ChainError::StorageValueFormat(data_from_storage_value));
     };
     let storage_data = decode_as_storage_entry::<&[u8], (), RuntimeMetadataV15>(
         &key_bytes.as_ref(),
@@ -1129,6 +1137,8 @@ async fn events_at_block(
                             }) = event_record_element.data.data
                             {
                                 if variant_name == "ApplyExtrinsic" {
+                                    let next_field = fields.into_iter().next();
+
                                     if let Some(FieldData {
                                         data:
                                             ExtendedData {
@@ -1136,7 +1146,7 @@ async fn events_at_block(
                                                 ..
                                             },
                                         ..
-                                    }) = fields.into_iter().next()
+                                    }) = next_field
                                     {
                                         extrinsic_index = Some(value);
                                     }
@@ -1166,7 +1176,7 @@ pub async fn current_block_number(
     let fetched_value = get_value_from_storage(client, &block_number_query.key, block).await?;
     if let Value::String(hex_data) = fetched_value {
         let value_data = unhex(&hex_data, NotHexError::StorageValue)?;
-        let value = decode_all_as_type::<&[u8], (), RuntimeMetadataV15>(
+        let value_with_data = decode_all_as_type::<&[u8], (), RuntimeMetadataV15>(
             &block_number_query.value_ty,
             &value_data.as_ref(),
             &mut (),
@@ -1175,7 +1185,7 @@ pub async fn current_block_number(
         if let ParsedData::PrimitiveU32 {
             value,
             specialty: _,
-        } = value.data
+        } = value_with_data.data
         {
             Ok(value)
         } else {
@@ -1186,6 +1196,7 @@ pub async fn current_block_number(
     }
 }
 
+#[expect(dead_code)]
 pub async fn get_nonce(
     client: &WsClient,
     account_id: &str,

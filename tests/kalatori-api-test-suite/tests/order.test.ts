@@ -240,8 +240,9 @@ describe('Order Endpoint Blackbox Tests', () => {
 
     await transferFunds(orderDetails.currency.rpc_url, paymentAccount, dotOrderData.amount);
 
+    // TODO: test fails in CI sometimes. Perhaps add some retries with delay?
     // lets wait for the changes to get propagated on chain and app to catch them
-    await new Promise(resolve => setTimeout(resolve, 35000));
+    await new Promise(resolve => setTimeout(resolve, 40000));
 
     const repaidOrderDetails = await getOrderDetails(orderId);
 
