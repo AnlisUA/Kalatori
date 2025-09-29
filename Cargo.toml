@@ -34,7 +34,7 @@ serde = { version = "1", features = ["derive", "rc"] }
 tracing = "0.1"
 scale-info = "2"
 axum-macros = "0.4"
-primitive-types = { version = "0.13", features = ["codec", "serde"] }
+primitive-types = { version = "0.14", features = ["codec", "serde"] }
 jsonrpsee = { version = "0.24", features = ["ws-client"] }
 thiserror = "2"
 frame-metadata = { version = "22", features = ["current", "decode", "unstable"] }
