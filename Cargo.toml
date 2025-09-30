@@ -69,6 +69,7 @@ time = "0.3"
 reqwest = "0.12"
 # This crate bumbped MSRV in minor update
 base64ct = "=1.6.0"
+subxt = "0.44"
 
 substrate_parser = { git = "https://github.com/Vovke/substrate-parser" }
 substrate-constructor = "0.2.0"

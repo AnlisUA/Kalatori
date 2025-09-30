@@ -8,6 +8,18 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
+#[subxt::subxt(
+    runtime_metadata_path = "./metadata.scale",
+    // generate_docs,
+    // derive_for_all_types = "Clone, PartialEq, Eq",
+    derive_for_type(
+        path = "staging_xcm::v3::multilocation::MultiLocation",
+        derive = "Clone, codec::Encode",
+        recursive
+    )
+)]
+pub mod runtime {}
+
 use crate::{
     definitions::{api_v2::OrderInfo, Chain},
     error::{ChainError, Error},
