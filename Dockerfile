@@ -17,7 +17,7 @@ FROM ubuntu:latest
 
 WORKDIR /app
 
-# RUN apt-get update && apt-get install -y ca-certificates
+RUN apt-get update && apt-get install -y ca-certificates
 
 COPY --from=builder /usr/src/kalatori/target/release/kalatori /app/kalatori
 
