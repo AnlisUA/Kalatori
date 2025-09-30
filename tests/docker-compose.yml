@@ -1,24 +1,11 @@
 version: '3.8'
 
 services:
-  chopsticks-polkadot:
+  chopsticks-asset-hub:
     build:
       context: ../chopsticks
       dockerfile: Dockerfile
-    container_name: chopsticks-polkadot
-    ports:
-      - "8000:8000"
-    volumes:
-      - ../chopsticks/pd.yml:/app/config.yml
-    command: ["chopsticks", "-c", "/app/config.yml", "-p", "8000", "--host", "0.0.0.0"]
-    networks:
-      - kalatori-network
-
-  chopsticks-statemint:
-    build:
-      context: ../chopsticks
-      dockerfile: Dockerfile
-    container_name: chopsticks-statemint
+    container_name: chopsticks-asset-hub
     ports:
       - "9000:9000"
     volumes:
@@ -38,7 +25,7 @@ services:
       - ../configs:/app/configs
     depends_on:
       - chopsticks-polkadot
-      - chopsticks-statemint
+      - chopsticks-asset-hub
     environment:
       - KALATORI_HOST=0.0.0.0:16726
       - KALATORI_CONFIG=configs/chopsticks-docker.toml

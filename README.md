@@ -2,7 +2,7 @@
 
 !!! KALATORI IS IN PUBLIC BETA !!!
 
-Kalatori is an open-source daemon designed to enable secure and scalable blockchain payment processing. Licensed under GPLv3 ([LICENSE](LICENSE)), Kalatori currently supports assets on the Polkadot relay chain and its parachains.
+Kalatori is an open-source daemon designed to enable secure and scalable blockchain payment processing. Licensed under GPLv3 ([LICENSE](LICENSE)), Kalatori currently supports assets on the Asset Hub parachain.
 
 The daemon derives unique accounts for each payment using a provided seed phrase and outputs all payments to a specified recipient wallet. It also offers limited transaction tracking for order management. Kalatori operates in a multithreaded mode and supports multiple currencies configured in a simple TOML-based configuration file.
 
@@ -26,7 +26,7 @@ The compiled binaries will be located in the `target/release` path.
 
 ### Project Structure
 
-- `chopsticks`: Contains configuration files for the Chopsticks tool and a Docker Compose setup for spawning Polkadot and AssetHub test chains.
+- `chopsticks`: Contains configuration files for the Chopsticks tool and a Docker Compose setup for spawning AssetHub test chain.
 - `configs`: Contains configuration files for supported chains and assets.
 - `docs`: Includes project documentation.
 - `src`: The source code for the Kalatori daemon.
@@ -35,28 +35,16 @@ The compiled binaries will be located in the `target/release` path.
 
 ### Configuration File Example
 
-For Polkadot and Asset Hub chains, the configuration file should look like this:
+For Asset Hub chain, the configuration file should look like this:
 
 ```toml
 account-lifetime = 604800000 # 1 week.
 debug = true
 depth = 86400000 # 1 day.
 
-[[chain]]
-name = "polkadot"
-native-token = "DOT"
-decimals = 10
-endpoints = [
-    "wss://rpc.polkadot.io",
-    "wss://1rpc.io/dot",
-]
-
-[[chain]]
+[chain]
 name = "statemint"
-endpoints = [
-    "wss://polkadot-asset-hub-rpc.polkadot.io",
-    "wss://statemint-rpc.dwellir.com",
-]
+endpoint = "wss://polkadot-asset-hub-rpc.polkadot.io"
 
 [[chain.asset]]
 name = "USDC"
@@ -78,11 +66,11 @@ Kalatori requires the following environment variables for configuration:
 
 ### Usage Example
 
-Run Kalatori for the Polkadot chain:
+Run Kalatori for the Asset Hub parachain:
 
 ```sh
 KALATORI_HOST="127.0.0.1:16726" \
-KALATORI_CONFIG="configs/polkadot.toml" \
+KALATORI_CONFIG="configs/asset-hub.toml" \
 KALATORI_SEED="bottom drive obey lake curtain smoke basket hold race lonely fit walk" \
 KALATORI_RECIPIENT="5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY" \
 KALATORI_REMARK="test" \

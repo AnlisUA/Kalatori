@@ -2,24 +2,14 @@ account-lifetime = 86400000 # 1 day.
 depth = 3600000 # 1 hour.
 debug = true
 
-[[chain]]
-name = "polkadot"
-native-token = "DOT"
-decimals = 10
-endpoints = [
-    "ws://chopsticks-polkadot:8000",
-]
-
-[[chain]]
+[chain]
 name = "statemint"
-endpoints = [
-    "ws://chopsticks-statemint:9000",
-]
+endpoint = "ws://chopsticks-asset-hub:9000"
 
-[[chain.asset]]
+[[chain.assets]]
 name = "USDC"
 id = 1337
 
-[[chain.asset]]
+[[chain.assets]]
 name = "USDt"
 id = 1984

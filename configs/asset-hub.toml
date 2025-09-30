@@ -1,10 +1,10 @@
-account-lifetime = 86400000 # 1 day.
-depth = 3600000 # 1 hour.
+account-lifetime = 604800000 # 1 week.
 debug = true
+depth = 86400000 # 1 day.
 
 [chain]
 name = "statemint"
-endpoint = "wss://chopsticks.ah.kampe.la"
+endpoint = "wss://polkadot-asset-hub-rpc.polkadot.io"
 
 [[chain.assets]]
 name = "USDC"

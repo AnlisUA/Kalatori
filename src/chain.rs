@@ -44,7 +44,7 @@ impl ChainManager {
     /// - all modules should be restarted, probably.
     #[expect(clippy::too_many_lines)]
     pub fn ignite(
-        chains: Vec<Chain>,
+        chain: Chain,
         state: &State,
         signer: &Signer,
         task_tracker: &TaskTracker,
@@ -60,42 +60,31 @@ impl ChainManager {
         let (rpc_update_tx, mut rpc_update_rx) = mpsc::channel(1024);
 
         // start network monitors
-        for c in chains {
-            if c.endpoints.is_empty() {
-                return Err(Error::EmptyEndpoints(c.name));
-            }
-            let (chain_tx, chain_rx) = mpsc::channel(1024);
-            watch_chain.insert(c.name.clone(), chain_tx.clone());
-
-            // this MUST assert that there are no duplicates in requested assets
-            if let Some(ref a) = c.native_token {
-                if currency_map
-                    .insert(a.name.clone(), c.name.clone())
-                    .is_some()
-                {
-                    return Err(Error::DuplicateCurrency(a.name.clone()));
-                }
-            }
-            for a in &c.asset {
-                if currency_map
-                    .insert(a.name.clone(), c.name.clone())
-                    .is_some()
-                {
-                    return Err(Error::DuplicateCurrency(a.name.clone()));
-                }
-            }
-
-            start_chain_watch(
-                c,
-                chain_tx.clone(),
-                chain_rx,
-                state.interface(),
-                signer.interface(),
-                task_tracker.clone(),
-                cancellation_token.clone(),
-                rpc_update_tx.clone(),
-            );
+        if chain.endpoint.is_empty() {
+            return Err(Error::EmptyEndpoints(chain.name));
         }
+        let (chain_tx, chain_rx) = mpsc::channel(1024);
+        watch_chain.insert(chain.name.clone(), chain_tx.clone());
+
+        for a in &chain.assets {
+            if currency_map
+                .insert(a.name.clone(), chain.name.clone())
+                .is_some()
+            {
+                return Err(Error::DuplicateCurrency(a.name.clone()));
+            }
+        }
+
+        start_chain_watch(
+            chain,
+            chain_tx.clone(),
+            chain_rx,
+            state.interface(),
+            signer.interface(),
+            task_tracker.clone(),
+            cancellation_token.clone(),
+            rpc_update_tx.clone(),
+        );
 
         task_tracker
             .clone()

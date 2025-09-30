@@ -23,19 +23,12 @@ describe('Blackbox API Tests', () => {
     expect(response.body).toHaveProperty('supported_currencies');
 
     const expectedCurrencies = {
-      DOT: {
-        chain_name: 'polkadot',
-        decimals: 10,
-        kind: 'native',
-        rpc_url: 'wss://1rpc.io/dot',
-        ss58: 0,
-      },
       USDC: {
         asset_id: 1337,
         chain_name: 'statemint',
         decimals: 6,
         kind: 'asset',
-        rpc_url: 'wss://statemint-rpc.dwellir.com',
+        rpc_url: 'wss://asset-hub-polkadot-rpc.dwellir.com',
         ss58: 0,
       },
       USDt: {
@@ -43,7 +36,7 @@ describe('Blackbox API Tests', () => {
         chain_name: 'statemint',
         decimals: 6,
         kind: 'asset',
-        rpc_url: 'wss://statemint-rpc.dwellir.com',
+        rpc_url: 'wss://asset-hub-polkadot-rpc.dwellir.com',
         ss58: 0,
       },
     };

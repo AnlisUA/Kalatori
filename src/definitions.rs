@@ -15,19 +15,9 @@ pub type Entropy = Vec<u8>; // TODO: maybe enforce something here
 #[serde(rename_all = "kebab-case")]
 pub struct Chain {
     pub name: String,
-    pub endpoints: Vec<String>,
-    #[serde(flatten)]
-    pub native_token: Option<NativeToken>,
+    pub endpoint: String,
     #[serde(default)]
-    pub asset: Vec<AssetInfo>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub struct NativeToken {
-    #[serde(rename = "native-token")]
-    pub name: String,
-    pub decimals: api_v2::Decimals,
+    pub assets: Vec<AssetInfo>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
