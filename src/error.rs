@@ -313,6 +313,9 @@ pub enum ChainError {
 
     #[error("transfer event has no matching extrinsic")]
     TransferEventNoExtrinsic,
+
+    #[error("subxt error")]
+    Subxt(#[from] subxt::Error)
 }
 
 #[derive(Debug, Error)]

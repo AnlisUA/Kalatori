@@ -2,17 +2,14 @@
 
 use crate::{
     chain::{
-        definitions::{BlockHash, ChainTrackerRequest, Invoice},
-        payout::payout,
-        rpc::{
+        definitions::{BlockHash, ChainTrackerRequest, Invoice}, payout::payout, rpc::{
             assets_set_at_block, block_hash, genesis_hash, metadata, next_block, next_block_number,
             runtime_version_identifier, specs, subscribe_blocks, transfer_events,
-        },
-        utils::parse_transfer_event,
+        }, utils::parse_transfer_event, AssetHubOnlineClient
     },
     database::{FinalizedTxDb, TransactionInfoDb, TransactionInfoDbInner, TxKind},
     definitions::{
-        api_v2::{Amount, CurrencyProperties, Health, RpcInfo, TxStatus},
+        api_v2::{Amount, CurrencyProperties, Health, RpcInfo, TokenKind, TxStatus},
         Chain,
     },
     error::{ChainError, Error},
@@ -71,6 +68,21 @@ pub fn start_chain_watch(
                 tracing::info!("Trying to establish connection to endpoint {:?}...", endpoint);
                 let client_result = WsClientBuilder::default().build(endpoint).await;
 
+                let subxt_client = match AssetHubOnlineClient::from_url(endpoint).await {
+                    Ok(client) => client,
+                    Err(error) => {
+                        tracing::error!("Error while initialize subxt WS client for endpoint {:?}: {:?}", endpoint, error);
+
+                        drop(rpc_update_tx.send(RpcInfo {
+                            chain_name: chain.name.clone(),
+                            rpc_url: endpoint.clone(),
+                            status: Health::Critical,
+                        }).await);
+
+                        continue
+                    }
+                };
+
                 // TODO: rewrite to match. SKip for now to avoid large diff in git because of spacing
                 if let Ok(client) = client_result {
                     tracing::info!("Connection to endpoint {:?} established, start watching", endpoint);
@@ -84,6 +96,7 @@ pub fn start_chain_watch(
                     // prepare chain
                     let watcher = match ChainWatcher::prepare_chain(
                         &client,
+                        &subxt_client,
                         chain.clone(),
                         &mut watched_accounts,
                         endpoint,
@@ -124,12 +137,6 @@ pub fn start_chain_watch(
                                 };
 
                                 tracing::debug!("Block hash {} from {}", block.to_string(), chain.name);
-
-                                if watcher.version != runtime_version_identifier(&client, &block).await? {
-                                    tracing::info!("Different runtime version reported! Restarting connection...");
-                                    break;
-                                }
-
                                 tracing::debug!("Watched accounts: {watched_accounts:?}");
 
                                 #[expect(clippy::cast_possible_truncation)]
@@ -317,13 +324,16 @@ pub struct ChainWatcher {
     #[expect(dead_code)]
     pub specs: ShortSpecs,
     pub assets: HashMap<String, CurrencyProperties>,
-    version: Value,
+    // TODO: version parameter removed. Earlier it was checked in each block.
+    // Subxt docs recommends use updater() for similiar purpose, need to implement
+    // https://docs.rs/subxt/latest/subxt/client/struct.OnlineClient.html#method.updater
 }
 
 impl ChainWatcher {
     #[expect(clippy::too_many_lines)]
     pub async fn prepare_chain(
-        client: &WsClient,
+        old_client: &WsClient,
+        client: &AssetHubOnlineClient,
         chain: Chain,
         watched_accounts: &mut HashMap<String, Invoice>,
         rpc_url: &str,
@@ -331,54 +341,61 @@ impl ChainWatcher {
         state: State,
         task_tracker: TaskTracker,
     ) -> Result<Self, ChainError> {
-        let genesis_hash = genesis_hash(client).await?;
-        let mut blocks = subscribe_blocks(client).await?;
-        let block = next_block(client, &mut blocks).await?;
-        let version = runtime_version_identifier(client, &block).await?;
-        let metadata = metadata(client, &block).await?;
-        let name = <RuntimeMetadataV15 as AsMetadata<()>>::spec_name_version(&metadata)?.spec_name;
-        if name != chain.name {
-            return Err(ChainError::WrongNetwork {
-                expected: chain.name,
-                actual: name,
-                rpc: rpc_url.to_string(),
-            });
-        }
-        let specs = specs(client, &metadata, &block).await?;
-        let mut assets =
-            assets_set_at_block(client, &block, &metadata, rpc_url, specs.clone()).await?;
+        // TODO: !!! THIS METHOD SHOULD BE REFACTORED ASAP !!!
+        // Currently it subscribes for full blocks but sends only block's hash to another task
+        // which fetch this block again. It's a legacy of previous implementation. Leave it as is
+        // for now to avoid too large code diffs in commits.
+        // Probably this method should only perform some checks but not subscribe on anything
+        let genesis_hash = BlockHash(client.genesis_hash());
+        let mut blocks = client.blocks().subscribe_finalized().await?;
+        let full_block = blocks.next().await.ok_or_else(|| ChainError::BlockSubscriptionTerminated)??;
+        let block = BlockHash(full_block.hash());
 
-        // Remove unwanted assets
-        assets = assets
-            .into_iter()
-            .filter_map(|(asset_name, properties)| {
-                tracing::info!(
-                    "chain {} has token {} with properties {:?}",
-                    &chain.name,
-                    &asset_name,
-                    &properties
-                );
+        // TODO: it doesn't seem necessery and probably will be removed or should be rewritten otherwise
+        // let name = <RuntimeMetadataV15 as AsMetadata<()>>::spec_name_version(&metadata)?.spec_name;
+        // if name != chain.name {
+        //     return Err(ChainError::WrongNetwork {
+        //         expected: chain.name,
+        //         actual: name,
+        //         rpc: rpc_url.to_string(),
+        //     });
+        // }
 
-                chain
-                    .assets
-                    .iter()
-                    .find(|a| Some(a.id) == properties.asset_id)
-                    .map(|a| (a.name.clone(), properties))
-            })
-            .collect();
+        // TODO: seems like we'll be able to get rid of this metadata and specs when we'll completely move to subxt.
+        // Leave as is for some time but later should be either removed or refactored
+        let metadata = metadata(&old_client, &block).await?;
+        let specs = specs(old_client, &metadata, &block).await?;
 
-        // Deduplication is done on chain manager level;
-        // Check that we have same number of assets as requested (we've checked that we have only
-        // wanted ones and performed deduplication before)
-        //
-        // This is probably an optimisation, but I don't have time to analyse perfirmance right
-        // now, it's just simpler to implement
-        //
-        // TODO: maybe check if at least one endpoint responds with proper assets and if not, shut
-        // down
-        #[expect(clippy::arithmetic_side_effects)]
-        if assets.len() != chain.assets.len() {
-            return Err(ChainError::AssetsInvalid(chain.name));
+        // TODO: in future we plan to use single asset, won't need to iterate over all of them.
+        // It can be optimized using futures::iter and request values concurrently though.
+        // Also if we'll need to fetch many assets (or even all available on chain)
+        // it's gonna be easier to use `metadata_iter` storage method
+        let mut assets = HashMap::new();
+
+        // TODO: add check that there is at least one asset? Seems to be better have that check on config validation
+        for asset in chain.assets {
+            let request_data = crate::chain::runtime::storage().assets().metadata(asset.id.into());
+
+            let Some(response) = client
+                .storage()
+                .at_latest()
+                .await?
+                .fetch(&request_data)
+                .await?
+                else {
+                    panic!("Asset {} with id {} not found on chain {}", asset.name, asset.id, chain.endpoint)
+                };
+
+            let properties = CurrencyProperties {
+                chain_name: "statemint".to_string(),  // TODO: this field can be removed in future as long as we support only Asset Hub chain
+                kind: TokenKind::Asset,               // TODO: this field can be removed in future as long as we work only with assets on Asset Hub
+                decimals: response.decimals,
+                rpc_url: chain.endpoint.clone(),      // TODO: this property seems to be unused
+                asset_id: Some(asset.id),
+                ss58: 0,                              // TODO: this property seems to be unused
+            };
+
+            assets.insert(asset.name, properties);
         }
         // this MUST assert that assets match exactly before reporting it
 
@@ -389,13 +406,12 @@ impl ChainWatcher {
             metadata,
             specs,
             assets,
-            version,
         };
 
         // check monitored accounts
         let mut id_remove_list = Vec::new();
         for (id, account) in watched_accounts.iter() {
-            let result = account.check(client, &chain_watcher, &block).await;
+            let result = account.check(old_client, &chain_watcher, &block).await;
 
             match result {
                 Ok(true) => {
@@ -415,7 +431,10 @@ impl ChainWatcher {
         let rpc = rpc_url.to_string();
         task_tracker.spawn(format!("watching blocks at {rpc}"), async move {
             loop {
-                let next_block_number = next_block_number(&mut blocks).await;
+                let next_block_number = {
+                    blocks.next().await.ok_or_else(|| ChainError::BlockSubscriptionTerminated)?.map(|block| block.number())
+                };
+
                 match next_block_number {
                     Ok(block_number) => {
                         tracing::debug!("received block {block_number} from {rpc}");
