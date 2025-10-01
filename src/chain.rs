@@ -60,7 +60,7 @@ impl ChainManager {
         let (rpc_update_tx, mut rpc_update_rx) = mpsc::channel(1024);
 
         // start network monitors
-        if chain.endpoint.is_empty() {
+        if chain.endpoints.is_empty() {
             return Err(Error::EmptyEndpoints(chain.name));
         }
         let (chain_tx, chain_rx) = mpsc::channel(1024);

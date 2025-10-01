@@ -15,7 +15,7 @@ pub type Entropy = Vec<u8>; // TODO: maybe enforce something here
 #[serde(rename_all = "kebab-case")]
 pub struct Chain {
     pub name: String,
-    pub endpoint: String,
+    pub endpoints: Vec<String>,
     #[serde(default)]
     pub assets: Vec<AssetInfo>,
 }

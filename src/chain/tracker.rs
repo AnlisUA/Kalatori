@@ -53,8 +53,7 @@ pub fn start_chain_watch(
             let mut watched_accounts = HashMap::new();
             let mut shutdown = false;
 
-            loop {
-                let endpoint = &chain.endpoint;
+            for endpoint in &chain.endpoints {
                 // not restarting chain if shutdown is in progress
                 if shutdown || cancellation_token.is_cancelled() {
                     tracing::info!("Received {} signal, shut down ChainWatch", if shutdown { "shutdown" } else { "task cancellation" });
