@@ -320,7 +320,6 @@ pub struct ChainWatcher {
 }
 
 impl ChainWatcher {
-    #[expect(clippy::too_many_lines)]
     pub async fn prepare_chain(
         client: &WsClient,
         chain: Chain,
@@ -375,7 +374,6 @@ impl ChainWatcher {
         //
         // TODO: maybe check if at least one endpoint responds with proper assets and if not, shut
         // down
-        #[expect(clippy::arithmetic_side_effects)]
         if assets.len() != chain.assets.len() {
             return Err(ChainError::AssetsInvalid(chain.name));
         }

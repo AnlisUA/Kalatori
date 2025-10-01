@@ -44,7 +44,7 @@ impl ChainManager {
     /// - all modules should be restarted, probably.
     #[expect(clippy::too_many_lines)]
     pub fn ignite(
-        chain: Chain,
+        chain_info: Chain,
         state: &State,
         signer: &Signer,
         task_tracker: &TaskTracker,
@@ -52,6 +52,7 @@ impl ChainManager {
     ) -> Result<Self, Error> {
         let (tx, mut rx) = mpsc::channel(1024);
 
+        // TODO: get rid of this, unnecessery if we use single chain
         let mut watch_chain = HashMap::new();
 
         let mut currency_map = HashMap::new();
@@ -60,15 +61,15 @@ impl ChainManager {
         let (rpc_update_tx, mut rpc_update_rx) = mpsc::channel(1024);
 
         // start network monitors
-        if chain.endpoints.is_empty() {
-            return Err(Error::EmptyEndpoints(chain.name));
+        if chain_info.endpoints.is_empty() {
+            return Err(Error::EmptyEndpoints(chain_info.name));
         }
         let (chain_tx, chain_rx) = mpsc::channel(1024);
-        watch_chain.insert(chain.name.clone(), chain_tx.clone());
+        watch_chain.insert(chain_info.name.clone(), chain_tx.clone());
 
-        for a in &chain.assets {
+        for a in &chain_info.assets {
             if currency_map
-                .insert(a.name.clone(), chain.name.clone())
+                .insert(a.name.clone(), chain_info.name.clone())
                 .is_some()
             {
                 return Err(Error::DuplicateCurrency(a.name.clone()));
@@ -76,7 +77,7 @@ impl ChainManager {
         }
 
         start_chain_watch(
-            chain,
+            chain_info,
             chain_tx.clone(),
             chain_rx,
             state.interface(),
