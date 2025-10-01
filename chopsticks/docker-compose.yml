@@ -14,6 +14,20 @@ services:
     networks:
       - kalatori-network
 
+  chopsticks-asset-hub-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: chopsticks-asset-hub-2
+    ports:
+      - "9500:9500"
+    volumes:
+      - ./pd-ah-2.yml:/app/config.yml
+    command: [ "chopsticks", "-c", "/app/config.yml", "-p", "9500", "--addr", "0.0.0.0" ]
+    networks:
+      - kalatori-network
+
+
 networks:
   kalatori-network:
     external: true

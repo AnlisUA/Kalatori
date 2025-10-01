@@ -24,7 +24,6 @@ services:
     volumes:
       - ../configs:/app/configs
     depends_on:
-      - chopsticks-polkadot
       - chopsticks-asset-hub
     environment:
       - KALATORI_HOST=0.0.0.0:16726

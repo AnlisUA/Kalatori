@@ -4,7 +4,10 @@ depth = 86400000 # 1 day.
 
 [chain]
 name = "statemint"
-endpoint = "wss://polkadot-asset-hub-rpc.polkadot.io"
+endpoints = [
+    "wss://polkadot-asset-hub-rpc.polkadot.io",
+    "wss://statemint-rpc.dwellir.com",
+]
 
 [[chain.assets]]
 name = "USDC"

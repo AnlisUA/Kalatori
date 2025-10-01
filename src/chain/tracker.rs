@@ -50,8 +50,7 @@ pub fn start_chain_watch(
             let mut watched_accounts = HashMap::new();
             let mut shutdown = false;
 
-            loop {
-                let endpoint = &chain.endpoint;
+            for endpoint in &chain.endpoints {
                 // not restarting chain if shutdown is in progress
                 if shutdown || cancellation_token.is_cancelled() {
                     tracing::info!("Received {} signal, shut down ChainWatch", if shutdown { "shutdown" } else { "task cancellation" });
@@ -330,7 +329,6 @@ pub struct ChainWatcher {
 }
 
 impl ChainWatcher {
-    #[expect(clippy::too_many_lines)]
     pub async fn prepare_chain(
         old_client: &WsClient,
         client: &AssetHubOnlineClient,
@@ -383,14 +381,14 @@ impl ChainWatcher {
                 .fetch(&request_data)
                 .await?
                 else {
-                    panic!("Asset {} with id {} not found on chain {}", asset.name, asset.id, chain.endpoint)
+                    panic!("Asset {} with id {} not found on chain {}", asset.name, asset.id, chain.name)
                 };
 
             let properties = CurrencyProperties {
                 chain_name: "statemint".to_string(),  // TODO: this field can be removed in future as long as we support only Asset Hub chain
                 kind: TokenKind::Asset,               // TODO: this field can be removed in future as long as we work only with assets on Asset Hub
                 decimals: response.decimals,
-                rpc_url: chain.endpoint.clone(),      // TODO: this property seems to be unused
+                rpc_url: rpc_url.to_string(),         // TODO: this property seems to be unused
                 asset_id: Some(asset.id),
                 ss58: 0,                              // TODO: this property seems to be unused
             };

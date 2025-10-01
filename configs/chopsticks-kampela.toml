@@ -4,7 +4,9 @@ debug = true
 
 [chain]
 name = "statemint"
-endpoint = "wss://chopsticks.ah.kampe.la"
+endpoints = [
+    "wss://chopsticks.ah.kampe.la",
+]
 
 [[chain.assets]]
 name = "USDC"

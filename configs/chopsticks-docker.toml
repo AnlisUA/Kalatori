@@ -4,7 +4,9 @@ debug = true
 
 [chain]
 name = "statemint"
-endpoint = "ws://chopsticks-asset-hub:9000"
+endpoints = [
+    "ws://chopsticks-statemint:9000",
+]
 
 [[chain.assets]]
 name = "USDC"
