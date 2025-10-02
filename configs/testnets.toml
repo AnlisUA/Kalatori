@@ -5,7 +5,10 @@ in-memory-db = true
 
 [chain]
 name = "westmint"
-endpoint = "wss://westend-asset-hub-rpc.polkadot.io"
+endpoints = [
+    "wss://westend-asset-hub-rpc.polkadot.io",
+    "wss://westmint-rpc.dwellir.com",
+]
 
 [[chain.assets]]
 name = "JOE"

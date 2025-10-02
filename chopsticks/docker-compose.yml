@@ -18,7 +18,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: chopsticks-asset-hub
+    container_name: chopsticks-asset-hub-2
     ports:
       - "9500:9500"
     volumes:
