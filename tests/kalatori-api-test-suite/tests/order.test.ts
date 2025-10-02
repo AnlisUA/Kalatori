@@ -1,15 +1,16 @@
 import request from 'supertest';
-import {getAssetBalance, getDotBalance, reverseDecimals, transferFunds} from '../src/polkadot';
+import {getAssetBalance, reverseDecimals, transferFunds} from '../src/polkadot';
 
 describe('Order Endpoint Blackbox Tests', () => {
   const baseUrl = process.env.DAEMON_HOST;
   if (!baseUrl ) {
     throw new Error('check all environment variables are defined');
   }
-  const dotOrderData = {
-    amount: 4, // Crucial to test with more than existential amount which is 1 DOT
-    currency: 'DOT',
-    callback: 'https://example.com/callback'
+
+  const usdtOrderData = {
+    amount: 4,
+    currency: 'USDt',
+    callback: 'https://example.com/callback',
   };
 
   const usdcOrderData = {
@@ -20,12 +21,12 @@ describe('Order Endpoint Blackbox Tests', () => {
 
   const invalidOrderAmount = {
     amount: -1,
-    currency: 'DOT',
+    currency: 'USDt',
     callback: 'https://example.com/callback'
   };
 
   const missingOrderAmount = {
-    currency: 'DOT',
+    currency: 'USDt',
     callback: 'https://example.com/callback'
   };
 
@@ -99,16 +100,16 @@ describe('Order Endpoint Blackbox Tests', () => {
     expect(transaction.currency).toHaveProperty('rpc_url', expectedCurrency.rpc_url);
   }
 
-  it('should create a new DOT order', async () => {
+  it('should create a new USDT order', async () => {
     const orderId = generateRandomOrderId();
-    const createdOrder = await createOrder(orderId, dotOrderData);
-    checkOrder(orderId, createdOrder, dotOrderData);
+    const createdOrder = await createOrder(orderId, usdtOrderData);
+    checkOrder(orderId, createdOrder, usdtOrderData);
 
     expect(createdOrder).toHaveProperty('currency');
-    expect(createdOrder.currency).toHaveProperty('currency', dotOrderData.currency);
-    expect(createdOrder.currency).toHaveProperty('chain_name', 'polkadot');
-    expect(createdOrder.currency).toHaveProperty('kind', 'native');
-    expect(createdOrder.currency).toHaveProperty('decimals', 10);
+    expect(createdOrder.currency).toHaveProperty('currency', usdtOrderData.currency);
+    expect(createdOrder.currency).toHaveProperty('chain_name', 'statemint');
+    expect(createdOrder.currency).toHaveProperty('kind', 'asset');
+    expect(createdOrder.currency).toHaveProperty('decimals', 6);
     expect(createdOrder.currency).toHaveProperty('rpc_url');
   });
 
@@ -170,16 +171,16 @@ describe('Order Endpoint Blackbox Tests', () => {
     expect(response.body[0]).toHaveProperty('message', 'provided currency isn\'t supported');
   });
 
-  it('should update existing DOT order to be USDC', async () => {
+  it('should update existing USDT order to be USDC', async () => {
     const orderId = generateRandomOrderId();
-    const createdOrder = await createOrder(orderId, dotOrderData);
-    checkOrder(orderId, createdOrder, dotOrderData);
+    const createdOrder = await createOrder(orderId, usdtOrderData);
+    checkOrder(orderId, createdOrder, usdtOrderData);
 
     expect(createdOrder).toHaveProperty('currency');
-    expect(createdOrder.currency).toHaveProperty('currency', dotOrderData.currency);
-    expect(createdOrder.currency).toHaveProperty('chain_name', 'polkadot');
-    expect(createdOrder.currency).toHaveProperty('kind', 'native');
-    expect(createdOrder.currency).toHaveProperty('decimals', 10);
+    expect(createdOrder.currency).toHaveProperty('currency', usdtOrderData.currency);
+    expect(createdOrder.currency).toHaveProperty('chain_name', 'statemint');
+    expect(createdOrder.currency).toHaveProperty('kind', 'asset');
+    expect(createdOrder.currency).toHaveProperty('decimals', 6);
     expect(createdOrder.currency).toHaveProperty('rpc_url');
 
     await new Promise(resolve => setTimeout(resolve, 1000));
@@ -194,18 +195,18 @@ describe('Order Endpoint Blackbox Tests', () => {
     expect(updatedOrder.currency).toHaveProperty('rpc_url');
   });
 
-  it('should get DOT order details', async () => {
+  it('should get USDT order details', async () => {
     const orderId = generateRandomOrderId();
-    await createOrder(orderId, dotOrderData);
+    await createOrder(orderId, usdtOrderData);
     const orderDetails = await getOrderDetails(orderId);
 
-    checkOrder(orderId, orderDetails, dotOrderData);
+    checkOrder(orderId, orderDetails, usdtOrderData);
 
     expect(orderDetails).toHaveProperty('currency');
-    expect(orderDetails.currency).toHaveProperty('currency', dotOrderData.currency);
-    expect(orderDetails.currency).toHaveProperty('chain_name', 'polkadot');
-    expect(orderDetails.currency).toHaveProperty('kind', 'native');
-    expect(orderDetails.currency).toHaveProperty('decimals', 10);
+    expect(orderDetails.currency).toHaveProperty('currency', usdtOrderData.currency);
+    expect(orderDetails.currency).toHaveProperty('chain_name', 'statemint');
+    expect(orderDetails.currency).toHaveProperty('kind', 'asset');
+    expect(orderDetails.currency).toHaveProperty('decimals', 6);
     expect(orderDetails.currency).toHaveProperty('rpc_url');
   });
 
@@ -231,14 +232,14 @@ describe('Order Endpoint Blackbox Tests', () => {
     expect(response.status).toBe(404);
   });
 
-  it('should create, repay, and automatically withdraw an order in DOT', async () => {
+  it('should create, repay, and automatically withdraw an order in USDT', async () => {
     const orderId = generateRandomOrderId();
-    await createOrder(orderId, dotOrderData);
+    await createOrder(orderId, usdtOrderData);
     const orderDetails = await getOrderDetails(orderId);
     const paymentAccount = orderDetails.payment_account;
     expect(paymentAccount).toBeDefined();
 
-    await transferFunds(orderDetails.currency.rpc_url, paymentAccount, dotOrderData.amount);
+    await transferFunds(orderDetails.currency.rpc_url, paymentAccount, usdtOrderData.amount, orderDetails.currency.asset_id);
 
     // TODO: test fails in CI sometimes. Perhaps add some retries with delay?
     // lets wait for the changes to get propagated on chain and app to catch them
@@ -255,8 +256,8 @@ describe('Order Endpoint Blackbox Tests', () => {
     expect(repaidOrderDetails.payment_status).toBe('paid');
     expect(repaidOrderDetails.withdrawal_status).toBe('completed');
 
-    const paymentAccountDotBalance = await getDotBalance(orderDetails.currency.rpc_url, paymentAccount);
-    expect(reverseDecimals(paymentAccountDotBalance,10)).toBe(0);
+    const paymentAccountUsdtBalance = await getAssetBalance(orderDetails.currency.rpc_url, paymentAccount, orderDetails.currency.asset_id);
+    expect(reverseDecimals(paymentAccountUsdtBalance,6)).toBeLessThan(0.1);
   }, 100000);
 
   it('should create, repay, and automatically withdraw an order in USDC', async () => {
@@ -291,9 +292,9 @@ describe('Order Endpoint Blackbox Tests', () => {
     expect(reverseDecimals(paymentAccountUsdcBalance, 6)).toBeLessThan(0.1);
   }, 50000);
 
-  it('should not automatically withdraw DOT order until fully repaid', async () => {
+  it('should not automatically withdraw USDT order until fully repaid', async () => {
     const orderId = generateRandomOrderId();
-    await createOrder(orderId, dotOrderData);
+    await createOrder(orderId, usdtOrderData);
     const orderDetails = await getOrderDetails(orderId);
     const paymentAccount = orderDetails.payment_account;
     expect(paymentAccount).toBeDefined();
@@ -311,8 +312,8 @@ describe('Order Endpoint Blackbox Tests', () => {
     // lets wait for the changes to get propagated on chain and app to catch them
     await new Promise(resolve => setTimeout(resolve, 15000));
 
-    const halfAmountBalance = await getDotBalance(orderDetails.currency.rpc_url, paymentAccount);
-    expect(reverseDecimals(halfAmountBalance, 10)).toBe(orderDetails.amount/2);
+    const halfAmountBalance = await getAssetBalance(orderDetails.currency.rpc_url, paymentAccount, orderDetails.currency.asset_id);
+    expect(reverseDecimals(halfAmountBalance, 6)).toBe(orderDetails.amount/2);
 
     let repaidOrderDetails = await getOrderDetails(orderId);
     expect(repaidOrderDetails.payment_status).toBe('pending');
@@ -333,8 +334,8 @@ describe('Order Endpoint Blackbox Tests', () => {
     expect(repaidOrderDetails.payment_status).toBe('paid');
     expect(repaidOrderDetails.withdrawal_status).toBe('completed');
 
-    const paymentAccountDotBalance = await getDotBalance(orderDetails.currency.rpc_url, paymentAccount);
-    expect(reverseDecimals(paymentAccountDotBalance, 10)).toBe(0);
+    const paymentAccountUsdtBalance = await getAssetBalance(orderDetails.currency.rpc_url, paymentAccount, orderDetails.currency.asset_id);
+    expect(reverseDecimals(paymentAccountUsdtBalance, 6)).toBeLessThan(0.1);
   }, 100000);
 
   it('should not automatically withdraw USDC order until fully repaid', async () => {
@@ -380,7 +381,7 @@ describe('Order Endpoint Blackbox Tests', () => {
     expect(repaidOrderDetails.withdrawal_status).toBe('completed');
 
     const paymentAccountUsdcBalance = await getAssetBalance(orderDetails.currency.rpc_url, paymentAccount, orderDetails.currency.asset_id);
-    expect(reverseDecimals(paymentAccountUsdcBalance, 6)).toBeLessThan(0.1);;
+    expect(reverseDecimals(paymentAccountUsdcBalance, 6)).toBeLessThan(0.1);
   }, 100000);
 
   it('should not update order if received payment in wrong currency', async () => {
@@ -406,20 +407,20 @@ describe('Order Endpoint Blackbox Tests', () => {
     expect(repaidOrderDetails.withdrawal_status).toBe('waiting');
   }, 50000);
 
-  it('should be able to force withdraw partially repayed DOT order', async () => {
+  it('should be able to force withdraw partially repayed USDT order', async () => {
     const orderId = generateRandomOrderId();
-    await createOrder(orderId, dotOrderData);
+    await createOrder(orderId, usdtOrderData);
     const orderDetails = await getOrderDetails(orderId);
     const paymentAccount = orderDetails.payment_account;
     expect(paymentAccount).toBeDefined();
 
-    await transferFunds(orderDetails.currency.rpc_url, paymentAccount, dotOrderData.amount/2);
+    await transferFunds(orderDetails.currency.rpc_url, paymentAccount, usdtOrderData.amount/2, orderDetails.currency.asset_id);
 
     // lets wait for the changes to get propagated on chain and app to catch them
     await new Promise(resolve => setTimeout(resolve, 15000));
 
-    const halfAmountBalance = await getDotBalance(orderDetails.currency.rpc_url, paymentAccount);
-    expect(reverseDecimals(halfAmountBalance, 10)).toBe(orderDetails.amount/2);
+    const halfAmountBalance = await getAssetBalance(orderDetails.currency.rpc_url, paymentAccount, orderDetails.currency.asset_id);
+    expect(reverseDecimals(halfAmountBalance, 6)).toBe(orderDetails.amount/2);
 
     const partiallyRepaidOrderDetails = await getOrderDetails(orderId);
     expect(partiallyRepaidOrderDetails.payment_status).toBe('pending');
@@ -435,8 +436,8 @@ describe('Order Endpoint Blackbox Tests', () => {
 
     await new Promise(resolve => setTimeout(resolve, 5000));
 
-    const paymentAccountDotBalance = await getDotBalance(orderDetails.currency.rpc_url, paymentAccount);
-    expect(reverseDecimals(paymentAccountDotBalance, 10)).toBe(0);
+    const paymentAccountUsdtBalance = await getAssetBalance(orderDetails.currency.rpc_url, paymentAccount, orderDetails.currency.asset_id);
+    expect(reverseDecimals(paymentAccountUsdtBalance, 6)).toBeLessThan(0.1);
   }, 100000);
 
   it('should be able to force withdraw partially repayed USDC order', async () => {

@@ -12,7 +12,7 @@ use crate::{
     },
     database::{FinalizedTxDb, TransactionInfoDb, TransactionInfoDbInner, TxKind},
     definitions::{
-        api_v2::{Amount, CurrencyProperties, Health, RpcInfo, TokenKind, TxStatus},
+        api_v2::{Amount, CurrencyProperties, Health, RpcInfo, TxStatus},
         Chain,
     },
     error::{ChainError, Error},
@@ -52,8 +52,8 @@ pub fn start_chain_watch(
             let watchdog = 120_000;
             let mut watched_accounts = HashMap::new();
             let mut shutdown = false;
-            // TODO: random pick instead
-            for endpoint in chain.endpoints.clone().iter().cycle() {
+
+            for endpoint in chain.endpoints.iter().cycle() {
                 // not restarting chain if shutdown is in progress
                 if shutdown || cancellation_token.is_cancelled() {
                     tracing::info!("Received {} signal, shut down ChainWatch", if shutdown { "shutdown" } else { "task cancellation" });
@@ -320,7 +320,6 @@ pub struct ChainWatcher {
 }
 
 impl ChainWatcher {
-    #[expect(clippy::too_many_lines)]
     pub async fn prepare_chain(
         client: &WsClient,
         chain: Chain,
@@ -347,13 +346,6 @@ impl ChainWatcher {
         let mut assets =
             assets_set_at_block(client, &block, &metadata, rpc_url, specs.clone()).await?;
 
-        // TODO: make this verbosity less annoying
-        tracing::info!(
-            "chain {} requires native token {:?} and {:?}",
-            &chain.name,
-            &chain.native_token,
-            &chain.asset
-        );
         // Remove unwanted assets
         assets = assets
             .into_iter()
@@ -366,28 +358,12 @@ impl ChainWatcher {
                 );
 
                 chain
-                    .asset
+                    .assets
                     .iter()
                     .find(|a| Some(a.id) == properties.asset_id)
                     .map(|a| (a.name.clone(), properties))
             })
             .collect();
-
-        if let Some(ref native_token) = chain.native_token {
-            if native_token.decimals == specs.decimals {
-                assets.insert(
-                    native_token.name.clone(),
-                    CurrencyProperties {
-                        chain_name: name.clone(),
-                        kind: TokenKind::Native,
-                        decimals: specs.decimals,
-                        rpc_url: rpc_url.to_owned(),
-                        asset_id: None,
-                        ss58: 0,
-                    },
-                );
-            }
-        }
 
         // Deduplication is done on chain manager level;
         // Check that we have same number of assets as requested (we've checked that we have only
@@ -398,8 +374,7 @@ impl ChainWatcher {
         //
         // TODO: maybe check if at least one endpoint responds with proper assets and if not, shut
         // down
-        #[expect(clippy::arithmetic_side_effects)]
-        if assets.len() != chain.asset.len() + usize::from(chain.native_token.is_some()) {
+        if assets.len() != chain.assets.len() {
             return Err(ChainError::AssetsInvalid(chain.name));
         }
         // this MUST assert that assets match exactly before reporting it

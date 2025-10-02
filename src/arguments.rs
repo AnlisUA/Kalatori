@@ -153,7 +153,7 @@ pub struct Config {
     pub debug: Option<bool>,
     #[serde(default)]
     pub in_memory_db: bool,
-    pub chain: Vec<Chain>,
+    pub chain: Chain,
 }
 
 impl Config {
