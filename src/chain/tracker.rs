@@ -4,17 +4,17 @@ use crate::{
     chain::{
         definitions::{BlockHash, ChainTrackerRequest, Invoice}, payout::payout, rpc::{
             block_hash, metadata,
-            specs, transfer_events,
-        }, utils::parse_transfer_event, AssetHubOnlineClient
+            specs,
+        }, AssetHubConfig, AssetHubOnlineClient
     }, database::{FinalizedTxDb, TransactionInfoDb, TransactionInfoDbInner, TxKind}, definitions::{
-        api_v2::{Amount, CurrencyProperties, Health, RpcInfo, TokenKind, TxStatus},
-        Chain,
+        api_v2::{Amount, CurrencyProperties, Health, RpcInfo, TokenKind, TxStatus}, Balance, Chain
     }, error::{ChainError, Error}, signer::Signer, state::State, utils::task_tracker::TaskTracker
 };
 use frame_metadata::v15::RuntimeMetadataV15;
 use jsonrpsee::ws_client::{WsClient, WsClientBuilder};
+use subxt::blocks::FoundExtrinsic;
 use std::{collections::HashMap, time::SystemTime};
-use substrate_crypto_light::common::AsBase58;
+use substrate_crypto_light::common::{AccountId32, AsBase58};
 use substrate_parser::ShortSpecs;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 use tokio::{
@@ -23,6 +23,60 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 use subxt_signer::SecretString;
+
+type Extrinsics = subxt::blocks::Extrinsics<AssetHubConfig, AssetHubOnlineClient>;
+type TransferExtrinsic = crate::chain::runtime::assets::calls::types::Transfer;
+type TransferredEvent = crate::chain::runtime::assets::events::Transferred;
+
+async fn transfer_events(
+    client: &AssetHubOnlineClient,
+    block: &BlockHash,
+) -> Result<(u64, Extrinsics), subxt::Error> {
+    let chain_block = client
+        .blocks()
+        .at(block.0)
+        .await?;
+
+    let timestamp_address= crate::chain::runtime::storage().timestamp().now();
+
+    let timestamp = chain_block
+        .storage()
+        .fetch(&timestamp_address)
+        .await?
+        .ok_or_else(|| subxt::Error::Other("Timestamp is empty".into()))?;
+
+    let extrinsics = chain_block
+        .extrinsics()
+        .await?;
+
+    // TODO: handle extrinsics with failures?
+
+
+    Ok((timestamp, extrinsics))
+}
+
+async fn parse_transfer_event(
+    account_id: &AccountId32,
+    extrinsic: &FoundExtrinsic<AssetHubConfig, AssetHubOnlineClient, TransferExtrinsic>,
+) -> Option<(TxKind, AccountId32, Balance)> {
+    let acc_id = subxt::utils::AccountId32::from(account_id.0);
+    let events = extrinsic.details.events().await.ok()?;
+
+    let mut found_events = events
+        .find::<TransferredEvent>()
+        .filter_map(Result::ok);
+
+    found_events
+        .find_map(|event| {
+            if event.from == acc_id {
+                Some((TxKind::Withdrawal, AccountId32(event.to.0), Balance(event.amount)))
+            } else if event.to == acc_id {
+                Some((TxKind::Payment, AccountId32(event.from.0), Balance(event.amount)))
+            } else {
+                None
+            }
+        })
+}
 
 // TODO: check if it's DEFINITELY won't break something
 #[expect(tail_expr_drop_order)]
@@ -139,34 +193,36 @@ pub fn start_chain_watch(
                                 let mut id_remove_list = Vec::new();
 
                                 match transfer_events(
-                                    &client,
+                                    &subxt_client,
                                     &block,
-                                    &watcher.metadata,
-                                )
-                                    .await {
-                                        Ok((timestamp, events)) => {
-                                        tracing::debug!("Got a block with timestamp {timestamp:?} & events: {events:?}");
+                                ).await {
+                                    Ok((timestamp, extrinsics)) => {
+                                        tracing::debug!("Got a block with timestamp {timestamp:?} & {} extrinsics", extrinsics.len());
 
+                                        // TODO: handle Err results? Log them at least?
+                                        let transfer_extrinsics: Vec<_> = extrinsics.find::<TransferExtrinsic>().filter_map(Result::ok).collect();
+
+                                        // TODO: Current implementation is quite unoptimized for work with subxt, need to be refactored
                                         for (id, invoice) in &watched_accounts {
-                                            for (extrinsic_option, event) in &events {
-                                                if let Some((tx_kind, another_account, transfer_amount)) = parse_transfer_event(&invoice.address, &event.0.fields) {
+                                            for extrinsic in &transfer_extrinsics {
+                                                if let Some((tx_kind, another_account, transfer_amount)) = parse_transfer_event(&invoice.address, extrinsic).await {
                                                     tracing::debug!("Found {tx_kind:?} from/to {another_account:?} with {transfer_amount:?} token(s).");
-
-                                                    let Some((position_in_block, extrinsic)) = extrinsic_option else {
-                                                        return Err(Error::from(ChainError::TransferEventNoExtrinsic));
-                                                    };
+                                                    let position_in_block = extrinsic.details.index();
+                                                    let raw_extrinsic = extrinsic.details.bytes();
 
                                                     #[expect(clippy::arithmetic_side_effects)]
-                                                    let finalized_tx_timestamp = (OffsetDateTime::UNIX_EPOCH + Duration::from_millis(timestamp.0))
+                                                    let finalized_tx_timestamp = (OffsetDateTime::UNIX_EPOCH + Duration::from_millis(timestamp))
                                                         .format(&Rfc3339).unwrap().into();
+
                                                     let finalized_tx = FinalizedTxDb {
-                                                            block_number,
-                                                            position_in_block: *position_in_block
-                                                        }.into();
+                                                        block_number,
+                                                        position_in_block,
+                                                    }.into();
+
                                                     let amount = Amount::Exact(transfer_amount.format(invoice.currency.decimals));
                                                     let status = TxStatus::Finalized;
                                                     let currency = invoice.currency.clone();
-                                                    let transaction_bytes = const_hex::encode_prefixed(extrinsic);
+                                                    let transaction_bytes = const_hex::encode_prefixed(raw_extrinsic);
 
                                                     match tx_kind {
                                                         kind @ TxKind::Payment => {
