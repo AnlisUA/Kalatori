@@ -2,20 +2,15 @@
 
 use crate::{
     chain::{
-        definitions::{BlockHash, ChainTrackerRequest, Invoice}, payout::payout, rpc::{
-            block_hash, metadata,
-            specs,
-        }, AssetHubConfig, AssetHubOnlineClient
+        definitions::{BlockHash, ChainTrackerRequest, Invoice}, payout::payout, rpc::block_hash, AssetHubConfig, AssetHubOnlineClient
     }, database::{FinalizedTxDb, TransactionInfoDb, TransactionInfoDbInner, TxKind}, definitions::{
         api_v2::{Amount, CurrencyProperties, Health, RpcInfo, TokenKind, TxStatus}, Balance, Chain
-    }, error::{ChainError, Error}, signer::Signer, state::State, utils::task_tracker::TaskTracker
+    }, error::ChainError, signer::Signer, state::State, utils::task_tracker::TaskTracker
 };
-use frame_metadata::v15::RuntimeMetadataV15;
 use jsonrpsee::ws_client::{WsClient, WsClientBuilder};
-use subxt::blocks::FoundExtrinsic;
+use subxt::blocks::{ExtrinsicDetails, FoundExtrinsic};
 use std::{collections::HashMap, time::SystemTime};
 use substrate_crypto_light::common::{AccountId32, AsBase58};
-use substrate_parser::ShortSpecs;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 use tokio::{
     sync::mpsc,
@@ -26,7 +21,22 @@ use subxt_signer::SecretString;
 
 type Extrinsics = subxt::blocks::Extrinsics<AssetHubConfig, AssetHubOnlineClient>;
 type TransferExtrinsic = crate::chain::runtime::assets::calls::types::Transfer;
+type TransferAllExtrinsic = crate::chain::runtime::assets::calls::types::TransferAll;
 type TransferredEvent = crate::chain::runtime::assets::events::Transferred;
+
+enum AnyTransferExtrinsic {
+    Transfer(FoundExtrinsic<AssetHubConfig, AssetHubOnlineClient, TransferExtrinsic>),
+    TransferAll(FoundExtrinsic<AssetHubConfig, AssetHubOnlineClient, TransferAllExtrinsic>),
+}
+
+impl AnyTransferExtrinsic {
+    pub fn details(&self) -> &ExtrinsicDetails<AssetHubConfig, AssetHubOnlineClient> {
+        match self {
+            AnyTransferExtrinsic::Transfer(e) => &e.details,
+            AnyTransferExtrinsic::TransferAll(e) => &e.details,
+        }
+    }
+}
 
 async fn transfer_events(
     client: &AssetHubOnlineClient,
@@ -49,18 +59,15 @@ async fn transfer_events(
         .extrinsics()
         .await?;
 
-    // TODO: handle extrinsics with failures?
-
-
     Ok((timestamp, extrinsics))
 }
 
-async fn parse_transfer_event(
+async fn parse_transfer_event (
     account_id: &AccountId32,
-    extrinsic: &FoundExtrinsic<AssetHubConfig, AssetHubOnlineClient, TransferExtrinsic>,
+    extrinsic: &AnyTransferExtrinsic,
 ) -> Option<(TxKind, AccountId32, Balance)> {
     let acc_id = subxt::utils::AccountId32::from(account_id.0);
-    let events = extrinsic.details.events().await.ok()?;
+    let events = extrinsic.details().events().await.ok()?;
 
     let mut found_events = events
         .find::<TransferredEvent>()
@@ -99,7 +106,7 @@ pub fn start_chain_watch(
             let mut watched_accounts = HashMap::new();
             let mut shutdown = false;
 
-            for endpoint in &chain.endpoints {
+            for endpoint in chain.endpoints.iter().cycle() {
                 // not restarting chain if shutdown is in progress
                 if shutdown || cancellation_token.is_cancelled() {
                     tracing::info!("Received {} signal, shut down ChainWatch", if shutdown { "shutdown" } else { "task cancellation" });
@@ -143,7 +150,6 @@ pub fn start_chain_watch(
 
                     // prepare chain
                     let watcher = match ChainWatcher::prepare_chain(
-                        &client,
                         &subxt_client,
                         chain.clone(),
                         &mut watched_accounts,
@@ -151,6 +157,7 @@ pub fn start_chain_watch(
                         chain_tx.clone(),
                         state.interface(),
                         task_tracker.clone(),
+                        cancellation_token.clone(),
                     )
                         .await
                     {
@@ -164,6 +171,8 @@ pub fn start_chain_watch(
                             continue;
                         }
                     };
+
+                    tracing::info!("Start monitoring on {} rpc", endpoint);
 
                     // fulfill requests
                     while let Ok(Some(req)) =
@@ -200,15 +209,23 @@ pub fn start_chain_watch(
                                         tracing::debug!("Got a block with timestamp {timestamp:?} & {} extrinsics", extrinsics.len());
 
                                         // TODO: handle Err results? Log them at least?
-                                        let transfer_extrinsics: Vec<_> = extrinsics.find::<TransferExtrinsic>().filter_map(Result::ok).collect();
+                                        let transfer_extrinsics = extrinsics.find::<TransferExtrinsic>()
+                                            .filter_map(Result::ok)
+                                            .map(|e| AnyTransferExtrinsic::Transfer(e));
+
+                                        let transfer_all_extrinsics = extrinsics.find::<TransferAllExtrinsic>()
+                                            .filter_map(Result::ok)
+                                            .map(|e| AnyTransferExtrinsic::TransferAll(e));
+
+                                        let all_transfer_extrinsics: Vec<_> = transfer_extrinsics.chain(transfer_all_extrinsics).collect();
 
                                         // TODO: Current implementation is quite unoptimized for work with subxt, need to be refactored
                                         for (id, invoice) in &watched_accounts {
-                                            for extrinsic in &transfer_extrinsics {
+                                            for extrinsic in &all_transfer_extrinsics {
                                                 if let Some((tx_kind, another_account, transfer_amount)) = parse_transfer_event(&invoice.address, extrinsic).await {
                                                     tracing::debug!("Found {tx_kind:?} from/to {another_account:?} with {transfer_amount:?} token(s).");
-                                                    let position_in_block = extrinsic.details.index();
-                                                    let raw_extrinsic = extrinsic.details.bytes();
+                                                    let position_in_block = extrinsic.details().index();
+                                                    let raw_extrinsic = extrinsic.details().bytes();
 
                                                     #[expect(clippy::arithmetic_side_effects)]
                                                     let finalized_tx_timestamp = (OffsetDateTime::UNIX_EPOCH + Duration::from_millis(timestamp))
@@ -385,9 +402,6 @@ pub fn start_chain_watch(
 #[derive(Debug, Clone)]
 pub struct ChainWatcher {
     pub genesis_hash: BlockHash,
-    pub metadata: RuntimeMetadataV15,
-    #[expect(dead_code)]
-    pub specs: ShortSpecs,
     pub assets: HashMap<String, CurrencyProperties>,
     // TODO: version parameter removed. Earlier it was checked in each block.
     // Subxt docs recommends use updater() for similiar purpose, need to implement
@@ -396,7 +410,6 @@ pub struct ChainWatcher {
 
 impl ChainWatcher {
     pub async fn prepare_chain(
-        old_client: &WsClient,
         client: &AssetHubOnlineClient,
         chain: Chain,
         watched_accounts: &mut HashMap<String, Invoice>,
@@ -404,6 +417,7 @@ impl ChainWatcher {
         chain_tx: mpsc::Sender<ChainTrackerRequest>,
         state: State,
         task_tracker: TaskTracker,
+        cancellation_token: CancellationToken,
     ) -> Result<Self, ChainError> {
         // TODO: !!! THIS METHOD SHOULD BE REFACTORED ASAP !!!
         // Currently it subscribes for full blocks but sends only block's hash to another task
@@ -415,7 +429,6 @@ impl ChainWatcher {
         let full_block = blocks.next().await.ok_or_else(|| ChainError::BlockSubscriptionTerminated)??;
         let block = BlockHash(full_block.hash());
 
-        tracing::info!("Susbcribed, fetch data using old client...");
         // TODO: it doesn't seem necessery and probably will be removed or should be rewritten otherwise
         // let name = <RuntimeMetadataV15 as AsMetadata<()>>::spec_name_version(&metadata)?.spec_name;
         // if name != chain.name {
@@ -425,11 +438,6 @@ impl ChainWatcher {
         //         rpc: rpc_url.to_string(),
         //     });
         // }
-
-        // TODO: seems like we'll be able to get rid of this metadata and specs when we'll completely move to subxt.
-        // Leave as is for some time but later should be either removed or refactored
-        let metadata = metadata(&old_client, &block).await?;
-        let specs = specs(old_client, &metadata, &block).await?;
 
         // TODO: in future we plan to use single asset, won't need to iterate over all of them.
         // It can be optimized using futures::iter and request values concurrently.
@@ -469,8 +477,6 @@ impl ChainWatcher {
 
         let chain_watcher = ChainWatcher {
             genesis_hash,
-            metadata,
-            specs,
             assets,
         };
 
@@ -496,28 +502,39 @@ impl ChainWatcher {
 
         let rpc = rpc_url.to_string();
         task_tracker.spawn(format!("watching blocks at {rpc}"), async move {
+            tracing::info!("Start watching blocks task for {:?}", rpc);
+
+            // TODO: task doesn't terminate cause not listen for the termination signal
             loop {
-                let next_block_number = {
-                    blocks.next().await.ok_or_else(|| ChainError::BlockSubscriptionTerminated)?.map(|block| block.number())
-                };
+                tokio::select! {
+                    _ = cancellation_token.cancelled() => {
+                        tracing::info!("Received task cancellation signal, shut down ChainWatch");
+                        break
+                    },
+                    block = blocks.next() => {
+                        let next_block_number = {
+                            block.ok_or_else(|| ChainError::BlockSubscriptionTerminated)?.map(|block| block.number())
+                        };
 
-                match next_block_number {
-                    Ok(block_number) => {
-                        tracing::debug!("received block {block_number} from {rpc}");
-                        let result = chain_tx
-                            .send(ChainTrackerRequest::NewBlock(block_number))
-                            .await;
+                        match next_block_number {
+                            Ok(block_number) => {
+                                tracing::debug!("received block {block_number} from {rpc}");
+                                let result = chain_tx
+                                    .send(ChainTrackerRequest::NewBlock(block_number))
+                                    .await;
 
-                        if let Err(e) = result {
-                            tracing::warn!(
-                                "Block watch internal communication error: {e} at {rpc}"
-                            );
-                            break;
+                                if let Err(e) = result {
+                                    tracing::warn!(
+                                        "Block watch internal communication error: {e} at {rpc}"
+                                    );
+                                    break;
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn! {"Block watch error: {e} at {rpc}"};
+                                break;
+                            }
                         }
-                    }
-                    Err(e) => {
-                        tracing::warn! {"Block watch error: {e} at {rpc}"};
-                        break;
                     }
                 }
             }
