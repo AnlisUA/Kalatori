@@ -6,180 +6,135 @@
 
 use crate::{
     chain::{
-        definitions::Invoice,
-        rpc::{block_hash, current_block_number, send_stuff},
-        tracker::ChainWatcher,
-        utils::{
-            construct_batch_transaction, construct_single_asset_transfer_call,
-            construct_single_balance_transfer_call, AssetTransferConstructor,
-            BalanceTransferConstructor,
-        },
+        definitions::Invoice, runtime::runtime_types::{staging_xcm::v3::multilocation::MultiLocation, xcm::v3::{junction::Junction, junctions::Junctions}}, tracker::ChainWatcher, AssetHubConfig, AssetHubOnlineClient
     },
     database::{TransactionInfoDb, TransactionInfoDbInner, TxKind},
     definitions::{
-        api_v2::{Amount, TokenKind, TxStatus},
-        Balance,
+        api_v2::{Amount, TxStatus},
     },
     error::ChainError,
-    signer::Signer,
     state::State,
 };
-use frame_metadata::v15::RuntimeMetadataV15;
-use jsonrpsee::ws_client::WsClientBuilder;
-use substrate_constructor::fill_prepare::TypeContentToFill;
+use base58::ToBase58;
 use substrate_crypto_light::common::AsBase58;
+use subxt::config::DefaultExtrinsicParamsBuilder;
+use subxt_signer::{bip39::Mnemonic, sr25519::Keypair, DeriveJunction, ExposeSecret, SecretString};
+
+// TODO: move it out to utils or use something similar from separate crate?
+pub const HASH_512_LEN: usize = 64;
+pub const BASE58_ID: &[u8] = b"SS58PRE";
+
+fn ss58hash(data: &[u8]) -> [u8; HASH_512_LEN] {
+    let mut blake2b_state = blake2b_simd::Params::new()
+        .hash_length(HASH_512_LEN)
+        .to_state();
+    blake2b_state.update(BASE58_ID);
+    blake2b_state.update(data);
+    blake2b_state
+        .finalize()
+        .as_bytes()
+        .try_into()
+        .expect("static length, always fits")
+}
+
+// Same as `to_ss58check_with_version()` method for `Ss58Codec` from `sp_core`, comments from `sp_core`.
+fn to_base58_string(bytes: [u8; 32], base58prefix: u16) -> String {
+    // We mask out the upper two bits of the ident - SS58 Prefix currently only supports 14-bits
+    let ident: u16 = base58prefix & 0b0011_1111_1111_1111;
+    let mut v = match ident {
+        0..=63 => vec![ident as u8],
+        64..=16_383 => {
+            // upper six bits of the lower byte(!)
+            let first = ((ident & 0b0000_0000_1111_1100) as u8) >> 2;
+            // lower two bits of the lower byte in the high pos,
+            // lower bits of the upper byte in the low pos
+            let second = ((ident >> 8) as u8) | ((ident & 0b0000_0000_0000_0011) as u8) << 6;
+            vec![first | 0b0100_0000, second]
+        }
+        _ => unreachable!("masked out the upper two bits; qed"),
+    };
+    v.extend(bytes);
+    let r = ss58hash(&v);
+    v.extend(&r[0..2]);
+    v.to_base58()
+}
 
 /// Single function that should completely handle payout attmept. Just do not call anything else.
 ///
 /// TODO: make this an additional runner independent from chain monitors
 #[expect(clippy::too_many_lines, clippy::arithmetic_side_effects)]
 pub async fn payout(
-    rpc: String,
+    client: AssetHubOnlineClient,
     order: Invoice,
     state: State,
     chain: ChainWatcher,
-    signer: Signer,
+    seed: SecretString,
 ) -> Result<(), ChainError> {
     // TODO: make this retry and rotate RPCs maybe
     //
     // after some retries record a failure
-    if let Ok(client) = WsClientBuilder::default().build(&rpc).await {
-        let block = block_hash(&client, None).await?; // TODO should retry instead
-        let block_number = current_block_number(&client, &chain.metadata, &block).await?;
-        let balance = order.balance(&client, &chain, &block).await?; // TODO same
-        let loss_tolerance = 20000; // TODO: replace with multiple of existential
-                                    // TODO: add upper limit for transactions that would require manual intervention
-                                    // just because it was found to be needed with non-crypto trade, who knows why?
-        let currency = chain
-            .assets
-            .get(&order.currency.currency)
-            .ok_or_else(|| ChainError::InvalidCurrency(order.currency.currency.clone()))?;
-        let order_amount = Balance::parse(order.amount, order.currency.decimals);
+    let currency = chain
+        .assets
+        .get(&order.currency.currency)
+        .ok_or_else(|| ChainError::InvalidCurrency(order.currency.currency.clone()))?;
 
-        // Payout operation logic
-        let (transactions, final_amount) = if balance.0.abs_diff(order_amount.0) <= loss_tolerance
-        // modulus(balance-order.amount) <= loss_tolerance
-        {
-            tracing::info!("Regular withdrawal");
-            (
-                match currency.kind {
-                    TokenKind::Native => {
-                        let balance_transfer_constructor = BalanceTransferConstructor {
-                            amount: order_amount.0,
-                            to_account: &order.recipient,
-                            is_clearing: true,
-                        };
-                        vec![construct_single_balance_transfer_call(
-                            &chain.metadata,
-                            &balance_transfer_constructor,
-                        )?]
-                    }
-                    TokenKind::Asset => {
-                        let asset_transfer_constructor = AssetTransferConstructor {
-                            asset_id: currency.asset_id.ok_or(ChainError::AssetId)?,
-                            amount: order_amount.0 - loss_tolerance,
-                            to_account: &order.recipient,
-                        };
-                        vec![construct_single_asset_transfer_call(
-                            &chain.metadata,
-                            &asset_transfer_constructor,
-                        )?]
-                    }
+    let asset_id = currency.asset_id.ok_or(ChainError::AssetId)?;
+    let dest = subxt::utils::AccountId32::from(order.recipient.0);
+
+    let call = crate::chain::runtime::tx().assets().transfer_all(asset_id, dest.into(), false);
+
+    // TODO: set pallet instance and parents to consts?
+    let location = MultiLocation {
+        parents: 0,
+        interior: Junctions::X2(Junction::PalletInstance(50), Junction::GeneralIndex(asset_id as u128)),
+    };
+
+    let tx_config = DefaultExtrinsicParamsBuilder::<AssetHubConfig>::new()
+        .tip_of(0, location)
+        .mortal(32)
+        .build();
+
+    // TODO: need to validate phrase on start so unwrap here can be safe
+    let mnemonic = Mnemonic::parse(seed.expose_secret()).unwrap();
+    // TODO: add support for password configuration, ensure unwrap here is safe
+    let keypair = Keypair::from_phrase(&mnemonic, None).unwrap();
+
+    let order_keypair = keypair.derive([
+        DeriveJunction::hard(order.recipient.to_base58_string(2)),
+        DeriveJunction::hard(&order.id),
+    ]);
+
+    // TODO: why 42? perhaps store it into constant?
+    let sender = to_base58_string(order_keypair.public_key().0, 42);
+
+    let transaction = client.tx().create_signed(&call, &order_keypair, tx_config).await?;
+    let encoded_extrinsic = const_hex::encode_prefixed(transaction.encoded());
+
+    state
+        .record_transaction(
+            TransactionInfoDb {
+                transaction_bytes: encoded_extrinsic.clone(),
+                inner: TransactionInfoDbInner {
+                    finalized_tx_timestamp: None,
+                    finalized_tx: None,
+                    sender,
+                    recipient: order.recipient.to_base58_string(42),
+                    amount: Amount::All,
+                    currency: order.currency,
+                    status: TxStatus::Pending,
+                    kind: TxKind::Withdrawal,
                 },
-                order_amount.0,
-            )
-        } else {
-            tracing::info!("Overpayment or forced");
-            // We will transfer all the available balance
-            // TODO smarter handling and returns probably
+            },
+            order.id.clone(),
+        )
+        .await
+        .map_err(|_| ChainError::TransactionNotSaved)?;
 
-            (
-                match currency.kind {
-                    TokenKind::Native => {
-                        let balance_transfer_constructor = BalanceTransferConstructor {
-                            amount: balance.0,
-                            to_account: &order.recipient,
-                            is_clearing: true,
-                        };
-                        vec![construct_single_balance_transfer_call(
-                            &chain.metadata,
-                            &balance_transfer_constructor,
-                        )?]
-                    }
-                    TokenKind::Asset => {
-                        let asset_transfer_constructor = AssetTransferConstructor {
-                            asset_id: currency.asset_id.ok_or(ChainError::AssetId)?,
-                            amount: balance.0 - loss_tolerance,
-                            to_account: &order.recipient,
-                        };
-                        vec![construct_single_asset_transfer_call(
-                            &chain.metadata,
-                            &asset_transfer_constructor,
-                        )?]
-                    }
-                },
-                balance.0,
-            )
-        };
+    // send_stuff(&client, &encoded_extrinsic).await?;
+    // TODO: handle result, check transfer details, find our transfer event, store it's details
+    let _result = transaction.submit_and_watch().await?;
 
-        let mut batch_transaction = construct_batch_transaction(
-            &chain.metadata,
-            chain.genesis_hash,
-            order.address,
-            &transactions,
-            block,
-            block_number,
-            0,
-            currency.asset_id,
-        )?;
-
-        let sign_this = batch_transaction
-            .sign_this()
-            .ok_or(ChainError::TransactionNotSignable(format!(
-                "{batch_transaction:?}"
-            )))?;
-
-        let signature = signer.sign(order.id.clone(), sign_this).await?;
-
-        if let TypeContentToFill::Variant(ref mut multisig) = batch_transaction.signature.content {
-            if let TypeContentToFill::ArrayU8(ref mut sr25519) =
-                multisig.selected.fields_to_fill[0].type_to_fill.content
-            {
-                sr25519.content = signature.0.to_vec();
-            }
-        }
-
-        let extrinsic = batch_transaction
-            .send_this_signed::<(), RuntimeMetadataV15>(&chain.metadata)?
-            .ok_or(ChainError::NothingToSend)?;
-        let encoded_extrinsic = const_hex::encode_prefixed(extrinsic);
-
-        state
-            .record_transaction(
-                TransactionInfoDb {
-                    transaction_bytes: encoded_extrinsic.clone(),
-                    inner: TransactionInfoDbInner {
-                        finalized_tx_timestamp: None,
-                        finalized_tx: None,
-                        sender: signer.public(order.id.clone(), 42).await?,
-                        recipient: order.recipient.to_base58_string(42),
-                        amount: Amount::Exact(
-                            Balance(final_amount).format(order.currency.decimals),
-                        ),
-                        currency: order.currency,
-                        status: TxStatus::Pending,
-                        kind: TxKind::Withdrawal,
-                    },
-                },
-                order.id.clone(),
-            )
-            .await
-            .map_err(|_| ChainError::TransactionNotSaved)?;
-
-        send_stuff(&client, &encoded_extrinsic).await?;
-
-        state.order_withdrawn(order.id).await;
-        // TODO obvious
-    }
+    state.order_withdrawn(order.id).await;
+    // TODO obvious
     Ok(())
 }

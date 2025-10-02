@@ -9,10 +9,11 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 use subxt::config::{Config, SubstrateConfig, DefaultExtrinsicParams};
 use runtime::runtime_types::staging_xcm::v3::multilocation::MultiLocation;
+use subxt_signer::SecretString;
 
 #[subxt::subxt(
     runtime_metadata_path = "./metadata.scale",
-    // generate_docs,
+    generate_docs,
     // derive_for_all_types = "Clone, PartialEq, Eq",
     derive_for_type(
         path = "staging_xcm::v3::multilocation::MultiLocation",
@@ -75,6 +76,7 @@ impl ChainManager {
     /// - all modules should be restarted, probably.
     #[expect(clippy::too_many_lines)]
     pub fn ignite(
+        seed_secret: SecretString,
         chain_info: Chain,
         state: &State,
         signer: &Signer,
@@ -108,6 +110,7 @@ impl ChainManager {
         }
 
         start_chain_watch(
+            seed_secret,
             chain_info,
             chain_tx.clone(),
             chain_rx,

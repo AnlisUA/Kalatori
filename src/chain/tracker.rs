@@ -3,37 +3,32 @@
 use crate::{
     chain::{
         definitions::{BlockHash, ChainTrackerRequest, Invoice}, payout::payout, rpc::{
-            assets_set_at_block, block_hash, genesis_hash, metadata, next_block, next_block_number,
-            runtime_version_identifier, specs, subscribe_blocks, transfer_events,
+            block_hash, metadata,
+            specs, transfer_events,
         }, utils::parse_transfer_event, AssetHubOnlineClient
-    },
-    database::{FinalizedTxDb, TransactionInfoDb, TransactionInfoDbInner, TxKind},
-    definitions::{
+    }, database::{FinalizedTxDb, TransactionInfoDb, TransactionInfoDbInner, TxKind}, definitions::{
         api_v2::{Amount, CurrencyProperties, Health, RpcInfo, TokenKind, TxStatus},
         Chain,
-    },
-    error::{ChainError, Error},
-    signer::Signer,
-    state::State,
-    utils::task_tracker::TaskTracker,
+    }, error::{ChainError, Error}, signer::Signer, state::State, utils::task_tracker::TaskTracker
 };
 use frame_metadata::v15::RuntimeMetadataV15;
 use jsonrpsee::ws_client::{WsClient, WsClientBuilder};
-use serde_json::Value;
 use std::{collections::HashMap, time::SystemTime};
 use substrate_crypto_light::common::AsBase58;
-use substrate_parser::{AsMetadata, ShortSpecs};
+use substrate_parser::ShortSpecs;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 use tokio::{
     sync::mpsc,
     time::{timeout, Duration},
 };
 use tokio_util::sync::CancellationToken;
+use subxt_signer::SecretString;
 
 // TODO: check if it's DEFINITELY won't break something
 #[expect(tail_expr_drop_order)]
 #[expect(clippy::too_many_lines, clippy::too_many_arguments)]
 pub fn start_chain_watch(
+    seed_secret: SecretString,
     chain: Chain,
     chain_tx: mpsc::Sender<ChainTrackerRequest>,
     mut chain_rx: mpsc::Receiver<ChainTrackerRequest>,
@@ -226,7 +221,7 @@ pub fn start_chain_watch(
                                 // accounts, every time. Please submit a PR or an issue if you
                                 // figure out a reliable optimization for this.
                                 for (id, invoice) in &watched_accounts {
-                                    match invoice.check(&client, &watcher, &block).await {
+                                    match invoice.check(&subxt_client, &watcher).await {
                                         Ok(true) => {
                                             state.order_paid(id.clone()).await;
                                         },
@@ -240,7 +235,7 @@ pub fn start_chain_watch(
                                         match state.is_order_paid(id.clone()).await {
                                             Ok(paid_db) => {
                                                 if !paid_db {
-                                                    match invoice.check(&client, &watcher, &block).await {
+                                                    match invoice.check(&subxt_client, &watcher).await {
                                                         Ok(paid) => {
                                                             if paid {
                                                                 state.order_paid(id.clone()).await;
@@ -273,24 +268,39 @@ pub fn start_chain_watch(
                             }
                             ChainTrackerRequest::Reap(request) => {
                                 let id = request.id.clone();
-                                let rpc = endpoint.clone();
                                 let reap_state_handle = state.interface();
                                 let watcher_for_reaper = watcher.clone();
-                                let signer_for_reaper = signer.interface();
+                                let seed = seed_secret.clone();
+                                let client_cloned = subxt_client.clone();
 
                                 task_tracker.clone().spawn(format!("Initiate payout for order {}", id.clone()), async move {
-                                    drop(payout(rpc, Invoice::from_request(request), reap_state_handle, watcher_for_reaper, signer_for_reaper).await);
+                                    let _ = payout(
+                                        client_cloned,
+                                        Invoice::from_request(request),
+                                        reap_state_handle,
+                                        watcher_for_reaper,
+                                        seed,
+                                    ).await?;
+
                                     Ok(format!("Payout attempt for order {id} terminated"))
                                 });
                             }
                             ChainTrackerRequest::ForceReap(request) => {
                                 let id = request.id.clone();
-                                let rpc = endpoint.clone();
                                 let reap_state_handle = state.interface();
                                 let watcher_for_reaper = watcher.clone();
-                                let signer_for_reaper = signer.interface();
+                                let client_cloned = subxt_client.clone();
+                                let seed = seed_secret.clone();
+
                                 task_tracker.clone().spawn(format!("Initiate forced payout for order {}", id.clone()), async move {
-                                    drop(payout(rpc, Invoice::from_request(request), reap_state_handle, watcher_for_reaper, signer_for_reaper).await);
+                                    let _ = payout(
+                                        client_cloned,
+                                        Invoice::from_request(request),
+                                        reap_state_handle,
+                                        watcher_for_reaper,
+                                        seed,
+                                    ).await?;
+
                                     Ok(format!("Forced payout attempt for order {id} terminated"))
                                 });
                             }
@@ -349,6 +359,7 @@ impl ChainWatcher {
         let full_block = blocks.next().await.ok_or_else(|| ChainError::BlockSubscriptionTerminated)??;
         let block = BlockHash(full_block.hash());
 
+        tracing::info!("Susbcribed, fetch data using old client...");
         // TODO: it doesn't seem necessery and probably will be removed or should be rewritten otherwise
         // let name = <RuntimeMetadataV15 as AsMetadata<()>>::spec_name_version(&metadata)?.spec_name;
         // if name != chain.name {
@@ -365,7 +376,7 @@ impl ChainWatcher {
         let specs = specs(old_client, &metadata, &block).await?;
 
         // TODO: in future we plan to use single asset, won't need to iterate over all of them.
-        // It can be optimized using futures::iter and request values concurrently though.
+        // It can be optimized using futures::iter and request values concurrently.
         // Also if we'll need to fetch many assets (or even all available on chain)
         // it's gonna be easier to use `metadata_iter` storage method
         let mut assets = HashMap::new();
@@ -381,6 +392,7 @@ impl ChainWatcher {
                 .fetch(&request_data)
                 .await?
                 else {
+                    // TODO: panic or work without this asset? Need to notify user about error somehow
                     panic!("Asset {} with id {} not found on chain {}", asset.name, asset.id, chain.name)
                 };
 
@@ -409,7 +421,7 @@ impl ChainWatcher {
         // check monitored accounts
         let mut id_remove_list = Vec::new();
         for (id, account) in watched_accounts.iter() {
-            let result = account.check(old_client, &chain_watcher, &block).await;
+            let result = account.check(client, &chain_watcher).await;
 
             match result {
                 Ok(true) => {
