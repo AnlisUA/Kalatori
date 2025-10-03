@@ -16,5 +16,8 @@ install-subxt-cli: # Install subxt-cli into the project directory
 	cargo install --root $(mkfile_path) --version $(subxt_cli_version) --locked subxt-cli
 
 # TODO: read URL from json config and/or env var instead of hardcode
-download-node-metadata: # Download metadata of configured Asset Hub node. Required for subxt compilation.
+download-node-metadata: # Download metadata of configured Asset Hub node. Required for subxt compilation. By default use ws://localhost:9000 url.
 	PATH="${PWD}/bin:${PATH}" subxt metadata -f bytes --url ws://localhost:9000 > metadata.scale
+
+download-node-metadata-ci: # Download metadata of Asset Hub node. Required for subxt compilation. By default use wss://statemint-rpc.dwellir.com url.
+	PATH="${PWD}/bin:${PATH}" subxt metadata -f bytes --url wss://statemint-rpc.dwellir.com > metadata.scale

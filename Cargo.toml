@@ -16,7 +16,7 @@ readme = "README.md"
 keywords = ["substrate", "blockchain", "finance", "service", "middleware"]
 categories = ["finance"]
 exclude = [".github", "cliff.toml", "Dockerfile", "chopsticks/", "configs", "is_version_greater.sh", "shoot.sh", "start.sh", "/tests"]
-rust-version = "1.82"
+rust-version = "1.85"
 
 [dependencies]
 axum = { version = "0.7", default-features = false, features = [
@@ -69,6 +69,7 @@ time = "0.3"
 reqwest = "0.12"
 # This crate bumbped MSRV in minor update
 base64ct = "=1.6.0"
+# On update subxt version, plase also update subxt-cli to corresponding version in Makefile
 subxt = "0.44"
 subxt-signer = "0.44"
 

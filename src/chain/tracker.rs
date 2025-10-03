@@ -9,6 +9,7 @@ use crate::{
 };
 use jsonrpsee::ws_client::{WsClient, WsClientBuilder};
 use subxt::blocks::{ExtrinsicDetails, FoundExtrinsic};
+use zeroize::Zeroize;
 use std::{collections::HashMap, time::SystemTime};
 use substrate_crypto_light::common::{AccountId32, AsBase58};
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
@@ -89,7 +90,7 @@ async fn parse_transfer_event (
 #[expect(tail_expr_drop_order)]
 #[expect(clippy::too_many_lines, clippy::too_many_arguments)]
 pub fn start_chain_watch(
-    seed_secret: SecretString,
+    mut seed_secret: SecretString,
     chain: Chain,
     chain_tx: mpsc::Sender<ChainTrackerRequest>,
     mut chain_rx: mpsc::Receiver<ChainTrackerRequest>,
@@ -395,6 +396,9 @@ pub fn start_chain_watch(
                     }).await);
                 }
             }
+
+            seed_secret.zeroize();
+
             Ok(format!("Chain {} monitor shut down", chain.name))
         });
 }

@@ -1,4 +1,4 @@
-FROM rust:1.82 as builder
+FROM rust:1.85 as builder
 
 WORKDIR /usr/src/kalatori
 
@@ -9,6 +9,13 @@ RUN mkdir -p src && echo "fn main() {}" > src/main.rs
 RUN cargo build --release
 
 RUN rm -rf src
+
+COPY Makefile ./
+
+RUN make install-subxt-cli
+
+RUN make download-node-metadata-ci
+
 COPY . .
 
 RUN cargo build --release

@@ -5,7 +5,7 @@ debug = true
 [chain]
 name = "statemint"
 endpoints = [
-    "ws://chopsticks-statemint:9000",
+    "ws://chopsticks-asset-hub:9000",
 ]
 
 [[chain.assets]]

@@ -154,6 +154,7 @@ impl Invoice {
         client: &AssetHubOnlineClient,
         chain_watcher: &ChainWatcher,
     ) -> Result<bool, ChainError> {
+        // TODO: what if we receive significantly more money then expect? Perhaps need to check in some range?
         Ok(self.balance(client, chain_watcher).await?
             >= Balance::parse(self.amount, self.currency.decimals))
     }
