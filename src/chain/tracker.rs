@@ -3,8 +3,8 @@
 use crate::{
     chain::{
         definitions::{BlockHash, ChainTrackerRequest, Invoice}, payout::payout, rpc::block_hash, AssetHubConfig, AssetHubOnlineClient
-    }, database::{FinalizedTxDb, TransactionInfoDb, TransactionInfoDbInner, TxKind}, definitions::{
-        api_v2::{Amount, CurrencyProperties, Health, RpcInfo, TokenKind, TxStatus}, Balance, Chain
+    }, configs::ChainConfig, database::{FinalizedTxDb, TransactionInfoDb, TransactionInfoDbInner, TxKind}, definitions::{
+        api_v2::{Amount, CurrencyProperties, Health, RpcInfo, TokenKind, TxStatus}, Balance
     }, error::ChainError, signer::Signer, state::State, utils::task_tracker::TaskTracker
 };
 use jsonrpsee::ws_client::{WsClient, WsClientBuilder};
@@ -91,7 +91,7 @@ async fn parse_transfer_event (
 #[expect(clippy::too_many_lines, clippy::too_many_arguments)]
 pub fn start_chain_watch(
     mut seed_secret: SecretString,
-    chain: Chain,
+    chain: ChainConfig,
     chain_tx: mpsc::Sender<ChainTrackerRequest>,
     mut chain_rx: mpsc::Receiver<ChainTrackerRequest>,
     state: State,
@@ -106,6 +106,10 @@ pub fn start_chain_watch(
             let watchdog = 120_000;
             let mut watched_accounts = HashMap::new();
             let mut shutdown = false;
+
+            if chain.allow_insecure_endpoints {
+                tracing::warn!("Connection to insecure endpoints allowed! It's strongly unrecommended to use this option in production environment.");
+            }
 
             for endpoint in chain.endpoints.iter().cycle() {
                 // not restarting chain if shutdown is in progress
@@ -124,7 +128,13 @@ pub fn start_chain_watch(
                 tracing::info!("Trying to establish connection to endpoint {:?}...", endpoint);
                 let client_result = WsClientBuilder::default().build(endpoint).await;
 
-                let subxt_client = match AssetHubOnlineClient::from_url(endpoint).await {
+                let subxt_client_initializer = if chain.allow_insecure_endpoints {
+                    AssetHubOnlineClient::from_insecure_url(endpoint).await
+                } else {
+                    AssetHubOnlineClient::from_url(endpoint).await
+                };
+
+                let subxt_client = match subxt_client_initializer {
                     Ok(client) => client,
                     Err(error) => {
                         tracing::error!("Error while initialize subxt WS client for endpoint {:?}: {:?}", endpoint, error);
@@ -415,7 +425,7 @@ pub struct ChainWatcher {
 impl ChainWatcher {
     pub async fn prepare_chain(
         client: &AssetHubOnlineClient,
-        chain: Chain,
+        chain: ChainConfig,
         watched_accounts: &mut HashMap<String, Invoice>,
         rpc_url: &str,
         chain_tx: mpsc::Sender<ChainTrackerRequest>,
@@ -465,7 +475,7 @@ impl ChainWatcher {
                 };
 
             let properties = CurrencyProperties {
-                chain_name: "statemint".to_string(),  // TODO: this field can be removed in future as long as we support only Asset Hub chain
+                chain_name: chain.name.clone(),
                 kind: TokenKind::Asset,               // TODO: this field can be removed in future as long as we work only with assets on Asset Hub
                 decimals: response.decimals,
                 rpc_url: rpc_url.to_string(),         // TODO: this property seems to be unused

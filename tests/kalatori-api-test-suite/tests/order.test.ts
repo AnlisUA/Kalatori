@@ -61,7 +61,6 @@ describe('Order Endpoint Blackbox Tests', () => {
 
     expect(orderResponseObject.server_info).toHaveProperty('version');
     expect(orderResponseObject.server_info).toHaveProperty('instance_id');
-    expect(orderResponseObject.server_info).toHaveProperty('debug', true);
   }
 
   const generateRandomOrderId = () => {

@@ -1,0 +1,14 @@
+{
+    "name": "statemint",
+    "endpoints": [
+        "ws://chopsticks-asset-hub:9000"
+    ],
+    "assets": [{
+        "name": "USDC",
+        "id": 1337
+    }, {
+        "name": "USDt",
+        "id": 1984
+    }],
+    "allow_insecure_endpoints": true
+}

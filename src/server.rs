@@ -1,10 +1,8 @@
 use crate::{
-    error::{Error, ServerError},
-    handlers::{
+    configs::WebServerConfig, error::{Error, ServerError}, handlers::{
         health::{audit, health, status},
         order::{force_withdrawal, investigate, order},
-    },
-    state::State,
+    }, state::State
 };
 use axum::{
     extract::{self, rejection::RawPathParamsRejection, MatchedPath, Query, RawPathParams},
@@ -21,9 +19,11 @@ pub const MODULE: &str = module_path!();
 
 pub async fn new(
     shutdown_notification: CancellationToken,
-    host: SocketAddr,
+    config: WebServerConfig,
     state: State,
 ) -> Result<impl Future<Output = Result<Cow<'static, str>, Error>>, ServerError> {
+    let host = SocketAddr::new(config.host, config.port);
+
     let v2: Router<State> = Router::new()
         .route("/order/:order_id", routing::post(order))
         .route(

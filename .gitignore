@@ -22,3 +22,5 @@ substrate-constructor
 
 # asset hub node metadata required for subxt compilation
 /metadata.scale
+
+/configs/*.json

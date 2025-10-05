@@ -41,12 +41,13 @@ impl Config for AssetHubConfig {
 
 pub type AssetHubOnlineClient = subxt::OnlineClient::<AssetHubConfig>;
 use crate::{
-    definitions::{api_v2::OrderInfo, Chain},
+    definitions::{api_v2::OrderInfo},
     error::{ChainError, Error},
     signer::Signer,
     state::State,
     utils::task_tracker::TaskTracker,
 };
+use crate::configs::ChainConfig;
 
 pub mod definitions;
 pub mod payout;
@@ -77,7 +78,7 @@ impl ChainManager {
     #[expect(clippy::too_many_lines)]
     pub fn ignite(
         seed_secret: SecretString,
-        chain_info: Chain,
+        chain_info: ChainConfig,
         state: &State,
         signer: &Signer,
         task_tracker: &TaskTracker,

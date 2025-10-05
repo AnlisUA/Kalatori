@@ -5,18 +5,16 @@
 //! are spawned here other than main database server thread that does everything in series.
 
 use crate::{
-    definitions::api_v2::{
+    configs::DatabaseConfig, definitions::api_v2::{
         Amount, BlockNumber, CurrencyInfo, ExtrinsicIndex, FinalizedTx, OrderCreateResponse,
         OrderInfo, OrderQuery, PaymentStatus, ServerInfo, Timestamp, TransactionInfo, TxStatus,
         WithdrawalStatus,
-    },
-    error::DbError,
-    utils::task_tracker::TaskTracker,
+    }, error::DbError, utils::task_tracker::TaskTracker
 };
 use codec::{Decode, Encode};
 use names::Generator;
 use sled::Tree;
-use std::time::SystemTime;
+use std::{str::FromStr, time::SystemTime};
 use substrate_crypto_light::common::AccountId32;
 use tokio::sync::{mpsc, oneshot};
 
@@ -33,7 +31,6 @@ const SERVER_INFO_TABLE: &[u8] = b"server_info";
 
 pub struct ConfigWoChains {
     pub recipient: AccountId32,
-    pub debug: Option<bool>,
     pub remark: Option<String>,
     //pub depth: Option<Duration>,
 }
@@ -49,23 +46,30 @@ impl Database {
     // TODO: check if it's DEFINITELY won't break something. Check `ZeroizeOnDrop` marco implementation
     #[expect(tail_expr_drop_order)]
     pub fn init(
-        path_option: Option<String>,
+        config: DatabaseConfig,
         task_tracker: &TaskTracker,
         account_lifetime: Timestamp,
     ) -> Result<Self, DbError> {
-        let (tx, mut rx) = tokio::sync::mpsc::channel(1024);
-        let database = if let Some(path) = path_option {
-            tracing::info!("Creating/Opening the database at {path:?}.");
-
-            sled::open(path).map_err(DbError::DbStartError)?
-        } else {
-            // TODO
-            /*
+        let path = if config.temporary {
             tracing::warn!(
-                "The in-memory backend for the database is selected. All saved data will be deleted after the shutdown!"
-            );*/
-            sled::open("temp.db").map_err(DbError::DbStartError)?
+                "Database configured to run in `temporary` mode. It means that program will setup database files in temporary directory which will be cleaned up."
+            );
+
+            // TODO: need to cleanup this dir after program finish
+            // TODO: is process id reliable identifier?
+            let mut tmp_dir = std::env::temp_dir();
+            tmp_dir.push(format!("kalatori_db_{}", std::process::id()));
+            tmp_dir
+        } else {
+            let path = config.path;
+            tracing::info!("Creating/Opening the database at {path:?}.");
+            // unwrap() is safe cause this method has `Infallable` error kind which never returns. See method implementation for details
+            std::path::PathBuf::from_str(&path).unwrap()
         };
+
+        let database = sled::open(path).map_err(DbError::DbStartError)?;
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1024);
+
         let orders = database
             .open_tree(ORDERS_TABLE)
             .map_err(DbError::DbStartError)?;
@@ -165,7 +169,6 @@ impl Database {
                                 let server_info_data = ServerInfo {
                                     version: env!("CARGO_PKG_VERSION").to_string(),
                                     instance_id: new_instance_id.clone(),
-                                    debug: false,
                                     kalatori_remark: None,
                                 };
                                 tree.insert(

@@ -1,7 +1,4 @@
-use crate::{
-    arguments::{OLD_SEED, SEED},
-    utils::task_tracker::TaskName,
-};
+use crate::utils::task_tracker::TaskName;
 use codec::Error as ScaleError;
 use frame_metadata::v15::RuntimeMetadataV15;
 use jsonrpsee::core::ClientError;
@@ -15,7 +12,6 @@ use substrate_crypto_light::error::Error as CryptoError;
 use substrate_parser::error::{MetaVersionErrorPallets, ParserError, RegistryError, StorageError};
 use thiserror::Error;
 use tokio::task::JoinError;
-use toml_edit::de::Error as TomlError;
 use tracing_subscriber::filter::ParseError;
 
 pub use pretty_cause::PrettyCause;
@@ -23,14 +19,8 @@ pub use pretty_cause::PrettyCause;
 #[derive(Debug, Error)]
 #[expect(dead_code)]
 pub enum Error {
-    #[error("failed to read a seed environment variable")]
-    SeedEnv(#[from] SeedEnvError),
-
     #[error("failed to read the config file at {0:?}")]
     ConfigFileRead(String, #[source] IoError),
-
-    #[error("failed to parse the config")]
-    ConfigFileParse(#[from] TomlError),
 
     #[error("failed to parse the config parameter `{0}`")]
     ConfigParse(&'static str),
@@ -97,16 +87,6 @@ impl From<Error> for ChainError {
     fn from(_err: Error) -> Self {
         ChainError::Util(UtilError::NotHex(NotHexError::BlockHash))
     }
-}
-
-#[derive(Debug, Error)]
-pub enum SeedEnvError {
-    #[error("one of the `{OLD_SEED}*` variables has an invalid Unicode key")]
-    InvalidUnicodeOldSeedKey,
-    #[error("`{0}` variable contains an invalid Unicode text")]
-    InvalidUnicodeValue(Cow<'static, str>),
-    #[error("`{SEED}` isn't present")]
-    SeedNotPresent,
 }
 
 #[derive(Debug, Error)]
@@ -315,7 +295,7 @@ pub enum ChainError {
     TransferEventNoExtrinsic,
 
     #[error("subxt error")]
-    Subxt(#[from] subxt::Error)
+    Subxt(#[from] subxt::Error),
 }
 
 #[derive(Debug, Error)]

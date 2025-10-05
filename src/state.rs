@@ -28,7 +28,6 @@ impl State {
         signer: Signer,
         ConfigWoChains {
             recipient,
-            debug,
             remark,
         }: ConfigWoChains,
         db: Database,
@@ -53,7 +52,6 @@ impl State {
         let server_info = ServerInfo {
             // TODO
             version: env!("CARGO_PKG_VERSION").to_string(),
-            debug: debug.unwrap_or_default(),
             kalatori_remark: remark,
             instance_id,
         };
