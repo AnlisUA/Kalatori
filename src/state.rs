@@ -11,9 +11,9 @@ use crate::{
     utils::task_tracker::TaskTracker,
 };
 use std::collections::HashMap;
+use subxt::utils::AccountId32;
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
-use subxt::utils::AccountId32;
 
 /// Struct to store state of daemon. If something requires cooperation of more than one component,
 /// it should go through here.
@@ -26,10 +26,7 @@ impl State {
     #[expect(clippy::too_many_lines)]
     pub fn initialise(
         signer: Signer,
-        ConfigWoChains {
-            recipient,
-            remark,
-        }: ConfigWoChains,
+        ConfigWoChains { recipient, remark }: ConfigWoChains,
         db: Database,
         chain_manager_receiver: oneshot::Receiver<ChainManager>,
         instance_id: String,
@@ -175,7 +172,7 @@ impl State {
                                             "Order was withdrawn but this could not be recorded! {e:?}"
                                         );
                                     }
-                                };
+                                }
                             }
                             StateAccessRequest::ForceWithdrawal(id) => {
                                 let order = state.db.read_order(id.clone()).await;
@@ -471,7 +468,11 @@ impl StateData {
         {
             OrderCreateResponse::New(new_order_info) => {
                 self.chain_manager
-                    .add_invoice(order.clone(), new_order_info.clone(), self.recipient.clone())
+                    .add_invoice(
+                        order.clone(),
+                        new_order_info.clone(),
+                        self.recipient.clone(),
+                    )
                     .await?;
                 Ok(OrderResponse::NewOrder(self.order_status(
                     order,

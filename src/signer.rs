@@ -9,12 +9,12 @@
 //!
 //! Also this abstraction could be used to implement off-system signer
 
+use crate::chain::utils::to_base58_string;
 use crate::{error::SignerError, utils::task_tracker::TaskTracker};
 use subxt::utils::AccountId32;
-use subxt_signer::{bip39::Mnemonic, sr25519::Keypair, DeriveJunction, ExposeSecret, SecretString};
+use subxt_signer::{DeriveJunction, ExposeSecret, SecretString, bip39::Mnemonic, sr25519::Keypair};
 use tokio::sync::{mpsc, oneshot};
 use zeroize::Zeroize;
-use crate::chain::utils::to_base58_string;
 
 /// Signer handle
 pub struct Signer {
@@ -23,7 +23,13 @@ pub struct Signer {
 
 impl Signer {
     /// Run once to initialize; this should do **all** secret management
-    pub fn init(recipient: AccountId32, task_tracker: &TaskTracker, mut seed: SecretString) -> Self {
+    // Seems to be a false positive, we do want to take ownership of recipient cause it's used in async task
+    #[expect(clippy::needless_pass_by_value)]
+    pub fn init(
+        recipient: AccountId32,
+        task_tracker: &TaskTracker,
+        mut seed: SecretString,
+    ) -> Self {
         let (tx, mut rx) = mpsc::channel(16);
         task_tracker.spawn("Signer", async move {
             // TODO: shutdown on failure
@@ -36,7 +42,8 @@ impl Signer {
                         let new_public_key = {
                             // For some reason Keypair doesn't implement Zeroize trait but it's inner secret does
                             // so we just let it go out of scope as soon as possible
-                            let keypair = Keypair::from_phrase(&mnemonic, None).map_err(SignerError::from)?;
+                            let keypair =
+                                Keypair::from_phrase(&mnemonic, None).map_err(SignerError::from)?;
                             let new_pair = keypair.derive([
                                 // api spec says use "2" for communication, let's use it here too
                                 DeriveJunction::hard(to_base58_string(recipient.0, 2)),
@@ -46,12 +53,7 @@ impl Signer {
                             Ok(to_base58_string(new_pair.public_key().0, request.ss58))
                         };
 
-                        let _unused = request.res.send(
-                            match new_public_key {
-                                Ok(key) => Ok(key),
-                                Err(e) => Err(e),
-                            },
-                        );
+                        let _unused = request.res.send(new_public_key);
                     }
                     SignerRequest::Shutdown(res) => {
                         mnemonic.zeroize();

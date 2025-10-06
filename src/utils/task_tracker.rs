@@ -12,7 +12,7 @@ use std::{
     future::Future,
 };
 use tokio::{
-    sync::mpsc::{self, error::TrySendError, Receiver, Sender, UnboundedReceiver, UnboundedSender},
+    sync::mpsc::{self, Receiver, Sender, UnboundedReceiver, UnboundedSender, error::TrySendError},
     task::JoinHandle,
 };
 use tokio_util::task::TaskTracker as InnerTaskTracker;
@@ -122,8 +122,6 @@ impl TaskTracker {
     ///
     /// If any errors would occur in awaited tasks, `shutdown_notification` is triggered to shut
     /// down all listening it tasks, and, eventually, the program.
-    // TODO: check if it won't break something
-    #[expect(tail_expr_drop_order)]
     pub async fn wait_and_shutdown(
         self,
         mut error_rx: UnboundedReceiver<(TaskName, Error)>,
@@ -197,7 +195,7 @@ impl ShortTaskTracker {
                 ) = error_tx.try_send(tn_and_error)
                 {
                     print_fatal_error(&from, &error);
-                };
+                }
             },
         )
     }

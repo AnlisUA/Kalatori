@@ -1,15 +1,15 @@
 //! Everything related to actual interaction with blockchain
 
-use std::collections::HashMap;
-use tokio::{
-    sync::{mpsc, oneshot},
-    time::{timeout, Duration},
-};
-use tokio_util::sync::CancellationToken;
-use subxt::config::{Config, SubstrateConfig, DefaultExtrinsicParams};
 use runtime::runtime_types::staging_xcm::v3::multilocation::MultiLocation;
+use std::collections::HashMap;
+use subxt::config::{Config, DefaultExtrinsicParams, SubstrateConfig};
 use subxt::utils::AccountId32;
 use subxt_signer::SecretString;
+use tokio::{
+    sync::{mpsc, oneshot},
+    time::{Duration, timeout},
+};
+use tokio_util::sync::CancellationToken;
 
 #[subxt::subxt(
     runtime_metadata_path = "./metadata.scale",
@@ -39,18 +39,16 @@ impl Config for AssetHubConfig {
     type AssetId = MultiLocation;
 }
 
+use crate::configs::ChainConfig;
 use crate::{
     definitions::api_v2::OrderInfo,
     error::{ChainError, Error},
-    signer::Signer,
     state::State,
     utils::task_tracker::TaskTracker,
 };
-use crate::configs::ChainConfig;
 
 pub mod definitions;
 pub mod payout;
-pub mod rpc;
 pub mod tracker;
 pub mod utils;
 
@@ -81,7 +79,6 @@ impl ChainManager {
         seed_secret: SecretString,
         chain_info: ChainConfig,
         state: &State,
-        signer: &Signer,
         task_tracker: &TaskTracker,
         cancellation_token: &CancellationToken,
     ) -> Result<Self, Error> {
@@ -117,7 +114,6 @@ impl ChainManager {
             chain_tx.clone(),
             chain_rx,
             state.interface(),
-            signer.interface(),
             task_tracker.clone(),
             cancellation_token.clone(),
             rpc_update_tx.clone(),

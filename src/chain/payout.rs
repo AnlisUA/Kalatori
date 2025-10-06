@@ -6,23 +6,26 @@
 
 use crate::{
     chain::{
-        definitions::Invoice, runtime::runtime_types::{staging_xcm::v3::multilocation::MultiLocation, xcm::v3::{junction::Junction, junctions::Junctions}}, tracker::ChainWatcher, AssetHubConfig, AssetHubOnlineClient,
+        AssetHubConfig, AssetHubOnlineClient,
+        definitions::Invoice,
+        runtime::runtime_types::{
+            staging_xcm::v3::multilocation::MultiLocation,
+            xcm::v3::{junction::Junction, junctions::Junctions},
+        },
+        tracker::ChainWatcher,
         utils::to_base58_string,
     },
     database::{TransactionInfoDb, TransactionInfoDbInner, TxKind},
-    definitions::{
-        api_v2::{Amount, TxStatus},
-    },
+    definitions::api_v2::{Amount, TxStatus},
     error::ChainError,
     state::State,
 };
 use subxt::config::DefaultExtrinsicParamsBuilder;
-use subxt_signer::{bip39::Mnemonic, sr25519::Keypair, DeriveJunction, ExposeSecret, SecretString};
+use subxt_signer::{DeriveJunction, ExposeSecret, SecretString, bip39::Mnemonic, sr25519::Keypair};
 
 /// Single function that should completely handle payout attmept. Just do not call anything else.
 ///
 /// TODO: make this an additional runner independent from chain monitors
-#[expect(clippy::too_many_lines, clippy::arithmetic_side_effects)]
 pub async fn payout(
     client: AssetHubOnlineClient,
     order: Invoice,
@@ -41,12 +44,17 @@ pub async fn payout(
     let asset_id = currency.asset_id.ok_or(ChainError::AssetId)?;
     let dest = subxt::utils::AccountId32::from(order.recipient.0);
 
-    let call = crate::chain::runtime::tx().assets().transfer_all(asset_id, dest.into(), false);
+    let call = crate::chain::runtime::tx()
+        .assets()
+        .transfer_all(asset_id, dest.into(), false);
 
     // TODO: set pallet instance and parents to consts?
     let location = MultiLocation {
         parents: 0,
-        interior: Junctions::X2(Junction::PalletInstance(50), Junction::GeneralIndex(asset_id as u128)),
+        interior: Junctions::X2(
+            Junction::PalletInstance(50),
+            Junction::GeneralIndex(u128::from(asset_id)),
+        ),
     };
 
     let tx_config = DefaultExtrinsicParamsBuilder::<AssetHubConfig>::new()
@@ -67,7 +75,10 @@ pub async fn payout(
     // TODO: why 42? perhaps store it into constant?
     let sender = to_base58_string(order_keypair.public_key().0, 42);
 
-    let transaction = client.tx().create_signed(&call, &order_keypair, tx_config).await?;
+    let transaction = client
+        .tx()
+        .create_signed(&call, &order_keypair, tx_config)
+        .await?;
     let encoded_extrinsic = const_hex::encode_prefixed(transaction.encoded());
 
     state

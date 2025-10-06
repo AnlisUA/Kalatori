@@ -1,50 +1,18 @@
 //! Common objects for chain interaction system
 
-use std::{fmt::Display, str::FromStr};
+use std::str::FromStr;
 
 use crate::{
-    chain::tracker::ChainWatcher, chain::AssetHubOnlineClient,
+    chain::AssetHubOnlineClient,
+    chain::tracker::ChainWatcher,
     definitions::{
-        api_v2::{CurrencyInfo, OrderInfo, RpcInfo, Timestamp},
         Balance,
+        api_v2::{CurrencyInfo, OrderInfo, RpcInfo, Timestamp},
     },
-    error::{ChainError, NotHexError},
-    utils::unhex,
+    error::ChainError,
 };
-use primitive_types::H256;
-use tokio::sync::oneshot;
 use subxt::utils::AccountId32;
-
-/// Abstraction to distinguish block hash from many other H256 things
-#[derive(Debug, Clone)]
-pub struct BlockHash(pub H256);
-
-impl Display for BlockHash {
-    /// Convert block hash to RPC-friendly format
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "0x{}", const_hex::encode(self.0))
-    }
-}
-
-impl BlockHash {
-    /// Convert string returned by RPC to typesafe block
-    ///
-    /// TODO: integrate nicely with serde
-    pub fn from_str(s: &str) -> Result<Self, crate::error::ChainError> {
-        let block_hash_raw = unhex(s, NotHexError::BlockHash)?;
-        Ok(BlockHash(H256(
-            block_hash_raw
-                .try_into()
-                .map_err(|_| ChainError::BlockHashLength)?,
-        )))
-    }
-}
-
-#[derive(Debug)]
-pub struct EventFilter<'a> {
-    pub pallet: &'a str,
-    pub optional_event_variant: Option<&'a str>,
-}
+use tokio::sync::oneshot;
 
 pub enum ChainRequest {
     WatchAccount(WatchAccount),
@@ -130,7 +98,7 @@ impl Invoice {
 
         // TODO: asset_id shouldn't be optional, will change in future
         let Some(asset_id) = currency.asset_id else {
-            return Err(ChainError::InvalidCurrency(self.currency.currency.clone()))
+            return Err(ChainError::InvalidCurrency(self.currency.currency.clone()));
         };
 
         let request_data = crate::chain::runtime::storage()
@@ -144,8 +112,7 @@ impl Invoice {
             .await?
             .fetch(&request_data)
             .await?
-            .map(|result| result.balance)
-            .unwrap_or(0);
+            .map_or(0, |result| result.balance);
 
         Ok(Balance(balance))
     }

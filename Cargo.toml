@@ -32,26 +32,19 @@ tokio-util = { version = "0.7", features = ["rt"] }
 tokio = { version = "1", features = ["rt-multi-thread", "signal", "time"] }
 serde = { version = "1", features = ["derive", "rc"] }
 tracing = "0.1"
-scale-info = "2"
 axum-macros = "0.4"
-primitive-types = { version = "0.13", features = ["codec", "serde"] }
-jsonrpsee = { version = "0.24", features = ["ws-client"] }
 thiserror = "2"
-frame-metadata = { version = "22", features = ["current", "decode", "unstable"] }
 const-hex = "1"
 codec = { package = "parity-scale-codec", version = "3", features = [
     "chain-error",
     "derive",
 ] }
 serde_json = { version = "1", features = ["raw_value"] }
-hashing = { package = "sp-crypto-hashing", version = "0.1" }
 config = "0.15"
 sled = "0.34"
 zeroize = "1"
 # Don't forget to update me in `[build-dependencies]`!
 shadow-rs = { version = "0.36", default-features = false }
-ahash = "0.8"
-indoc = "2"
 async-lock = "3"
 time = "0.3"
 reqwest = "0.12"
@@ -62,24 +55,17 @@ subxt = "0.44"
 subxt-signer = "0.44"
 # Subxt-signer uses bip39 and moreover re-exports it, but for some reason it doesn't have zeroize feature enabled
 bip39 = { version = "2", features = ["zeroize"] }
-
-substrate_parser = { git = "https://github.com/Vovke/substrate-parser" }
-substrate-constructor = "0.2.0"
 mnemonic-external = "0.1.0"
-substrate-crypto-light = "0.2.0"
 base58 = "0.2.0"
 blake2b_simd = "1.0"
 
 [dev-dependencies]
+indoc = "2"
 serial_test = "3.2"
 
 [build-dependencies]
 # Don't forget to update me in `[dependencies]`!
 shadow-rs = { version = "0.36", default-features = false }
-
-[patch.crates-io]
-substrate_parser = { git = "https://github.com/Vovke/substrate-parser" } # TODO: switch to Kalapaja
-substrate-constructor = { git = "https://github.com/Kalapaja/substrate-constructor.git" }
 
 [profile.release]
 strip = true

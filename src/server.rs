@@ -1,13 +1,17 @@
 use crate::{
-    configs::WebServerConfig, error::{Error, ServerError}, handlers::{
+    configs::WebServerConfig,
+    error::{Error, ServerError},
+    handlers::{
         health::{audit, health, status},
         order::{force_withdrawal, investigate, order},
-    }, state::State
+    },
+    state::State,
 };
 use axum::{
-    extract::{self, rejection::RawPathParamsRejection, MatchedPath, Query, RawPathParams},
+    Router,
+    extract::{self, MatchedPath, Query, RawPathParams, rejection::RawPathParamsRejection},
     response::Response,
-    routing, Router,
+    routing,
 };
 // use axum_macros::debug_handler;
 use std::{borrow::Cow, collections::HashMap, future::Future, net::SocketAddr};

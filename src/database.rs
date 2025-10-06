@@ -5,11 +5,14 @@
 //! are spawned here other than main database server thread that does everything in series.
 
 use crate::{
-    configs::DatabaseConfig, definitions::api_v2::{
+    configs::DatabaseConfig,
+    definitions::api_v2::{
         Amount, BlockNumber, CurrencyInfo, ExtrinsicIndex, FinalizedTx, OrderCreateResponse,
         OrderInfo, OrderQuery, PaymentStatus, ServerInfo, Timestamp, TransactionInfo, TxStatus,
         WithdrawalStatus,
-    }, error::DbError, utils::task_tracker::TaskTracker
+    },
+    error::DbError,
+    utils::task_tracker::TaskTracker,
 };
 use codec::{Decode, Encode};
 use names::Generator;
@@ -43,8 +46,6 @@ pub struct Database {
 
 impl Database {
     #[expect(clippy::too_many_lines)]
-    // TODO: check if it's DEFINITELY won't break something. Check `ZeroizeOnDrop` marco implementation
-    #[expect(tail_expr_drop_order)]
     pub fn init(
         config: DatabaseConfig,
         task_tracker: &TaskTracker,

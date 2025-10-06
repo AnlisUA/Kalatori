@@ -1,16 +1,16 @@
 use std::{process::ExitCode, str::FromStr};
+use subxt::utils::AccountId32;
 use tokio::{runtime::Runtime, sync::oneshot};
 use tokio_util::sync::CancellationToken;
 use tracing::Level;
-use subxt::utils::AccountId32;
 use utils::{
     logger,
     shutdown::{self, ShutdownNotification, ShutdownOutcome},
     task_tracker::TaskTracker,
 };
 
-mod configs;
 mod chain;
+mod configs;
 mod database;
 mod definitions;
 mod error;
@@ -26,7 +26,13 @@ use error::{Error, PrettyCause};
 use signer::Signer;
 use state::State;
 
-use crate::{configs::{chain_config_with_prefix, database_config_with_prefix, payments_config_with_prefix, seed_config_with_prefix, web_server_config_with_prefix}, definitions::api_v2::Timestamp};
+use crate::{
+    configs::{
+        chain_config_with_prefix, database_config_with_prefix, payments_config_with_prefix,
+        seed_config_with_prefix, web_server_config_with_prefix,
+    },
+    definitions::api_v2::Timestamp,
+};
 
 const DEFAULT_ENV_PREFIX: &str = "KALATORI";
 
@@ -87,16 +93,13 @@ fn try_main(shutdown_notification: ShutdownNotification) -> Result<(), Error> {
 
     Runtime::new()
         .map_err(Error::Runtime)?
-        .block_on(async_try_main(
-            shutdown_notification,
-        ))
+        .block_on(async_try_main(shutdown_notification))
 }
 
-async fn async_try_main(
-    shutdown_notification: ShutdownNotification,
-) -> Result<(), Error> {
-    let env_prefix = std::env::var("KALATORI_APP_ENV_PREFIX").unwrap_or_else(|_| DEFAULT_ENV_PREFIX.to_string());
-    let configs_path = std::env::var(&format!("{}_CONFIG_DIR_PATH", env_prefix)).unwrap_or_default();
+async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(), Error> {
+    let env_prefix =
+        std::env::var("KALATORI_APP_ENV_PREFIX").unwrap_or_else(|_| DEFAULT_ENV_PREFIX.to_string());
+    let configs_path = std::env::var(format!("{env_prefix}_CONFIG_DIR_PATH")).unwrap_or_default();
 
     let seed_config = seed_config_with_prefix(&configs_path, &env_prefix);
 
@@ -117,7 +120,11 @@ async fn async_try_main(
     let signer = Signer::init(recipient.clone(), &task_tracker, seed_config.seed.clone());
     let seed_secret = seed_config.seed;
 
-    let db = database::Database::init(database_config, &task_tracker, Timestamp(payments_config.account_lifetime_millis))?;
+    let db = database::Database::init(
+        database_config,
+        &task_tracker,
+        Timestamp(payments_config.account_lifetime_millis),
+    )?;
 
     let instance_id = db.initialize_server_info().await?;
 
@@ -141,7 +148,6 @@ async fn async_try_main(
             seed_secret,
             chain_config,
             &state,
-            &signer,
             &task_tracker,
             &shutdown_notification.token,
         )?)
