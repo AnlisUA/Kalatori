@@ -1,6 +1,6 @@
 //! Common objects for chain interaction system
 
-use std::fmt::Display;
+use std::{fmt::Display, str::FromStr};
 
 use crate::{
     chain::tracker::ChainWatcher, chain::AssetHubOnlineClient,
@@ -12,8 +12,8 @@ use crate::{
     utils::unhex,
 };
 use primitive_types::H256;
-use substrate_crypto_light::common::{AccountId32, AsBase58};
 use tokio::sync::oneshot;
+use subxt::utils::AccountId32;
 
 /// Abstraction to distinguish block hash from many other H256 things
 #[derive(Debug, Clone)]
@@ -73,9 +73,8 @@ impl WatchAccount {
     ) -> Result<WatchAccount, ChainError> {
         Ok(WatchAccount {
             id,
-            address: AccountId32::from_base58_string(&order.payment_account)
-                .map_err(|e| ChainError::InvoiceAccount(e.to_string()))?
-                .0,
+            address: AccountId32::from_str(&order.payment_account)
+                .map_err(|e| ChainError::InvoiceAccount(e.to_string()))?,
             currency: order.currency,
             amount: order.amount,
             recipient,

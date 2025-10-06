@@ -60,6 +60,8 @@ base64ct = "=1.6.0"
 # On update subxt version, plase also update subxt-cli to corresponding version in Makefile
 subxt = "0.44"
 subxt-signer = "0.44"
+# Subxt-signer uses bip39 and moreover re-exports it, but for some reason it doesn't have zeroize feature enabled
+bip39 = { version = "2", features = ["zeroize"] }
 
 substrate_parser = { git = "https://github.com/Vovke/substrate-parser" }
 substrate-constructor = "0.2.0"

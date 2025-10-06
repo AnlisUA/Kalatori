@@ -1,6 +1,6 @@
 use crate::error::ForceWithdrawalError;
 use crate::{
-    chain::ChainManager,
+    chain::{ChainManager, utils::to_base58_string},
     database::{ConfigWoChains, Database, TransactionInfoDb},
     definitions::api_v2::{
         CurrencyProperties, Health, OrderCreateResponse, OrderInfo, OrderQuery, OrderResponse,
@@ -11,9 +11,9 @@ use crate::{
     utils::task_tracker::TaskTracker,
 };
 use std::collections::HashMap;
-use substrate_crypto_light::common::{AccountId32, AsBase58};
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
+use subxt::utils::AccountId32;
 
 /// Struct to store state of daemon. If something requires cooperation of more than one component,
 /// it should go through here.
@@ -64,7 +64,7 @@ impl State {
             let currencies = HashMap::new();
             let mut state = StateData {
                 currencies,
-                recipient,
+                recipient: recipient.clone(),
                 server_info,
                 db,
                 chain_manager,
@@ -73,11 +73,12 @@ impl State {
 
             // TODO: consider doing this even more lazy
             let order_list = db_wakeup.order_list().await?;
+            let recipient_cloned = state.recipient.clone();
             task_tracker.spawn("Restore saved orders", async move {
                 for (order, order_details) in order_list {
                     // TODO: handle error?
                     drop(chain_manager_wakeup
-                        .add_invoice(order, order_details, state.recipient)
+                        .add_invoice(order, order_details, recipient_cloned.clone())
                         .await);
                 }
                 Ok("All saved orders restored")
@@ -146,7 +147,7 @@ impl State {
                                                 }
                                             });
                                         }
-                                        drop(state.chain_manager.reap(id, order, state.recipient).await);
+                                        drop(state.chain_manager.reap(id, order, state.recipient.clone()).await);
                                     }
                                     Err(e) => {
                                         tracing::error!(
@@ -181,7 +182,7 @@ impl State {
 
                                 match order {
                                     Ok(Some(order_info)) => {
-                                        let result = state.chain_manager.reap(id.clone(), order_info, state.recipient).await;
+                                        let result = state.chain_manager.reap(id.clone(), order_info, state.recipient.clone()).await;
 
                                         match result {
                                             Ok(()) => {
@@ -444,7 +445,7 @@ impl StateData {
             Ok(OrderResponse::FoundOrder(OrderStatus {
                 order,
                 message,
-                recipient: self.recipient.clone().to_base58_string(2), // TODO maybe but spec says use "2"
+                recipient: to_base58_string(self.recipient.0, 2), // TODO maybe but spec says use "2"
                 server_info: self.server_info.clone(),
                 order_info,
                 payment_page: String::new(),
@@ -470,7 +471,7 @@ impl StateData {
         {
             OrderCreateResponse::New(new_order_info) => {
                 self.chain_manager
-                    .add_invoice(order.clone(), new_order_info.clone(), self.recipient)
+                    .add_invoice(order.clone(), new_order_info.clone(), self.recipient.clone())
                     .await?;
                 Ok(OrderResponse::NewOrder(self.order_status(
                     order,
@@ -495,7 +496,7 @@ impl StateData {
         OrderStatus {
             order,
             message,
-            recipient: self.recipient.clone().to_base58_string(2), // TODO maybe but spec says use "2"
+            recipient: to_base58_string(self.recipient.0, 2), // TODO maybe but spec says use "2"
             server_info: self.server_info.clone(),
             order_info,
             payment_page: String::new(),

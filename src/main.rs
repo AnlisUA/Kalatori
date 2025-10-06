@@ -1,8 +1,8 @@
-use std::process::ExitCode;
-use substrate_crypto_light::common::{AccountId32, AsBase58};
+use std::{process::ExitCode, str::FromStr};
 use tokio::{runtime::Runtime, sync::oneshot};
 use tokio_util::sync::CancellationToken;
 use tracing::Level;
+use subxt::utils::AccountId32;
 use utils::{
     logger,
     shutdown::{self, ShutdownNotification, ShutdownOutcome},
@@ -109,13 +109,12 @@ async fn async_try_main(
 
     let (task_tracker, error_rx) = TaskTracker::new();
 
-    let recipient = AccountId32::from_base58_string(&payments_config.recipient)
-        .map_err(|e| Error::RecipientAccount(e.to_string()))?
-        .0;
+    // TODO: replace with expect?
+    let recipient = AccountId32::from_str(&payments_config.recipient).unwrap();
 
     // TODO: quite dirty hack to make it work right now. Should be refactored ASAP.
     // Spawn separate task for handling payouts. This task should replace Signer and store seed phrase
-    let signer = Signer::init(recipient, &task_tracker, seed_config.seed.clone());
+    let signer = Signer::init(recipient.clone(), &task_tracker, seed_config.seed.clone());
     let seed_secret = seed_config.seed;
 
     let db = database::Database::init(database_config, &task_tracker, Timestamp(payments_config.account_lifetime_millis))?;

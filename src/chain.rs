@@ -1,7 +1,6 @@
 //! Everything related to actual interaction with blockchain
 
 use std::collections::HashMap;
-use substrate_crypto_light::common::AccountId32;
 use tokio::{
     sync::{mpsc, oneshot},
     time::{timeout, Duration},
@@ -9,6 +8,7 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 use subxt::config::{Config, SubstrateConfig, DefaultExtrinsicParams};
 use runtime::runtime_types::staging_xcm::v3::multilocation::MultiLocation;
+use subxt::utils::AccountId32;
 use subxt_signer::SecretString;
 
 #[subxt::subxt(

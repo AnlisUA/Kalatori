@@ -357,6 +357,7 @@ dependencies = [
  "bitcoin_hashes 0.13.0",
  "serde",
  "unicode-normalization",
+ "zeroize",
 ]
 
 [[package]]
@@ -2142,6 +2143,7 @@ dependencies = [
  "axum-macros",
  "base58",
  "base64ct",
+ "bip39",
  "blake2b_simd",
  "config",
  "const-hex",

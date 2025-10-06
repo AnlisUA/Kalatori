@@ -394,8 +394,11 @@ pub enum SignerError {
     #[error("signer is down")]
     SignerDown,
 
+    #[error("mnemonic phrase is invalid")]
+    InvalidMnemonic(#[from] subxt_signer::bip39::Error),
+
     #[error("seed phrase is invalid")]
-    InvalidSeed(#[from] ErrorMnemonic),
+    InvalidSeed(#[from] subxt_signer::sr25519::Error),
 
     #[error("derivation was failed")]
     InvalidDerivation(String),

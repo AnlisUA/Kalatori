@@ -2,7 +2,7 @@
 
 use crate::{
     chain::{
-        definitions::{BlockHash, ChainTrackerRequest, Invoice}, payout::payout, rpc::block_hash, AssetHubConfig, AssetHubOnlineClient
+        definitions::{BlockHash, ChainTrackerRequest, Invoice}, payout::payout, rpc::block_hash, AssetHubConfig, AssetHubOnlineClient, utils::to_base58_string
     }, configs::ChainConfig, database::{FinalizedTxDb, TransactionInfoDb, TransactionInfoDbInner, TxKind}, definitions::{
         api_v2::{Amount, CurrencyProperties, Health, RpcInfo, TokenKind, TxStatus}, Balance
     }, error::ChainError, signer::Signer, state::State, utils::task_tracker::TaskTracker
@@ -11,7 +11,6 @@ use jsonrpsee::ws_client::{WsClient, WsClientBuilder};
 use subxt::blocks::{ExtrinsicDetails, FoundExtrinsic};
 use zeroize::Zeroize;
 use std::{collections::HashMap, time::SystemTime};
-use substrate_crypto_light::common::{AccountId32, AsBase58};
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 use tokio::{
     sync::mpsc,
@@ -20,6 +19,7 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 use subxt_signer::SecretString;
 use subxt::blocks::Block;
+use subxt::utils::AccountId32;
 
 type Extrinsics = subxt::blocks::Extrinsics<AssetHubConfig, AssetHubOnlineClient>;
 type TransferExtrinsic = crate::chain::runtime::assets::calls::types::Transfer;
@@ -70,9 +70,9 @@ async fn parse_transfer_event(
     found_events
         .find_map(|event| {
             if event.from == acc_id {
-                Some((TxKind::Withdrawal, AccountId32(event.to.0), Balance(event.amount)))
+                Some((TxKind::Withdrawal, event.to, Balance(event.amount)))
             } else if event.to == acc_id {
-                Some((TxKind::Payment, AccountId32(event.from.0), Balance(event.amount)))
+                Some((TxKind::Payment, event.from, Balance(event.amount)))
             } else {
                 None
             }
@@ -238,8 +238,8 @@ pub fn start_chain_watch(
                                                                     inner: TransactionInfoDbInner {
                                                                         finalized_tx,
                                                                         finalized_tx_timestamp,
-                                                                        sender: another_account.to_base58_string(42),
-                                                                        recipient: invoice.address.to_base58_string(42),
+                                                                        sender: to_base58_string(another_account.0, 42),
+                                                                        recipient: to_base58_string(invoice.address.0, 42),
                                                                         amount,
                                                                         currency,
                                                                         status,
@@ -254,8 +254,8 @@ pub fn start_chain_watch(
                                                                     inner: TransactionInfoDbInner {
                                                                         finalized_tx,
                                                                         finalized_tx_timestamp,
-                                                                        sender: invoice.address.to_base58_string(42),
-                                                                        recipient: another_account.to_base58_string(42),
+                                                                        sender: to_base58_string(invoice.address.0, 42),
+                                                                        recipient: to_base58_string(another_account.0, 42),
                                                                         amount,
                                                                         currency,
                                                                         status,

@@ -15,7 +15,7 @@ use codec::{Decode, Encode};
 use names::Generator;
 use sled::Tree;
 use std::{str::FromStr, time::SystemTime};
-use substrate_crypto_light::common::AccountId32;
+use subxt::utils::AccountId32;
 use tokio::sync::{mpsc, oneshot};
 
 pub const MODULE: &str = module_path!();
