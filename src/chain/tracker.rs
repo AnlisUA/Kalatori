@@ -19,6 +19,7 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 use subxt_signer::SecretString;
+use subxt::blocks::Block;
 
 type Extrinsics = subxt::blocks::Extrinsics<AssetHubConfig, AssetHubOnlineClient>;
 type TransferExtrinsic = crate::chain::runtime::assets::calls::types::Transfer;
@@ -40,30 +41,22 @@ impl AnyTransferExtrinsic {
 }
 
 async fn transfer_events(
-    client: &AssetHubOnlineClient,
-    block: &BlockHash,
+    block: &Block<AssetHubConfig, AssetHubOnlineClient>,
 ) -> Result<(u64, Extrinsics), subxt::Error> {
-    let chain_block = client
-        .blocks()
-        .at(block.0)
-        .await?;
+    let timestamp_address = crate::chain::runtime::storage().timestamp().now();
 
-    let timestamp_address= crate::chain::runtime::storage().timestamp().now();
-
-    let timestamp = chain_block
+    let timestamp = block
         .storage()
         .fetch(&timestamp_address)
         .await?
         .ok_or_else(|| subxt::Error::Other("Timestamp is empty".into()))?;
 
-    let extrinsics = chain_block
-        .extrinsics()
-        .await?;
+    let extrinsics = block.extrinsics().await?;
 
     Ok((timestamp, extrinsics))
 }
 
-async fn parse_transfer_event (
+async fn parse_transfer_event(
     account_id: &AccountId32,
     extrinsic: &AnyTransferExtrinsic,
 ) -> Option<(TxKind, AccountId32, Balance)> {
@@ -190,21 +183,9 @@ pub fn start_chain_watch(
                         timeout(Duration::from_millis(watchdog), chain_rx.recv()).await
                     {
                         match req {
-                            ChainTrackerRequest::NewBlock(block_number) => {
-                                // TODO: hide this under rpc module
-                                let block = match block_hash(&client, Some(block_number)).await {
-                                    Ok(a) => a,
-                                    Err(e) => {
-                                        tracing::info!(
-                                            "Failed to receive block in chain {}, due to {}; Switching RPC server...",
-                                            chain.name,
-                                            e
-                                        );
-                                        break;
-                                    },
-                                };
-
-                                tracing::debug!("Block hash {} from {}", block.to_string(), chain.name);
+                            ChainTrackerRequest::NewBlock(block) => {
+                                let block_hash = block.hash();
+                                tracing::debug!("Block hash {} from {}", block_hash, chain.name);
                                 tracing::debug!("Watched accounts: {watched_accounts:?}");
 
                                 #[expect(clippy::cast_possible_truncation)]
@@ -212,10 +193,7 @@ pub fn start_chain_watch(
 
                                 let mut id_remove_list = Vec::new();
 
-                                match transfer_events(
-                                    &subxt_client,
-                                    &block,
-                                ).await {
+                                match transfer_events(&block).await {
                                     Ok((timestamp, extrinsics)) => {
                                         tracing::debug!("Got a block with timestamp {timestamp:?} & {} extrinsics", extrinsics.len());
 
@@ -243,7 +221,7 @@ pub fn start_chain_watch(
                                                         .format(&Rfc3339).unwrap().into();
 
                                                     let finalized_tx = FinalizedTxDb {
-                                                        block_number,
+                                                        block_number: block.number(),
                                                         position_in_block,
                                                     }.into();
 
@@ -345,7 +323,7 @@ pub fn start_chain_watch(
                                     watched_accounts.remove(&id);
                                 };
 
-                                tracing::debug!("Block {} from {} processed successfully", block.to_string(), chain.name);
+                                tracing::debug!("Block {} from {} processed successfully", block_hash, chain.name);
                             }
                             ChainTrackerRequest::WatchAccount(request) => {
                                 watched_accounts.insert(request.id.clone(), Invoice::from_request(request));
@@ -433,25 +411,27 @@ impl ChainWatcher {
         task_tracker: TaskTracker,
         cancellation_token: CancellationToken,
     ) -> Result<Self, ChainError> {
-        // TODO: !!! THIS METHOD SHOULD BE REFACTORED ASAP !!!
-        // Currently it subscribes for full blocks but sends only block's hash to another task
-        // which fetch this block again. It's a legacy of previous implementation. Leave it as is
-        // for now to avoid too large code diffs in commits.
-        // Probably this method should only perform some checks but not subscribe on anything
         let genesis_hash = BlockHash(client.genesis_hash());
-        let mut blocks = client.blocks().subscribe_finalized().await?;
-        let full_block = blocks.next().await.ok_or_else(|| ChainError::BlockSubscriptionTerminated)??;
-        let block = BlockHash(full_block.hash());
 
-        // TODO: it doesn't seem necessery and probably will be removed or should be rewritten otherwise
-        // let name = <RuntimeMetadataV15 as AsMetadata<()>>::spec_name_version(&metadata)?.spec_name;
-        // if name != chain.name {
-        //     return Err(ChainError::WrongNetwork {
-        //         expected: chain.name,
-        //         actual: name,
-        //         rpc: rpc_url.to_string(),
-        //     });
-        // }
+        // Have to perform separate call to get spec name cause `client.runtime_version()` returns a struct
+        // which doesn't contain that info. Please watch out for a possible subxt update that may add it.
+        let version_call = crate::chain::runtime::apis().core().version();
+
+        let name = client
+            .runtime_api()
+            .at_latest()
+            .await?
+            .call(version_call)
+            .await?
+            .spec_name;
+
+        if name != chain.name {
+            return Err(ChainError::WrongNetwork {
+                expected: chain.name,
+                actual: name,
+                rpc: rpc_url.to_string(),
+            });
+        }
 
         // TODO: in future we plan to use single asset, won't need to iterate over all of them.
         // It can be optimized using futures::iter and request values concurrently.
@@ -510,11 +490,14 @@ impl ChainWatcher {
                 }
             }
         }
+
         for id in id_remove_list {
             watched_accounts.remove(&id);
         }
 
         let rpc = rpc_url.to_string();
+        let mut blocks = client.blocks().subscribe_finalized().await?;
+
         task_tracker.spawn(format!("watching blocks at {rpc}"), async move {
             tracing::info!("Start watching blocks task for {:?}", rpc);
 
@@ -526,15 +509,17 @@ impl ChainWatcher {
                         break
                     },
                     block = blocks.next() => {
-                        let next_block_number = {
-                            block.ok_or_else(|| ChainError::BlockSubscriptionTerminated)?.map(|block| block.number())
+                        let next_block = {
+                            block.ok_or_else(|| ChainError::BlockSubscriptionTerminated)?
                         };
 
-                        match next_block_number {
-                            Ok(block_number) => {
+                        match next_block {
+                            Ok(block) => {
+                                let block_number = block.number();
                                 tracing::debug!("received block {block_number} from {rpc}");
+
                                 let result = chain_tx
-                                    .send(ChainTrackerRequest::NewBlock(block_number))
+                                    .send(ChainTrackerRequest::NewBlock(block))
                                     .await;
 
                                 if let Err(e) = result {

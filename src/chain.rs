@@ -39,9 +39,8 @@ impl Config for AssetHubConfig {
     type AssetId = MultiLocation;
 }
 
-pub type AssetHubOnlineClient = subxt::OnlineClient::<AssetHubConfig>;
 use crate::{
-    definitions::{api_v2::OrderInfo},
+    definitions::api_v2::OrderInfo,
     error::{ChainError, Error},
     signer::Signer,
     state::State,
@@ -65,6 +64,8 @@ pub const MODULE: &str = module_path!();
 
 /// Wait this long before forgetting about stuck chain watcher
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(120_000);
+
+pub type AssetHubOnlineClient = subxt::OnlineClient<AssetHubConfig>;
 
 /// RPC server handle
 #[derive(Clone, Debug)]

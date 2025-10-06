@@ -5,7 +5,7 @@ use std::fmt::Display;
 use crate::{
     chain::tracker::ChainWatcher, chain::AssetHubOnlineClient,
     definitions::{
-        api_v2::{BlockNumber, CurrencyInfo, OrderInfo, RpcInfo, Timestamp},
+        api_v2::{CurrencyInfo, OrderInfo, RpcInfo, Timestamp},
         Balance,
     },
     error::{ChainError, NotHexError},
@@ -87,7 +87,9 @@ impl WatchAccount {
 
 pub enum ChainTrackerRequest {
     WatchAccount(WatchAccount),
-    NewBlock(BlockNumber),
+    NewBlock(
+        subxt::blocks::Block<crate::chain::AssetHubConfig, crate::chain::AssetHubOnlineClient>,
+    ),
     Reap(WatchAccount),
     #[expect(dead_code)]
     ForceReap(WatchAccount),
