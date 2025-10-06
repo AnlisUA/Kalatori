@@ -33,7 +33,7 @@ copy-configs: # Copy .example configs to actual configs
 
 copy-configs-ci: # Copy .ci configs to actual configs
 	cd configs; \
-	for i in ./*.example; \
+	for i in ./*.ci; \
 	do \
 		cp "$$i" "$${i%.*}"; \
 	done

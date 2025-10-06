@@ -30,5 +30,9 @@ jobs:
           components: clippy
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2.7.5
+      - name: Install subxt-cli
+        run: make install-subxt-cli
+      - name: Download chain metadata
+        run: make download-node-metadata-ci
       - name: cargo clippy
         run: cargo clippy --all-targets -- -D warnings -D clippy::pedantic -D clippy::correctness -D clippy::complexity -D clippy::perf
