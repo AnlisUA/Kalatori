@@ -17,7 +17,7 @@ use crate::{
     },
     database::{TransactionInfoDb, TransactionInfoDbInner, TxKind},
     definitions::api_v2::{Amount, TxStatus},
-    error::ChainError,
+    error::{ChainError, SignerError},
     state::State,
 };
 use subxt::config::DefaultExtrinsicParamsBuilder;
@@ -62,10 +62,10 @@ pub async fn payout(
         .mortal(32)
         .build();
 
-    // TODO: need to validate phrase on start so unwrap here can be safe
-    let mnemonic = Mnemonic::parse(seed.expose_secret()).unwrap();
-    // TODO: add support for password configuration, ensure unwrap here is safe
-    let keypair = Keypair::from_phrase(&mnemonic, None).unwrap();
+    // TODO: need to validate phrase on start and somehow handle error cause it should be unexpected and probably can happen only if we zeroize seed too early
+    let mnemonic = Mnemonic::parse(seed.expose_secret()).map_err(SignerError::from)?;
+    // TODO: add support for password configuration and also validate keypair creation on start too
+    let keypair = Keypair::from_phrase(&mnemonic, None).map_err(SignerError::from)?;
 
     let order_keypair = keypair.derive([
         DeriveJunction::hard(to_base58_string(order.recipient.0, 2)),
