@@ -626,7 +626,7 @@ pub enum TxKind {
     Withdrawal,
 }
 
-#[derive(Encode, Decode)]
+#[derive(Encode, Decode, Debug)]
 pub struct FinalizedTxDb {
     pub block_number: BlockNumber,
     pub position_in_block: ExtrinsicIndex,

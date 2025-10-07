@@ -69,11 +69,15 @@ time = "0.3"
 reqwest = "0.12"
 # This crate bumbped MSRV in minor update
 base64ct = "=1.6.0"
+subxt = "0.44"
+subxt-signer = "0.44"
 
 substrate_parser = { git = "https://github.com/Vovke/substrate-parser" }
 substrate-constructor = "0.2.0"
 mnemonic-external = "0.1.0"
 substrate-crypto-light = "0.2.0"
+base58 = "0.2.0"
+blake2b_simd = "1.0.3"
 
 [build-dependencies]
 # Don't forget to update me in `[dependencies]`!

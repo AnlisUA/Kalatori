@@ -7,7 +7,39 @@ use tokio::{
     time::{timeout, Duration},
 };
 use tokio_util::sync::CancellationToken;
+use subxt::config::{Config, SubstrateConfig, DefaultExtrinsicParams};
+use runtime::runtime_types::staging_xcm::v3::multilocation::MultiLocation;
+use subxt_signer::SecretString;
 
+#[subxt::subxt(
+    runtime_metadata_path = "./metadata.scale",
+    generate_docs,
+    // derive_for_all_types = "Clone, PartialEq, Eq",
+    derive_for_type(
+        path = "staging_xcm::v3::multilocation::MultiLocation",
+        derive = "Clone, codec::Encode",
+        recursive
+    )
+)]
+pub mod runtime {}
+
+// We don't need to construct this at runtime, so an empty enum is appropriate.
+#[derive(Debug)]
+pub enum AssetHubConfig {}
+
+impl Config for AssetHubConfig {
+    type AccountId = <SubstrateConfig as Config>::AccountId;
+    type Address = <SubstrateConfig as Config>::Address;
+    type Signature = <SubstrateConfig as Config>::Signature;
+    type Hasher = <SubstrateConfig as Config>::Hasher;
+    type Header = <SubstrateConfig as Config>::Header;
+    type ExtrinsicParams = DefaultExtrinsicParams<AssetHubConfig>;
+    // Here we use the MultiLocation from the metadata as a part of the config:
+    // The `ChargeAssetTxPayment` signed extension that is part of the ExtrinsicParams above, now uses the type:
+    type AssetId = MultiLocation;
+}
+
+pub type AssetHubOnlineClient = subxt::OnlineClient::<AssetHubConfig>;
 use crate::{
     definitions::{api_v2::OrderInfo, Chain},
     error::{ChainError, Error},
@@ -44,6 +76,7 @@ impl ChainManager {
     /// - all modules should be restarted, probably.
     #[expect(clippy::too_many_lines)]
     pub fn ignite(
+        seed_secret: SecretString,
         chain_info: Chain,
         state: &State,
         signer: &Signer,
@@ -77,6 +110,7 @@ impl ChainManager {
         }
 
         start_chain_watch(
+            seed_secret,
             chain_info,
             chain_tx.clone(),
             chain_rx,

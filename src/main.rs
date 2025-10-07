@@ -1,4 +1,5 @@
 use clap::Parser;
+use subxt_signer::SecretString;
 use std::process::ExitCode;
 use substrate_crypto_light::common::{AccountId32, AsBase58};
 use tokio::{runtime::Runtime, sync::oneshot};
@@ -126,7 +127,10 @@ async fn async_try_main(
         .map_err(|e| Error::RecipientAccount(e.to_string()))?
         .0;
 
-    let signer = Signer::init(recipient, &task_tracker, seed_env_vars.seed);
+    // TODO: quite dirty hack to make it work right now. Should be refactored ASAP.
+    // Spawn separate task for handling payouts. This task should replace Signer and store seed phrase
+    let signer = Signer::init(recipient, &task_tracker, seed_env_vars.seed.clone());
+    let seed_secret = SecretString::from(seed_env_vars.seed);
 
     let db = database::Database::init(database_path, &task_tracker, config.account_lifetime)?;
 
@@ -151,6 +155,7 @@ async fn async_try_main(
 
     cm_tx
         .send(ChainManager::ignite(
+            seed_secret,
             config.chain,
             &state,
             &signer,
