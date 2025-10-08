@@ -343,14 +343,14 @@ mod tests {
         // load config from default config dir without any overrides
         {
             let config = web_server_config_with_prefix("", "");
-            assert_eq!(config.host, IpAddr::V4(Ipv4Addr::LOCALHOST));
+            assert_eq!(config.host, IpAddr::V4(Ipv4Addr::UNSPECIFIED));
             assert_eq!(config.port, 16726);
         }
 
         // override config dir to unexisting one but as long as all config fields are optional it should work
         {
             let config = web_server_config_with_prefix("somewhere-nowhere", "");
-            assert_eq!(config.host, IpAddr::V4(Ipv4Addr::LOCALHOST));
+            assert_eq!(config.host, IpAddr::V4(Ipv4Addr::UNSPECIFIED));
             assert_eq!(config.port, 16726);
         }
 
@@ -361,8 +361,22 @@ mod tests {
             }
 
             let config = web_server_config_with_prefix("", "");
-            assert_eq!(config.host, IpAddr::V4(Ipv4Addr::LOCALHOST));
+            assert_eq!(config.host, IpAddr::V4(Ipv4Addr::UNSPECIFIED));
             assert_eq!(config.port, 12345);
+        }
+
+        // override some parameter with env var with customized prefix
+        {
+            unsafe {
+                std::env::set_var(
+                    "SUPER_KALATORI_WEB_SERVER_HOST",
+                    Ipv4Addr::LOCALHOST.to_string(),
+                );
+            }
+
+            let config = web_server_config_with_prefix("", "SUPER_KALATORI");
+            assert_eq!(config.host, IpAddr::V4(Ipv4Addr::LOCALHOST));
+            assert_eq!(config.port, 16726);
         }
     }
 
