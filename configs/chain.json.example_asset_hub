@@ -1,0 +1,14 @@
+{
+    "name": "statemint",
+    "endpoints": [
+        "wss://polkadot-asset-hub-rpc.polkadot.io",
+        "wss://statemint-rpc.dwellir.com"
+    ],
+    "assets": [{
+        "name": "USDC",
+        "id": 1337
+    }, {
+        "name": "USDt",
+        "id": 1984
+    }]
+}

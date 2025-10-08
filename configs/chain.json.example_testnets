@@ -1,0 +1,14 @@
+{
+    "name": "statemint",
+    "endpoints": [
+        "wss://westend-asset-hub-rpc.polkadot.io",
+        "wss://westmint-rpc.dwellir.com"
+    ],
+    "assets": [{
+        "name": "JOE",
+        "id": 8
+    }, {
+        "name": "TEST",
+        "id": 1234
+    }]
+}

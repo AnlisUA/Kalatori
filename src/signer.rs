@@ -16,6 +16,7 @@ use substrate_crypto_light::{
     common::{AccountId32, AsBase58, DeriveJunction, FullDerivation},
     sr25519::{Pair, Signature},
 };
+use subxt_signer::{ExposeSecret, SecretString};
 use tokio::sync::{mpsc, oneshot};
 use zeroize::Zeroize;
 
@@ -28,10 +29,11 @@ impl Signer {
     /// Run once to initialize; this should do **all** secret management
     // TODO: check if it's DEFINITELY won't break something. Check `ZeroizeOnDrop` marco implementation
     #[expect(tail_expr_drop_order)]
-    pub fn init(recipient: AccountId32, task_tracker: &TaskTracker, seed: String) -> Self {
+    pub fn init(recipient: AccountId32, task_tracker: &TaskTracker, mut seed: SecretString) -> Self {
         let (tx, mut rx) = mpsc::channel(16);
         task_tracker.spawn("Signer", async move {
-            let mut seed_entropy = entropy_from_phrase(&seed)?; // TODO: shutdown on failure
+            let mut seed_entropy = entropy_from_phrase(seed.expose_secret())?; // TODO: shutdown on failure
+            seed.zeroize();
 
             while let Some(req) = rx.recv().await {
                 match req {

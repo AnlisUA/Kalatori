@@ -15,8 +15,6 @@ describe('Blackbox API Tests', () => {
     expect(response.body).toHaveProperty('server_info');
     expect(response.body.server_info).toHaveProperty('version');
     expect(response.body.server_info).toHaveProperty('instance_id');
-    expect(response.body.server_info).toHaveProperty('debug');
-    expect(response.body.server_info.debug).toBe(true);
     expect(response.body.server_info).toHaveProperty('kalatori_remark');
 
     // Validate supported_currencies properties
@@ -68,8 +66,6 @@ describe('Blackbox API Tests', () => {
     expect(response.body).toHaveProperty('server_info');
     expect(response.body.server_info).toHaveProperty('version');
     expect(response.body.server_info).toHaveProperty('instance_id');
-    expect(response.body.server_info).toHaveProperty('debug');
-    expect(response.body.server_info.debug).toBe(true);
     expect(response.body.server_info).toHaveProperty('kalatori_remark');
 
     const instanceId = response.body.server_info.instance_id;

@@ -11,15 +11,6 @@ pub type Nonce = u32;
 
 pub type Entropy = Vec<u8>; // TODO: maybe enforce something here
 
-#[derive(Clone, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub struct Chain {
-    pub name: String,
-    pub endpoints: Vec<String>,
-    #[serde(default)]
-    pub assets: Vec<AssetInfo>,
-}
-
 #[derive(Clone, Debug, Deserialize)]
 pub struct AssetInfo {
     pub name: String,
@@ -265,7 +256,6 @@ pub mod api_v2 {
     pub struct ServerInfo {
         pub version: String,
         pub instance_id: String,
-        pub debug: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
         pub kalatori_remark: Option<String>,
     }

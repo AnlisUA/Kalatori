@@ -7,5 +7,8 @@ chopsticks
 docs
 target
 tests
+bin
 
 Dockerfile
+
+metadata.scale
