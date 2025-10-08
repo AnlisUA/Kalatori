@@ -1,8 +1,8 @@
 use std::net::{IpAddr, Ipv4Addr};
 
 use config::Config;
-use serde::de::DeserializeOwned;
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use subxt_signer::SecretString;
 
 const DEFAULT_CONFIG_DIR_PATH: &str = "configs";
@@ -11,17 +11,17 @@ fn format_prefix(prefix: &str, config_prefix: &str) -> String {
     if prefix.is_empty() {
         config_prefix.to_string()
     } else {
-        format!("{}_{}", prefix, config_prefix)
+        format!("{prefix}_{config_prefix}")
     }
 }
 
 fn format_config_path(config_dir_path: &str, config_name: &str) -> String {
     if config_dir_path.is_empty() {
-        format!("{}/{}", DEFAULT_CONFIG_DIR_PATH, config_name)
-    } else if config_dir_path.ends_with("/") {
-        format!("{}{}", config_dir_path, config_name)
+        format!("{DEFAULT_CONFIG_DIR_PATH}/{config_name}")
+    } else if config_dir_path.ends_with('/') {
+        format!("{config_dir_path}{config_name}")
     } else {
-        format!("{}/{}", config_dir_path, config_name)
+        format!("{config_dir_path}/{config_name}")
     }
 }
 
@@ -36,11 +36,11 @@ fn config_from_file_or_env<T: DeserializeOwned>(filename: &str, env_prefix: &str
             .list_separator(","),
         )
         .build()
-        .unwrap_or_else(|err| panic!("Failed to read config file: {}. Error: {}", filename, err));
+        .unwrap_or_else(|err| panic!("Failed to read config file: {filename}. Error: {err}"));
 
     config
         .try_deserialize()
-        .unwrap_or_else(|err| panic!("Failed to parse config file: {}. Error: {}", filename, err))
+        .unwrap_or_else(|err| panic!("Failed to parse config file: {filename}. Error: {err}"))
 }
 
 // TODO: read it directly into SecretString
@@ -100,7 +100,7 @@ pub struct PaymentsConfig {
 }
 
 fn default_host() -> IpAddr {
-    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
+    IpAddr::V4(Ipv4Addr::UNSPECIFIED)
 }
 
 fn default_port() -> u16 {
@@ -142,7 +142,7 @@ pub fn seed_config_with_prefix(config_dir_path: &str, prefix: &str) -> SeedConfi
     // of the program before spawn any futures which might cause this error therefore can consider it safe. If you know
     // some better way to handle it (except of forbid to provide seed throgh env var) please let us know.
     unsafe {
-        std::env::remove_var(&format!("{}_SEED", env_prefix));
+        std::env::remove_var(format!("{env_prefix}_SEED"));
     }
 
     config.into()
@@ -185,90 +185,100 @@ mod tests {
     #[serial]
     fn test_seed_config_with_prefix() {
         // load from default config dir without any overrides
-        let config = seed_config_with_prefix("", "");
-        assert_eq!(
-            config.seed.expose_secret(),
-            "bottom drive obey lake curtain smoke basket hold race lonely fit walk"
-        );
+        {
+            let config = seed_config_with_prefix("", "");
+            assert_eq!(
+                config.seed.expose_secret(),
+                "bottom drive obey lake curtain smoke basket hold race lonely fit walk"
+            );
+        }
 
         // override seed with env var and ensure this env var was removed after config load
-        let value = "test seed";
-        unsafe {
-            std::env::set_var("SEED_SEED", value);
-        }
-        let config = seed_config_with_prefix("", "");
-        assert_eq!(config.seed.expose_secret(), value);
+        {
+            let value = "test seed";
+            unsafe {
+                std::env::set_var("SEED_SEED", value);
+            }
+            let config = seed_config_with_prefix("", "");
+            assert_eq!(config.seed.expose_secret(), value);
 
-        let env_var = std::env::var("SEED_SEED");
-        assert!(matches!(env_var, Err(std::env::VarError::NotPresent)));
+            let env_var = std::env::var("SEED_SEED");
+            assert!(matches!(env_var, Err(std::env::VarError::NotPresent)));
+        }
 
         // same as previous + override env var prefix. Also set some different dir which shouldn't affect anything in this case
-        let value = "test seed 2";
-        unsafe {
-            std::env::set_var("KALATORI_SUPER_PREFIX_SEED_SEED", value);
-        }
-        let config = seed_config_with_prefix("somewhere-nowhere", "KALATORI_SUPER_PREFIX");
-        assert_eq!(config.seed.expose_secret(), value);
+        {
+            let value = "test seed 2";
+            unsafe {
+                std::env::set_var("KALATORI_SUPER_PREFIX_SEED_SEED", value);
+            }
+            let config = seed_config_with_prefix("somewhere-nowhere", "KALATORI_SUPER_PREFIX");
+            assert_eq!(config.seed.expose_secret(), value);
 
-        let env_var = std::env::var("KALATORI_SUPER_PREFIX_SEED_SEED");
-        assert!(matches!(env_var, Err(std::env::VarError::NotPresent)));
+            let env_var = std::env::var("KALATORI_SUPER_PREFIX_SEED_SEED");
+            assert!(matches!(env_var, Err(std::env::VarError::NotPresent)));
+        }
     }
 
     #[test]
     #[serial]
     fn test_payments_config_with_prefix() {
         // load config from default config dir without any overrides
-        let config = payments_config_with_prefix("", "");
-        assert_eq!(
-            config.account_lifetime_millis,
-            default_account_lifetime_millis()
-        );
+        {
+            let config = payments_config_with_prefix("", "");
+            assert_eq!(
+                config.account_lifetime_millis,
+                default_account_lifetime_millis()
+            );
 
-        assert_eq!(
-            config.recipient,
-            "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
-        );
+            assert_eq!(
+                config.recipient,
+                "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
+            );
 
-        assert_eq!(config.remark, Some("test".to_string()));
+            assert_eq!(config.remark, Some("test".to_string()));
+        }
 
         // override config dir and set `recipient` in env var
-        unsafe {
-            // we don't validate it currenlty so can set any value
-            std::env::set_var("PAYMENTS_RECIPIENT", "test_recipient");
+        {
+            unsafe {
+                // we don't validate it currenlty so can set any value
+                std::env::set_var("PAYMENTS_RECIPIENT", "test_recipient");
+            }
+
+            let config = payments_config_with_prefix("somewhere-nowhere", "");
+
+            assert_eq!(
+                config.account_lifetime_millis,
+                default_account_lifetime_millis()
+            );
+
+            assert_eq!(config.recipient, "test_recipient");
+            assert!(config.remark.is_none());
         }
-
-        let config = payments_config_with_prefix("somewhere-nowhere", "");
-
-        assert_eq!(
-            config.account_lifetime_millis,
-            default_account_lifetime_millis()
-        );
-
-        assert_eq!(config.recipient, "test_recipient");
-        assert!(config.remark.is_none());
 
         // override config env prefix
-        unsafe {
-            std::env::set_var("KALATORI_PAYMENTS_ACCOUNT_LIFETIME_MILLIS", "123");
+        {
+            unsafe {
+                std::env::set_var("KALATORI_PAYMENTS_ACCOUNT_LIFETIME_MILLIS", "123");
+            }
+
+            let config = payments_config_with_prefix("", "KALATORI");
+
+            assert_eq!(config.account_lifetime_millis, 123);
+
+            assert_eq!(
+                config.recipient,
+                "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
+            );
+
+            assert_eq!(config.remark, Some("test".to_string()));
         }
-
-        let config = payments_config_with_prefix("", "KALATORI");
-
-        assert_eq!(config.account_lifetime_millis, 123);
-
-        assert_eq!(
-            config.recipient,
-            "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
-        );
-
-        assert_eq!(config.remark, Some("test".to_string()));
     }
 
     #[test]
     #[serial]
     fn test_chain_config_with_prefix() {
-        // load config from default config dir without any overrides
-        let config = chain_config_with_prefix("", "");
         let mut expected_endpoints = vec!["ws://localhost:9000".to_string()];
 
         let expected_assets = vec![
@@ -282,35 +292,46 @@ mod tests {
             },
         ];
 
-        assert_eq!(config.name, "statemint");
-        assert_eq!(config.endpoints, expected_endpoints);
-        assert_eq!(config.assets, expected_assets);
+        // load config from default config dir without any overrides
+        {
+            let config = chain_config_with_prefix("", "");
+
+            assert_eq!(config.name, "statemint");
+            assert_eq!(config.endpoints, expected_endpoints);
+            assert_eq!(config.assets, expected_assets);
+        }
 
         // override endpoints with env vars
-        unsafe {
-            std::env::set_var("CHAIN_ENDPOINTS", "ws://localhost:9000,ws://localhost:9500");
-        }
+        {
+            unsafe {
+                std::env::set_var("CHAIN_ENDPOINTS", "ws://localhost:9000,ws://localhost:9500");
+            }
 
-        expected_endpoints.push("ws://localhost:9500".to_string());
-        let config = chain_config_with_prefix("", "");
-        assert_eq!(config.name, "statemint");
-        assert_eq!(config.endpoints, expected_endpoints);
-        assert_eq!(config.assets, expected_assets);
+            expected_endpoints.push("ws://localhost:9500".to_string());
+            let config = chain_config_with_prefix("", "");
+            assert_eq!(config.name, "statemint");
+            assert_eq!(config.endpoints, expected_endpoints);
+            assert_eq!(config.assets, expected_assets);
+        }
 
         // override env var prefix
-        unsafe {
-            std::env::set_var("KALATORI_CHAIN_NAME", "kusama");
-        }
+        {
+            unsafe {
+                std::env::set_var("KALATORI_CHAIN_NAME", "kusama");
+            }
 
-        let _unused = expected_endpoints.pop();
-        let config = chain_config_with_prefix("", "KALATORI");
-        assert_eq!(config.name, "kusama");
-        assert_eq!(config.endpoints, expected_endpoints);
-        assert_eq!(config.assets, expected_assets);
+            let _unused = expected_endpoints.pop();
+            let config = chain_config_with_prefix("", "KALATORI");
+            assert_eq!(config.name, "kusama");
+            assert_eq!(config.endpoints, expected_endpoints);
+            assert_eq!(config.assets, expected_assets);
+        }
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(
+        expected = "Failed to parse config file: somewhere-nowhere/chain.json. Error: missing configuration field \"name\""
+    )]
     #[serial]
     fn test_panic_on_unexisting_config() {
         let _config = chain_config_with_prefix("somewhere-nowhere", "");
@@ -322,14 +343,14 @@ mod tests {
         // load config from default config dir without any overrides
         {
             let config = web_server_config_with_prefix("", "");
-            assert_eq!(config.host, IpAddr::V4(Ipv4Addr::LOCALHOST));
+            assert_eq!(config.host, IpAddr::V4(Ipv4Addr::UNSPECIFIED));
             assert_eq!(config.port, 16726);
         }
 
         // override config dir to unexisting one but as long as all config fields are optional it should work
         {
             let config = web_server_config_with_prefix("somewhere-nowhere", "");
-            assert_eq!(config.host, IpAddr::V4(Ipv4Addr::LOCALHOST));
+            assert_eq!(config.host, IpAddr::V4(Ipv4Addr::UNSPECIFIED));
             assert_eq!(config.port, 16726);
         }
 
@@ -340,8 +361,22 @@ mod tests {
             }
 
             let config = web_server_config_with_prefix("", "");
-            assert_eq!(config.host, IpAddr::V4(Ipv4Addr::LOCALHOST));
+            assert_eq!(config.host, IpAddr::V4(Ipv4Addr::UNSPECIFIED));
             assert_eq!(config.port, 12345);
+        }
+
+        // override some parameter with env var with customized prefix
+        {
+            unsafe {
+                std::env::set_var(
+                    "SUPER_KALATORI_WEB_SERVER_HOST",
+                    Ipv4Addr::LOCALHOST.to_string(),
+                );
+            }
+
+            let config = web_server_config_with_prefix("", "SUPER_KALATORI");
+            assert_eq!(config.host, IpAddr::V4(Ipv4Addr::LOCALHOST));
+            assert_eq!(config.port, 16726);
         }
     }
 
@@ -349,31 +384,39 @@ mod tests {
     #[serial]
     fn test_database_config_with_prefix() {
         // load config from default config dir without any overrides
-        let config = database_config_with_prefix("", "");
-        assert_eq!(config.path, "kalatori.db".to_string());
-        assert!(!config.temporary);
+        {
+            let config = database_config_with_prefix("", "");
+            assert_eq!(config.path, "kalatori.db".to_string());
+            assert!(!config.temporary);
+        }
 
         // override configs dir to unexisting one but as long as all config fields are optional it should work
-        let config = database_config_with_prefix("somewhere-nowhere", "");
-        assert_eq!(config.path, "kalatori.db".to_string());
-        assert!(!config.temporary);
+        {
+            let config = database_config_with_prefix("somewhere-nowhere", "");
+            assert_eq!(config.path, "kalatori.db".to_string());
+            assert!(!config.temporary);
+        }
 
         // override some parameter with env var
-        unsafe {
-            std::env::set_var("DATABASE_TEMPORARY", "true");
-        }
+        {
+            unsafe {
+                std::env::set_var("DATABASE_TEMPORARY", "true");
+            }
 
-        let config = database_config_with_prefix("", "");
-        assert_eq!(config.path, "kalatori.db".to_string());
-        assert!(config.temporary);
+            let config = database_config_with_prefix("", "");
+            assert_eq!(config.path, "kalatori.db".to_string());
+            assert!(config.temporary);
+        }
 
         // override some parameter with env var with customized prefix
-        unsafe {
-            std::env::set_var("MEGA_KALATORI_DATABASE_PATH", "mega_kalatori.db");
-        }
+        {
+            unsafe {
+                std::env::set_var("MEGA_KALATORI_DATABASE_PATH", "mega_kalatori.db");
+            }
 
-        let config = database_config_with_prefix("", "MEGA_KALATORI");
-        assert_eq!(config.path, "mega_kalatori.db");
-        assert!(!config.temporary);
+            let config = database_config_with_prefix("", "MEGA_KALATORI");
+            assert_eq!(config.path, "mega_kalatori.db");
+            assert!(!config.temporary);
+        }
     }
 }

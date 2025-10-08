@@ -1,50 +1,18 @@
 //! Common objects for chain interaction system
 
-use std::fmt::Display;
+use std::str::FromStr;
 
 use crate::{
-    chain::tracker::ChainWatcher, chain::AssetHubOnlineClient,
+    chain::AssetHubOnlineClient,
+    chain::tracker::ChainWatcher,
     definitions::{
-        api_v2::{BlockNumber, CurrencyInfo, OrderInfo, RpcInfo, Timestamp},
         Balance,
+        api_v2::{CurrencyInfo, OrderInfo, RpcInfo, Timestamp},
     },
-    error::{ChainError, NotHexError},
-    utils::unhex,
+    error::ChainError,
 };
-use primitive_types::H256;
-use substrate_crypto_light::common::{AccountId32, AsBase58};
+use subxt::utils::AccountId32;
 use tokio::sync::oneshot;
-
-/// Abstraction to distinguish block hash from many other H256 things
-#[derive(Debug, Clone)]
-pub struct BlockHash(pub H256);
-
-impl Display for BlockHash {
-    /// Convert block hash to RPC-friendly format
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "0x{}", const_hex::encode(self.0))
-    }
-}
-
-impl BlockHash {
-    /// Convert string returned by RPC to typesafe block
-    ///
-    /// TODO: integrate nicely with serde
-    pub fn from_str(s: &str) -> Result<Self, crate::error::ChainError> {
-        let block_hash_raw = unhex(s, NotHexError::BlockHash)?;
-        Ok(BlockHash(H256(
-            block_hash_raw
-                .try_into()
-                .map_err(|_| ChainError::BlockHashLength)?,
-        )))
-    }
-}
-
-#[derive(Debug)]
-pub struct EventFilter<'a> {
-    pub pallet: &'a str,
-    pub optional_event_variant: Option<&'a str>,
-}
 
 pub enum ChainRequest {
     WatchAccount(WatchAccount),
@@ -73,9 +41,8 @@ impl WatchAccount {
     ) -> Result<WatchAccount, ChainError> {
         Ok(WatchAccount {
             id,
-            address: AccountId32::from_base58_string(&order.payment_account)
-                .map_err(|e| ChainError::InvoiceAccount(e.to_string()))?
-                .0,
+            address: AccountId32::from_str(&order.payment_account)
+                .map_err(|e| ChainError::InvoiceAccount(e.to_string()))?,
             currency: order.currency,
             amount: order.amount,
             recipient,
@@ -87,7 +54,9 @@ impl WatchAccount {
 
 pub enum ChainTrackerRequest {
     WatchAccount(WatchAccount),
-    NewBlock(BlockNumber),
+    NewBlock(
+        subxt::blocks::Block<crate::chain::AssetHubConfig, crate::chain::AssetHubOnlineClient>,
+    ),
     Reap(WatchAccount),
     #[expect(dead_code)]
     ForceReap(WatchAccount),
@@ -129,7 +98,7 @@ impl Invoice {
 
         // TODO: asset_id shouldn't be optional, will change in future
         let Some(asset_id) = currency.asset_id else {
-            return Err(ChainError::InvalidCurrency(self.currency.currency.clone()))
+            return Err(ChainError::InvalidCurrency(self.currency.currency.clone()));
         };
 
         let request_data = crate::chain::runtime::storage()
@@ -143,8 +112,7 @@ impl Invoice {
             .await?
             .fetch(&request_data)
             .await?
-            .map(|result| result.balance)
-            .unwrap_or(0);
+            .map_or(0, |result| result.balance);
 
         Ok(Balance(balance))
     }

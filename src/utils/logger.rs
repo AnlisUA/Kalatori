@@ -1,6 +1,6 @@
 use super::shutdown;
 use crate::{database, error::Error, server};
-use tracing_subscriber::{fmt::time::UtcTime, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt::time::UtcTime};
 
 const TARGETS: &[&str] = &[
     database::MODULE,

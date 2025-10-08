@@ -4,19 +4,6 @@ use std::ops::{Deref, Sub};
 
 use serde::Deserialize;
 
-#[expect(dead_code)]
-pub type Version = u64;
-#[expect(dead_code)]
-pub type Nonce = u32;
-
-pub type Entropy = Vec<u8>; // TODO: maybe enforce something here
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct AssetInfo {
-    pub name: String,
-    pub id: api_v2::AssetId,
-}
-
 #[derive(Deserialize, Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub struct Balance(pub u128);
 

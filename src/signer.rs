@@ -9,14 +9,10 @@
 //!
 //! Also this abstraction could be used to implement off-system signer
 
-use crate::{definitions::Entropy, error::SignerError, utils::task_tracker::TaskTracker};
-
-use mnemonic_external::{regular::InternalWordList, WordSet};
-use substrate_crypto_light::{
-    common::{AccountId32, AsBase58, DeriveJunction, FullDerivation},
-    sr25519::{Pair, Signature},
-};
-use subxt_signer::{ExposeSecret, SecretString};
+use crate::chain::utils::to_base58_string;
+use crate::{error::SignerError, utils::task_tracker::TaskTracker};
+use subxt::utils::AccountId32;
+use subxt_signer::{DeriveJunction, ExposeSecret, SecretString, bip39::Mnemonic, sr25519::Keypair};
 use tokio::sync::{mpsc, oneshot};
 use zeroize::Zeroize;
 
@@ -27,42 +23,40 @@ pub struct Signer {
 
 impl Signer {
     /// Run once to initialize; this should do **all** secret management
-    // TODO: check if it's DEFINITELY won't break something. Check `ZeroizeOnDrop` marco implementation
-    #[expect(tail_expr_drop_order)]
-    pub fn init(recipient: AccountId32, task_tracker: &TaskTracker, mut seed: SecretString) -> Self {
+    // Seems to be a false positive, we do want to take ownership of recipient cause it's used in async task
+    #[expect(clippy::needless_pass_by_value)]
+    pub fn init(
+        recipient: AccountId32,
+        task_tracker: &TaskTracker,
+        mut seed: SecretString,
+    ) -> Self {
         let (tx, mut rx) = mpsc::channel(16);
         task_tracker.spawn("Signer", async move {
-            let mut seed_entropy = entropy_from_phrase(seed.expose_secret())?; // TODO: shutdown on failure
+            // TODO: shutdown on failure
+            let mut mnemonic = Mnemonic::parse(seed.expose_secret()).map_err(SignerError::from)?;
             seed.zeroize();
 
             while let Some(req) = rx.recv().await {
                 match req {
                     SignerRequest::PublicKey(request) => {
-                        let _unused = request.res.send(
-                            match Pair::from_entropy_and_full_derivation(
-                                &seed_entropy,
+                        let new_public_key = {
+                            // For some reason Keypair doesn't implement Zeroize trait but it's inner secret does
+                            // so we just let it go out of scope as soon as possible
+                            let keypair =
+                                Keypair::from_phrase(&mnemonic, None).map_err(SignerError::from)?;
+                            let new_pair = keypair.derive([
                                 // api spec says use "2" for communication, let's use it here too
-                                derivations(&recipient.to_base58_string(2), &request.id),
-                            ) {
-                                Ok(a) => Ok(a.public().to_base58_string(request.ss58)),
-                                Err(e) => Err(e.into()),
-                            },
-                        );
-                    }
-                    SignerRequest::Sign(request) => {
-                        let _unused = request.res.send(
-                            match Pair::from_entropy_and_full_derivation(
-                                &seed_entropy,
-                                // api spec says use "2" for communication, let's use it here too
-                                derivations(&recipient.to_base58_string(2), &request.id),
-                            ) {
-                                Ok(a) => Ok(a.sign(&request.signable)),
-                                Err(e) => Err(e.into()),
-                            },
-                        );
+                                DeriveJunction::hard(to_base58_string(recipient.0, 2)),
+                                DeriveJunction::hard(request.id.clone()),
+                            ]);
+
+                            Ok(to_base58_string(new_pair.public_key().0, request.ss58))
+                        };
+
+                        let _unused = request.res.send(new_public_key);
                     }
                     SignerRequest::Shutdown(res) => {
-                        seed_entropy.zeroize();
+                        mnemonic.zeroize();
                         let _ = res.send(());
                         break;
                     }
@@ -79,15 +73,6 @@ impl Signer {
         let (res, rx) = oneshot::channel();
         self.tx
             .send(SignerRequest::PublicKey(PublicKeyRequest { id, ss58, res }))
-            .await
-            .map_err(|_| SignerError::SignerDown)?;
-        rx.await.map_err(|_| SignerError::SignerDown)?
-    }
-
-    pub async fn sign(&self, id: String, signable: Vec<u8>) -> Result<Signature, SignerError> {
-        let (res, rx) = oneshot::channel();
-        self.tx
-            .send(SignerRequest::Sign(Sign { id, signable, res }))
             .await
             .map_err(|_| SignerError::SignerDown)?;
         rx.await.map_err(|_| SignerError::SignerDown)?
@@ -112,9 +97,6 @@ enum SignerRequest {
     /// Generate public key for order
     PublicKey(PublicKeyRequest),
 
-    /// Sign a transaction
-    Sign(Sign),
-
     /// Safe termination
     Shutdown(oneshot::Sender<()>),
 }
@@ -124,30 +106,4 @@ struct PublicKeyRequest {
     id: String,
     ss58: u16,
     res: oneshot::Sender<Result<String, SignerError>>,
-}
-
-/// Bytes to sign, with callback
-struct Sign {
-    id: String,
-    signable: Vec<u8>,
-    res: oneshot::Sender<Result<Signature, SignerError>>,
-}
-
-/// Convert seed phrase to entropy
-///
-/// TODO: handle also old seeds and do something about them
-pub fn entropy_from_phrase(seed: &str) -> Result<Entropy, SignerError> {
-    let mut word_set = WordSet::new();
-    for word in seed.split(' ') {
-        word_set.add_word(word, &InternalWordList)?;
-    }
-    Ok(word_set.to_entropy()?)
-}
-
-/// Standardized derivation protocol
-pub fn derivations<'a>(recipient: &'a str, order: &'a str) -> FullDerivation<'a> {
-    FullDerivation {
-        junctions: vec![DeriveJunction::hard(recipient), DeriveJunction::hard(order)],
-        password: None,
-    }
 }
