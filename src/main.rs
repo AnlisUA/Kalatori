@@ -102,7 +102,7 @@ async fn async_try_main(
 
     let chain_config = chain_config_with_prefix(&configs_path, &env_prefix);
     let payments_config = payments_config_with_prefix(&configs_path, &env_prefix);
-    let web_server_config = web_server_config_with_prefix(&env_prefix, &configs_path);
+    let web_server_config = web_server_config_with_prefix(&configs_path, &env_prefix);
     let database_config = database_config_with_prefix(&configs_path, &env_prefix);
 
     // Start services

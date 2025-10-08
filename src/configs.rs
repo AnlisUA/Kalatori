@@ -118,14 +118,14 @@ pub struct WebServerConfig {
     pub port: u16,
 }
 
-fn dafault_database_path() -> String {
+fn default_database_path() -> String {
     "kalatori.db".to_string()
 }
 
 #[derive(Deserialize)]
 pub struct DatabaseConfig {
     /// `kalatori.db` by default
-    #[serde(default = "dafault_database_path")]
+    #[serde(default = "default_database_path")]
     pub path: String,
     #[serde(default)]
     pub temporary: bool,
@@ -314,6 +314,35 @@ mod tests {
     #[serial]
     fn test_panic_on_unexisting_config() {
         let _config = chain_config_with_prefix("somewhere-nowhere", "");
+    }
+
+    #[test]
+    #[serial]
+    fn test_web_server_config_with_prefix() {
+        // load config from default config dir without any overrides
+        {
+            let config = web_server_config_with_prefix("", "");
+            assert_eq!(config.host, IpAddr::V4(Ipv4Addr::LOCALHOST));
+            assert_eq!(config.port, 16726);
+        }
+
+        // override config dir to unexisting one but as long as all config fields are optional it should work
+        {
+            let config = web_server_config_with_prefix("somewhere-nowhere", "");
+            assert_eq!(config.host, IpAddr::V4(Ipv4Addr::LOCALHOST));
+            assert_eq!(config.port, 16726);
+        }
+
+        // override some parameter with env var
+        {
+            unsafe {
+                std::env::set_var("WEB_SERVER_PORT", "12345");
+            }
+
+            let config = web_server_config_with_prefix("", "");
+            assert_eq!(config.host, IpAddr::V4(Ipv4Addr::LOCALHOST));
+            assert_eq!(config.port, 12345);
+        }
     }
 
     #[test]
