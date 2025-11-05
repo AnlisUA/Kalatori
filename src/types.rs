@@ -24,10 +24,13 @@ pub use transaction::{
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use chrono::Utc;
     use rust_decimal::Decimal;
     use sqlx::types::Text;
     use uuid::Uuid;
+
+    use crate::definitions::api_v2::WithdrawalStatus;
 
     #[tokio::test]
     async fn test_sql_query() {
@@ -42,7 +45,7 @@ mod tests {
             amount: Decimal::new(1000, 2),
             payment_address: "addr_test".to_string(),
             status: InvoiceStatus::Waiting,
-            withdrawal_status: None,
+            withdrawal_status: WithdrawalStatus::Waiting,
             callback: "http://callback.url".to_string(),
             valid_till: Utc::now(),
             created_at: Utc::now(),
@@ -50,7 +53,7 @@ mod tests {
         };
 
         let result = sqlx::query(
-            "INSERT INTO invoices (id, order_id, asset_id, chain, amount, payment_address, status, callback, valid_till, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO invoices (id, order_id, asset_id, chain, amount, payment_address, status, withdrawal_status, callback, valid_till, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
             .bind(invoice.id)
             .bind(&invoice.order_id)
@@ -59,6 +62,7 @@ mod tests {
             .bind(Text(invoice.amount))
             .bind(&invoice.payment_address)
             .bind(invoice.status)
+            .bind(invoice.withdrawal_status)
             .bind(&invoice.callback)
             .bind(invoice.valid_till)
             .bind(invoice.created_at)
@@ -70,7 +74,7 @@ mod tests {
         println!("Insert result: {:?}", result);
 
         let query = sqlx::query_as::<sqlx::Sqlite, invoice::InvoiceRow>(
-            "SELECT id, order_id, asset_id, chain, amount, payment_address, status, callback, valid_till, created_at, updated_at FROM invoices",
+            "SELECT id, order_id, asset_id, chain, amount, payment_address, status, withdrawal_status, callback, valid_till, created_at, updated_at FROM invoices",
         )
             .fetch_all(&pool)
             .await

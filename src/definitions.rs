@@ -142,7 +142,7 @@ pub mod api_v2 {
         Paid,
     }
 
-    #[derive(Clone, Debug, Serialize, Decode, Encode, PartialEq)]
+    #[derive(Clone, Debug, Serialize, Deserialize, Decode, Encode, PartialEq, Eq, Copy, sqlx::Type)]
     #[serde(rename_all = "lowercase")]
     pub enum WithdrawalStatus {
         Waiting,

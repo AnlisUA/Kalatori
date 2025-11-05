@@ -7,7 +7,7 @@ use rust_decimal::Decimal;
 use sqlx::{FromRow, Type};
 use sqlx::types::Text;
 
-use crate::definitions::api_v2::PaymentStatus;
+use crate::definitions::api_v2::{PaymentStatus, WithdrawalStatus};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub enum InvoiceStatus {
@@ -114,7 +114,7 @@ pub struct Invoice {
     pub amount: Decimal,
     pub payment_address: String,
     pub status: InvoiceStatus,
-    pub withdrawal_status: Option<String>, // Temporary backward compat field
+    pub withdrawal_status: WithdrawalStatus, // Temporary backward compat field
     pub callback: String,
     pub valid_till: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
@@ -130,6 +130,7 @@ pub struct InvoiceRow {
     pub amount: Text<Decimal>,
     pub payment_address: String,
     pub status: InvoiceStatus,
+    pub withdrawal_status: WithdrawalStatus,
     pub callback: String,
     pub valid_till: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
@@ -146,7 +147,7 @@ impl From<InvoiceRow> for Invoice {
             amount: row.amount.0,
             payment_address: row.payment_address,
             status: row.status,
-            withdrawal_status: None,
+            withdrawal_status: row.withdrawal_status,
             callback: row.callback,
             valid_till: row.valid_till,
             created_at: row.created_at,

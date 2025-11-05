@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS invoices (
 
     -- Backward compatibility: old withdrawal_status (temporary, will be removed with sled)
     -- This will be computed from payouts table status in Rust code, but kept in DB during transition
-    withdrawal_status TEXT CHECK(withdrawal_status IN ('Waiting', 'Failed', 'Forced', 'Completed')),
+    withdrawal_status TEXT NOT NULL CHECK(withdrawal_status IN ('Waiting', 'Failed', 'Forced', 'Completed')),
 
     -- Callback
     callback TEXT NOT NULL DEFAULT '',
