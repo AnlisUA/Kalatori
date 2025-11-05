@@ -18,6 +18,7 @@ mod handlers;
 mod server;
 mod signer;
 mod state;
+mod types;
 mod utils;
 
 use chain::ChainManager;

@@ -6,6 +6,9 @@ mkfile_path := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 # Keep in sync with subxt version in Cargo.toml
 subxt_cli_version := 0.44.0
 
+# Keep in sync with sqlx version in Cargo.toml
+sqlx_cli_version := 0.8.6
+
 help: # Show help for each of the Makefile recipes
 	@grep -E '^[a-zA-Z0-9 -]+:.*#'  Makefile | sort | while read -r l; do printf "\033[1;32m$$(echo $$l | cut -f 1 -d':')\033[00m:$$(echo $$l | cut -f 2- -d'#')\n"; done
 
@@ -15,6 +18,9 @@ help: # Show help for each of the Makefile recipes
 
 install-subxt-cli: # Install subxt-cli into the project directory
 	cargo install --root $(mkfile_path) --version $(subxt_cli_version) --locked subxt-cli
+
+install-sqlx-cli: # Install sqlx-cli into the project directory
+	cargo install --root $(mkfile_path) --version $(sqlx_cli_version) --locked sqlx-cli --no-default-features --features sqlite,completions
 
 # TODO: read URL from json config and/or env var instead of hardcode
 download-node-metadata: # Download metadata of configured Asset Hub node. Required for subxt compilation. By default use ws://localhost:9000 url.
@@ -48,6 +54,15 @@ create-network: # Create docker network `kalatori-network` required for docker c
 #####################
 ### Build and run ###
 #####################
+
+sqlx-create-db: # Create an empty SQLite database file
+	PATH="${PWD}/bin:${PATH}" sqlx db create --database-url sqlite:./kalatori_db.sqlite
+
+sqlx-migrate: # Run database migrations using sqlx-cli
+	PATH="${PWD}/bin:${PATH}" sqlx migrate run --database-url sqlite:./kalatori_db.sqlite
+
+sqlx-prepare: # Prepare sqlx for compile-time verification of SQL queries
+	PATH="${PWD}/bin:${PATH}" cargo sqlx prepare --database-url sqlite:./kalatori_db.sqlite
 
 build-release: # Build the daemon with --release flag
 	cargo build --release

@@ -42,8 +42,11 @@ codec = { package = "parity-scale-codec", version = "3", features = [
 serde_json = { version = "1", features = ["raw_value"] }
 config = "0.15"
 sled = "0.34"
-sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "macros", "migrate"] }
+# On update sqlx version, plase also update sqlx-cli to corresponding version in Makefile
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "macros", "migrate", "chrono", "uuid", "json"] }
 uuid = { version = "1", features = ["v4", "serde"] }
+rust_decimal = { version = "1", features = ["serde"] }
+chrono = { version = "0.4", features = ["serde"] }
 zeroize = "1"
 # Don't forget to update me in `[build-dependencies]`!
 shadow-rs = { version = "0.36", default-features = false }
