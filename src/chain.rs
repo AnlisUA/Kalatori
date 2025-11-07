@@ -41,8 +41,8 @@ impl Config for AssetHubConfig {
 
 use crate::configs::ChainConfig;
 use crate::{
-    definitions::api_v2::OrderInfo,
     error::{ChainError, Error},
+    legacy_types::OrderInfo,
     state::State,
     utils::task_tracker::TaskTracker,
 };
@@ -52,7 +52,7 @@ pub mod payout;
 pub mod tracker;
 pub mod utils;
 
-use crate::definitions::api_v2::{Health, RpcInfo};
+use crate::legacy_types::{Health, RpcInfo};
 use definitions::{ChainRequest, ChainTrackerRequest, WatchAccount};
 use tracker::start_chain_watch;
 

@@ -1,13 +1,13 @@
 use std::fmt;
 
-use serde::{Serialize, Deserialize};
-use uuid::Uuid;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
-use sqlx::{FromRow, Type};
+use serde::{Deserialize, Serialize};
 use sqlx::types::Text;
+use sqlx::{FromRow, Type};
+use uuid::Uuid;
 
-use crate::definitions::api_v2::{PaymentStatus, WithdrawalStatus};
+use crate::legacy_types::{PaymentStatus, WithdrawalStatus};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub enum InvoiceStatus {
@@ -108,7 +108,7 @@ impl std::str::FromStr for InvoiceStatus {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Invoice {
     pub id: Uuid,
-    pub order_id: String,    // Merchant-provided order ID
+    pub order_id: String, // Merchant-provided order ID
     pub asset_id: Option<u32>,
     pub chain: String,
     pub amount: Decimal,

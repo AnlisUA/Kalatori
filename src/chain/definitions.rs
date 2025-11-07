@@ -5,11 +5,9 @@ use std::str::FromStr;
 use crate::{
     chain::AssetHubOnlineClient,
     chain::tracker::ChainWatcher,
-    definitions::{
-        Balance,
-        api_v2::{CurrencyInfo, OrderInfo, RpcInfo, Timestamp},
-    },
+    definitions::Balance,
     error::ChainError,
+    legacy_types::{CurrencyInfo, OrderInfo, RpcInfo, Timestamp},
 };
 use subxt::utils::AccountId32;
 use tokio::sync::oneshot;

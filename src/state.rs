@@ -2,11 +2,11 @@ use crate::error::ForceWithdrawalError;
 use crate::{
     chain::{ChainManager, utils::to_base58_string},
     database::{ConfigWoChains, Database, TransactionInfoDb},
-    definitions::api_v2::{
+    error::{Error, OrderError},
+    legacy_types::{
         CurrencyProperties, Health, OrderCreateResponse, OrderInfo, OrderQuery, OrderResponse,
         OrderStatus, RpcInfo, ServerHealth, ServerInfo, ServerStatus,
     },
-    error::{Error, OrderError},
     signer::Signer,
     utils::task_tracker::TaskTracker,
 };

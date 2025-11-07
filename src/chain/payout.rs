@@ -16,8 +16,8 @@ use crate::{
         utils::to_base58_string,
     },
     database::{TransactionInfoDb, TransactionInfoDbInner, TxKind},
-    definitions::api_v2::{Amount, TxStatus},
     error::{ChainError, SignerError},
+    legacy_types::{Amount, TxStatus},
     state::State,
 };
 use subxt::config::DefaultExtrinsicParamsBuilder;

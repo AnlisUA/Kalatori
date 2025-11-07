@@ -122,11 +122,18 @@ fn default_database_path() -> String {
     "kalatori.db".to_string()
 }
 
+fn default_database_dir() -> String {
+    ".".to_string()
+}
+
 #[derive(Deserialize)]
 pub struct DatabaseConfig {
     /// `kalatori.db` by default
     #[serde(default = "default_database_path")]
     pub path: String,
+    /// Directory where the database file should be stored, defaults to current directory
+    #[serde(default = "default_database_dir")]
+    pub dir: String,
     #[serde(default)]
     pub temporary: bool,
 }

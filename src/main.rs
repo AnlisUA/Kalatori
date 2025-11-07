@@ -11,10 +11,12 @@ use utils::{
 
 mod chain;
 mod configs;
+mod dao;
 mod database;
 mod definitions;
 mod error;
 mod handlers;
+mod legacy_types;
 mod server;
 mod signer;
 mod state;
@@ -32,7 +34,7 @@ use crate::{
         chain_config_with_prefix, database_config_with_prefix, payments_config_with_prefix,
         seed_config_with_prefix, web_server_config_with_prefix,
     },
-    definitions::api_v2::Timestamp,
+    legacy_types::Timestamp,
 };
 
 const DEFAULT_ENV_PREFIX: &str = "KALATORI";

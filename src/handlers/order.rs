@@ -1,6 +1,6 @@
 use crate::{
-    definitions::api_v2::{AMOUNT, CURRENCY, InvalidParameter, OrderQuery, OrderResponse},
     error::{ForceWithdrawalError, OrderError},
+    legacy_types::{AMOUNT, CURRENCY, InvalidParameter, OrderQuery, OrderResponse},
     state::State,
 };
 use axum::{

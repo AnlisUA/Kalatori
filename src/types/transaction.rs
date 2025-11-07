@@ -1,11 +1,14 @@
-//! Transaction types for SQLite schema
+//! Transaction types for `SQLite` schema
 
 use std::fmt;
 
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, Type, types::{Json, Text}};
+use sqlx::{
+    FromRow, Type,
+    types::{Json, Text},
+};
 use uuid::Uuid;
 
 /// Transaction type (incoming or outgoing)
@@ -98,7 +101,7 @@ pub struct OutgoingTransactionMeta {
     pub failure_message: Option<String>,
 }
 
-/// Transaction from SQLite
+/// Transaction from `SQLite`
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, FromRow)]
 pub struct Transaction {
     pub id: Uuid,

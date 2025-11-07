@@ -1,4 +1,4 @@
-use crate::definitions::api_v2::{ServerHealth, ServerStatus};
+use crate::legacy_types::{ServerHealth, ServerStatus};
 use crate::state::State;
 use axum::{Json, extract::State as ExtractState, http::StatusCode};
 

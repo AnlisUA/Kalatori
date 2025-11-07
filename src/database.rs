@@ -6,12 +6,12 @@
 
 use crate::{
     configs::DatabaseConfig,
-    definitions::api_v2::{
+    error::DbError,
+    legacy_types::{
         Amount, BlockNumber, CurrencyInfo, ExtrinsicIndex, FinalizedTx, OrderCreateResponse,
         OrderInfo, OrderQuery, PaymentStatus, ServerInfo, Timestamp, TransactionInfo, TxStatus,
         WithdrawalStatus,
     },
-    error::DbError,
     utils::task_tracker::TaskTracker,
 };
 use codec::{Decode, Encode};

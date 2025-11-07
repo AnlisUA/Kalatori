@@ -1,25 +1,29 @@
-//! New data types for SQLite schema
+//! New data types for `SQLite` schema
 //!
-//! This module contains the new data structures used with the SQLite database,
+//! This module contains the new data structures used with the `SQLite` database,
 //! including conversion traits for backward compatibility with the old sled-based types.
-mod invoice;
-mod refund;
+//!
+//! TODO: Remove #[expect] attributes when types are integrated into the application
+#![expect(
+    dead_code,
+    unused_imports,
+    clippy::trivially_copy_pass_by_ref,
+    clippy::struct_field_names,
+    reason = "Types module is work in progress for SQLite migration"
+)]
+
 mod common;
-mod transaction;
+mod invoice;
 mod payout;
+mod refund;
+mod transaction;
 
 // Re-export commonly used types for convenience
-pub use common::InitiatorType;
-pub use invoice::{Invoice, InvoiceStatus};
-pub use payout::{Payout, PayoutStatus};
-pub use refund::{Refund, RefundStatus};
-pub use transaction::{
-    OutgoingTransactionMeta,
-    Transaction,
-    TransactionOrigin,
-    TransactionStatus,
-    TransactionType,
-};
+pub use common::*;
+pub use invoice::*;
+pub use payout::*;
+pub use refund::*;
+pub use transaction::*;
 
 #[cfg(test)]
 mod tests {
@@ -30,7 +34,7 @@ mod tests {
     use sqlx::types::Text;
     use uuid::Uuid;
 
-    use crate::definitions::api_v2::WithdrawalStatus;
+    use crate::legacy_types::WithdrawalStatus;
 
     #[tokio::test]
     async fn test_sql_query() {
@@ -71,7 +75,7 @@ mod tests {
             .await
             .unwrap();
 
-        println!("Insert result: {:?}", result);
+        println!("Insert result: {result:?}");
 
         let query = sqlx::query_as::<sqlx::Sqlite, invoice::InvoiceRow>(
             "SELECT id, order_id, asset_id, chain, amount, payment_address, status, withdrawal_status, callback, valid_till, created_at, updated_at FROM invoices",
@@ -83,6 +87,6 @@ mod tests {
             .map(Invoice::from)
             .collect::<Vec<_>>();
 
-        println!("Results: {:?}", query);
+        println!("Results: {query:?}");
     }
 }

@@ -9,11 +9,9 @@ use crate::{
     },
     configs::ChainConfig,
     database::{FinalizedTxDb, TransactionInfoDb, TransactionInfoDbInner, TxKind},
-    definitions::{
-        Balance,
-        api_v2::{Amount, CurrencyProperties, Health, RpcInfo, TokenKind, TxStatus},
-    },
+    definitions::Balance,
     error::ChainError,
+    legacy_types::{Amount, CurrencyProperties, Health, RpcInfo, TokenKind, TxStatus},
     state::State,
     utils::task_tracker::TaskTracker,
 };

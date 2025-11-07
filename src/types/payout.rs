@@ -1,4 +1,4 @@
-//! Payout types for SQLite schema
+//! Payout types for `SQLite` schema
 
 use std::fmt;
 
@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Type};
 use uuid::Uuid;
 
-use crate::definitions::api_v2::WithdrawalStatus;
 use super::common::InitiatorType;
+use crate::legacy_types::WithdrawalStatus;
 
 /// Payout status
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -55,7 +55,7 @@ impl From<PayoutStatus> for WithdrawalStatus {
     }
 }
 
-/// Payout from SQLite
+/// Payout from `SQLite`
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, FromRow)]
 pub struct Payout {
     pub id: Uuid,
