@@ -28,6 +28,9 @@ pub enum Error {
     #[error("database error is occurred")]
     Db(#[from] DbError),
 
+    #[error("DAO error is occurred")]
+    Dao(#[from] DaoError),
+
     #[error("order error is occurred")]
     Order(#[from] OrderError),
 
@@ -300,6 +303,25 @@ pub enum DbError {
 
     #[error("wasn't able to deserialize {0:?} table")]
     DeserializationError(String),
+}
+
+#[derive(Debug, Error)]
+#[expect(dead_code)]
+pub enum DaoError {
+    #[error("SQLite database error")]
+    Sqlx(#[from] sqlx::Error),
+
+    #[error("invoice not found")]
+    InvoiceNotFound,
+
+    #[error("version conflict: invoice was modified by another request")]
+    VersionConflict,
+
+    #[error("failed to convert amount from f64 to Decimal: {0}")]
+    AmountConversion(String),
+
+    #[error("max retry attempts reached for optimistic locking")]
+    MaxRetriesReached,
 }
 
 #[derive(Debug, Error)]

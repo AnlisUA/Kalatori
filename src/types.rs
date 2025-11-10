@@ -55,6 +55,7 @@ mod tests {
             valid_till: Utc::now(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            version: 1,
         };
 
         let result = sqlx::query(
@@ -80,7 +81,7 @@ mod tests {
         println!("Insert result: {result:?}");
 
         let query = sqlx::query_as::<sqlx::Sqlite, invoice::InvoiceRow>(
-            "SELECT id, order_id, asset_id, chain, amount, payment_address, status, withdrawal_status, callback, valid_till, cart, created_at, updated_at FROM invoices",
+            "SELECT id, order_id, asset_id, chain, amount, payment_address, status, withdrawal_status, callback, valid_till, cart, created_at, updated_at, version FROM invoices",
         )
             .fetch_all(&pool)
             .await

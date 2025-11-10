@@ -35,6 +35,7 @@ const SERVER_INFO_TABLE: &[u8] = b"server_info";
 pub struct ConfigWoChains {
     pub recipient: AccountId32,
     pub remark: Option<String>,
+    pub account_lifetime: Timestamp,
     //pub depth: Option<Duration>,
 }
 

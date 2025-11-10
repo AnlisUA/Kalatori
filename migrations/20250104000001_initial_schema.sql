@@ -41,7 +41,10 @@ CREATE TABLE IF NOT EXISTS invoices (
     -- Timestamps
     valid_till TEXT NOT NULL,  -- ISO 8601 datetime
     created_at TEXT NOT NULL DEFAULT (datetime('now')),  -- ISO 8601 datetime
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))  -- ISO 8601 datetime
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),  -- ISO 8601 datetime
+
+    -- Optimistic locking
+    version INTEGER NOT NULL DEFAULT 1  -- Auto-incremented on each update for optimistic locking
 
     -- Note: CurrencyInfo (currency_name, decimals, rpc_url, etc.) will be reconstructed in Rust
     -- from asset_id + chain + config, no need to store redundantly
@@ -189,7 +192,10 @@ CREATE TRIGGER IF NOT EXISTS update_invoices_timestamp
 AFTER UPDATE ON invoices
 FOR EACH ROW
 BEGIN
-    UPDATE invoices SET updated_at = datetime('now') WHERE id = NEW.id;
+    UPDATE invoices SET 
+        updated_at = datetime('now'),
+        version = OLD.version + 1
+    WHERE id = NEW.id;
 END;
 
 CREATE TRIGGER IF NOT EXISTS update_payouts_timestamp

@@ -24,6 +24,7 @@ mod types;
 mod utils;
 
 use chain::ChainManager;
+use dao::DAO;
 use database::ConfigWoChains;
 use error::{Error, PrettyCause};
 use signer::Signer;
@@ -124,10 +125,13 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
     let seed_secret = seed_config.seed;
 
     let db = database::Database::init(
-        database_config,
+        database_config.clone(),
         &task_tracker,
         Timestamp(payments_config.account_lifetime_millis),
     )?;
+
+    // Initialize DAO for SQLite database operations
+    let dao = DAO::new(database_config).await.map_err(error::DaoError::Sqlx)?;
 
     let instance_id = db.initialize_server_info().await?;
 
@@ -138,8 +142,10 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
         ConfigWoChains {
             recipient,
             remark: payments_config.remark,
+            account_lifetime: Timestamp(payments_config.account_lifetime_millis),
         },
         db,
+        dao,
         cm_rx,
         instance_id,
         task_tracker.clone(),

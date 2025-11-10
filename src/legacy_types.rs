@@ -28,7 +28,7 @@ pub struct InvalidParameter {
     pub message: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OrderQuery {
     pub order: String,
     pub amount: f64,

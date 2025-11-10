@@ -1,13 +1,13 @@
 use std::fmt;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Utc, Duration};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use sqlx::types::{Text, Json};
 use sqlx::{FromRow, Type};
 use uuid::Uuid;
 
-use crate::legacy_types::{PaymentStatus, WithdrawalStatus};
+use crate::legacy_types::{CurrencyInfo, OrderQuery, PaymentStatus, Timestamp, WithdrawalStatus};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub enum InvoiceStatus {
@@ -140,6 +140,7 @@ pub struct Invoice {
     pub valid_till: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub version: u16, // Optimistic locking version, auto-incremented on updates
 }
 
 #[derive(FromRow)]
@@ -157,6 +158,7 @@ pub struct InvoiceRow {
     pub valid_till: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub version: u16,
 }
 
 impl From<InvoiceRow> for Invoice {
@@ -175,6 +177,7 @@ impl From<InvoiceRow> for Invoice {
             valid_till: row.valid_till,
             created_at: row.created_at,
             updated_at: row.updated_at,
+            version: row.version,
         }
     }
 }
@@ -193,7 +196,63 @@ pub struct CreateInvoiceData {
 
 #[derive(Debug)]
 pub struct UpdateInvoiceData {
+    pub id: Uuid,              // Invoice ID to update
     pub amount: Decimal,
     pub cart: InvoiceCart,
     pub valid_till: DateTime<Utc>,
+    pub version: u16,          // Current version for optimistic locking
+}
+
+// Conversion utilities for backward compatibility with V2 API
+
+impl Invoice {
+    /// Create a new Invoice from `OrderQuery` (V2 API input)
+    ///
+    /// # Errors
+    /// Returns error if amount conversion from f64 to Decimal fails
+    pub fn from_order_query(
+        order_query: OrderQuery,
+        currency_info: CurrencyInfo,
+        payment_address: String,
+        account_lifetime: Timestamp,
+    ) -> Result<Self, String> {
+        let now = Utc::now();
+        let valid_till = calculate_valid_till(account_lifetime);
+        let amount = f64_to_decimal(order_query.amount)?;
+
+        Ok(Self {
+            id: Uuid::new_v4(),
+            order_id: order_query.order,
+            asset_id: currency_info.asset_id,
+            chain: currency_info.chain_name,
+            amount,
+            payment_address,
+            status: InvoiceStatus::Waiting,
+            withdrawal_status: WithdrawalStatus::Waiting,
+            callback: order_query.callback,
+            cart: InvoiceCart::empty(),
+            valid_till,
+            created_at: now,
+            updated_at: now,
+            version: 1,
+        })
+    }
+}
+
+/// Convert f64 amount to Decimal
+///
+/// # Errors
+/// Returns error if the f64 value cannot be represented as Decimal
+fn f64_to_decimal(amount: f64) -> Result<Decimal, String> {
+    Decimal::try_from(amount)
+        .map_err(|e| format!("Failed to convert amount {amount} to Decimal: {e}"))
+}
+
+/// Calculate `valid_till` timestamp from `account_lifetime`
+pub fn calculate_valid_till(account_lifetime: Timestamp) -> DateTime<Utc> {
+    let lifetime_ms = account_lifetime.0;
+    #[expect(clippy::cast_possible_wrap)]
+    let duration = Duration::milliseconds(lifetime_ms as i64);
+    #[expect(clippy::arithmetic_side_effects)]
+    { Utc::now() + duration }
 }
