@@ -11,7 +11,14 @@ use uuid::Uuid;
 
 use crate::configs::DatabaseConfig;
 use crate::legacy_types::ServerInfo;
-use crate::types::{Invoice, InvoiceRow, InvoiceStatus, Transaction, TransactionRow};
+use crate::types::{
+    Invoice,
+    InvoiceRow,
+    InvoiceStatus,
+    UpdateInvoiceData,
+    Transaction,
+    TransactionRow,
+};
 
 pub type DaoError = sqlx::Error;
 pub type DaoResult<T> = Result<T, DaoError>;
@@ -44,7 +51,7 @@ impl DAO {
 
     pub async fn create_invoice(&self, invoice: Invoice) -> DaoResult<()> {
         sqlx::query(
-            "INSERT INTO invoices (id, order_id, asset_id, chain, amount, payment_address, status, withdrawal_status, callback, valid_till, created_at, updated_at)
+            "INSERT INTO invoices (id, order_id, asset_id, chain, amount, payment_address, status, withdrawal_status, callback, cart, valid_till, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
             .bind(invoice.id)
@@ -56,6 +63,7 @@ impl DAO {
             .bind(invoice.status)
             .bind(invoice.withdrawal_status)
             .bind(&invoice.callback)
+            .bind(Json(invoice.cart))
             .bind(invoice.valid_till)
             .bind(invoice.created_at)
             .bind(invoice.updated_at)
@@ -67,7 +75,7 @@ impl DAO {
 
     pub async fn get_invoice_by_id(&self, invoice_id: Uuid) -> DaoResult<Option<Invoice>> {
         let invoice = sqlx::query_as::<_, InvoiceRow>(
-            "SELECT id, order_id, asset_id, chain, amount, payment_address, status, withdrawal_status, callback, valid_till, created_at, updated_at
+            "SELECT id, order_id, asset_id, chain, amount, payment_address, status, withdrawal_status, callback, cart, valid_till, created_at, updated_at
              FROM invoices
              WHERE id = ?",
         )
@@ -80,7 +88,7 @@ impl DAO {
 
     pub async fn get_invoice_by_order_id(&self, order_id: &str) -> DaoResult<Option<Invoice>> {
         let invoice = sqlx::query_as::<_, InvoiceRow>(
-            "SELECT id, order_id, asset_id, chain, amount, payment_address, status, withdrawal_status, callback, valid_till, created_at, updated_at
+            "SELECT id, order_id, asset_id, chain, amount, payment_address, status, withdrawal_status, callback, cart, valid_till, created_at, updated_at
              FROM invoices
              WHERE order_id = ?",
         )
@@ -102,10 +110,25 @@ impl DAO {
                 SET status = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?",
         )
-        .bind(status)
-        .bind(invoice_id)
-        .execute(&self.pool)
-        .await?;
+            .bind(status)
+            .bind(invoice_id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn update_invoice_data(&self, data: UpdateInvoiceData) -> DaoResult<()> {
+        sqlx::query(
+            "UPDATE invoices
+                SET amount = ?, cart = ?, valid_till = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND status = Waiting",
+        )
+            .bind(Text(data.amount))
+            .bind(Json(data.cart))
+            .bind(data.valid_till)
+            .execute(&self.pool)
+            .await?;
 
         Ok(())
     }
@@ -160,8 +183,8 @@ impl DAO {
         let info = sqlx::query_as::<_, ServerInfo>(
             "SELECT instance_id, version, kalatori_remark FROM server_info",
         )
-        .fetch_optional(&self.pool)
-        .await?;
+            .fetch_optional(&self.pool)
+            .await?;
 
         if let Some(server_info) = info {
             Ok(server_info.instance_id)

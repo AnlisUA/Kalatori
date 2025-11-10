@@ -31,7 +31,7 @@ mod tests {
 
     use chrono::Utc;
     use rust_decimal::Decimal;
-    use sqlx::types::Text;
+    use sqlx::types::{Text, Json};
     use uuid::Uuid;
 
     use crate::legacy_types::WithdrawalStatus;
@@ -51,13 +51,14 @@ mod tests {
             status: InvoiceStatus::Waiting,
             withdrawal_status: WithdrawalStatus::Waiting,
             callback: "http://callback.url".to_string(),
+            cart: InvoiceCart::empty(),
             valid_till: Utc::now(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
 
         let result = sqlx::query(
-            "INSERT INTO invoices (id, order_id, asset_id, chain, amount, payment_address, status, withdrawal_status, callback, valid_till, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO invoices (id, order_id, asset_id, chain, amount, payment_address, status, withdrawal_status, callback, cart, valid_till, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
             .bind(invoice.id)
             .bind(&invoice.order_id)
@@ -68,6 +69,7 @@ mod tests {
             .bind(invoice.status)
             .bind(invoice.withdrawal_status)
             .bind(&invoice.callback)
+            .bind(Json(invoice.cart))
             .bind(invoice.valid_till)
             .bind(invoice.created_at)
             .bind(invoice.updated_at)
@@ -78,7 +80,7 @@ mod tests {
         println!("Insert result: {result:?}");
 
         let query = sqlx::query_as::<sqlx::Sqlite, invoice::InvoiceRow>(
-            "SELECT id, order_id, asset_id, chain, amount, payment_address, status, withdrawal_status, callback, valid_till, created_at, updated_at FROM invoices",
+            "SELECT id, order_id, asset_id, chain, amount, payment_address, status, withdrawal_status, callback, valid_till, cart, created_at, updated_at FROM invoices",
         )
             .fetch_all(&pool)
             .await

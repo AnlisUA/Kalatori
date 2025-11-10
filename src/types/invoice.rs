@@ -3,7 +3,7 @@ use std::fmt;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use sqlx::types::Text;
+use sqlx::types::{Text, Json};
 use sqlx::{FromRow, Type};
 use uuid::Uuid;
 
@@ -105,7 +105,27 @@ impl std::str::FromStr for InvoiceStatus {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InvoiceCartItem {
+    pub name: String,
+    pub quantity: u32,
+    pub unit_price: Decimal,
+    pub icon_url: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InvoiceCart {
+    pub items: Vec<InvoiceCartItem>,
+}
+
+impl InvoiceCart {
+    // Prefer to create an empty cart explicitly over using Default trait
+    pub fn empty() -> Self {
+        Self { items: vec![] }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Invoice {
     pub id: Uuid,
     pub order_id: String, // Merchant-provided order ID
@@ -116,6 +136,7 @@ pub struct Invoice {
     pub status: InvoiceStatus,
     pub withdrawal_status: WithdrawalStatus, // Temporary backward compat field
     pub callback: String,
+    pub cart: InvoiceCart,
     pub valid_till: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -132,6 +153,7 @@ pub struct InvoiceRow {
     pub status: InvoiceStatus,
     pub withdrawal_status: WithdrawalStatus,
     pub callback: String,
+    pub cart: Json<InvoiceCart>,
     pub valid_till: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -149,9 +171,29 @@ impl From<InvoiceRow> for Invoice {
             status: row.status,
             withdrawal_status: row.withdrawal_status,
             callback: row.callback,
+            cart: row.cart.0,
             valid_till: row.valid_till,
             created_at: row.created_at,
             updated_at: row.updated_at,
         }
     }
+}
+
+#[derive(Debug)]
+pub struct CreateInvoiceData {
+    pub order_id: String,
+    pub asset_id: u32,
+    pub chain: String,
+    pub amount: Decimal,
+    pub payment_address: String,
+    pub callback: String,
+    pub cart: InvoiceCart,
+    pub valid_till: DateTime<Utc>,
+}
+
+#[derive(Debug)]
+pub struct UpdateInvoiceData {
+    pub amount: Decimal,
+    pub cart: InvoiceCart,
+    pub valid_till: DateTime<Utc>,
 }
