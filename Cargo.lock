@@ -2146,6 +2146,7 @@ dependencies = [
  "sqlx",
  "subxt",
  "subxt-signer",
+ "tempfile",
  "thiserror 2.0.16",
  "time",
  "tokio",

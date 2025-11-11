@@ -30,16 +30,25 @@ pub struct DAO {
 
 impl DAO {
     pub async fn new(config: DatabaseConfig) -> DaoResult<Self> {
-        let database_url = if config.temporary {
-            tracing::warn!(
-                "Database configured to run in `temporary` mode. All data will be lost on shutdown"
-            );
-            ":memory:".to_string()
+        let pool_options = sqlx::sqlite::SqlitePoolOptions::new();
+
+        let connection_options = sqlx::sqlite::SqliteConnectOptions::new()
+            .create_if_missing(true);
+
+        let (pool_options, connection_options) = if config.temporary {
+            tracing::info!("Using in-memory temporary database");
+            (
+                pool_options.max_connections(1),
+                connection_options.in_memory(true),
+            )
         } else {
-            format!("sqlite://{}/kalatori_db.sqlite", config.dir)
+            (
+                pool_options,
+                connection_options.filename(&format!("{}/kalatori_db.sqlite", config.dir)),
+            )
         };
 
-        let pool = sqlx::SqlitePool::connect(&database_url)
+        let pool = pool_options.connect_with(connection_options)
             .await
             .expect("Failed to create database connection pool");
 
@@ -225,6 +234,37 @@ impl DAO {
             .await?;
 
         Ok(transactions.into_iter().map(From::from).collect())
+    }
+
+    pub async fn transaction_exists_by_bytes(&self, transaction_bytes: &str) -> DaoResult<bool> {
+        let result = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM transactions WHERE transaction_bytes = ?"
+        )
+            .bind(transaction_bytes)
+            .fetch_one(&self.pool)
+            .await?;
+
+        Ok(result > 0)
+    }
+
+    /// Upsert server info (used by migration)
+    /// Returns true if a new record was inserted, false if updated
+    pub async fn upsert_server_info(&self, server_info: &ServerInfo) -> DaoResult<bool> {
+        let rows_affected = sqlx::query(
+            "INSERT INTO server_info (instance_id, version, remark) VALUES (?, ?, ?)
+             ON CONFLICT(instance_id) DO UPDATE SET
+                version = excluded.version,
+                remark = excluded.remark"
+        )
+            .bind(&server_info.instance_id)
+            .bind(&server_info.version)
+            .bind(&server_info.kalatori_remark)
+            .execute(&self.pool)
+            .await?
+            .rows_affected();
+
+        // If rows_affected is 1, it was an insert; if 2, it was an update
+        Ok(rows_affected == 1)
     }
 
     async fn initialize_server_info(&self) -> DaoResult<String> {

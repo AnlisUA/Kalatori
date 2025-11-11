@@ -19,6 +19,7 @@ mod handlers;
 mod legacy_types;
 mod server;
 mod signer;
+mod sled_to_sqlite_migration;
 mod state;
 mod types;
 mod utils;
@@ -33,9 +34,9 @@ use state::State;
 use crate::{
     configs::{
         chain_config_with_prefix, database_config_with_prefix, payments_config_with_prefix,
-        seed_config_with_prefix, web_server_config_with_prefix,
+        seed_config_with_prefix, web_server_config_with_prefix, ChainConfig,
     },
-    legacy_types::Timestamp,
+    legacy_types::{CurrencyProperties, Timestamp, TokenKind},
 };
 
 const DEFAULT_ENV_PREFIX: &str = "KALATORI";
@@ -100,6 +101,34 @@ fn try_main(shutdown_notification: ShutdownNotification) -> Result<(), Error> {
         .block_on(async_try_main(shutdown_notification))
 }
 
+/// Build a simplified currencies `HashMap` from `ChainConfig` for migration purposes.
+/// Note: This uses placeholder values for decimals since we don't have blockchain connection yet.
+/// The actual decimals are fetched asynchronously by `ChainTracker` during normal operation.
+fn build_currencies_from_config(
+    chain_config: &ChainConfig,
+) -> std::collections::HashMap<String, CurrencyProperties> {
+    let mut currencies = std::collections::HashMap::new();
+
+    for asset in &chain_config.assets {
+        let properties = CurrencyProperties {
+            chain_name: chain_config.name.clone(),
+            kind: TokenKind::Asset,
+            decimals: 0, // Placeholder - not used during migration validation
+            rpc_url: chain_config
+                .endpoints
+                .first()
+                .cloned()
+                .unwrap_or_default(),
+            asset_id: Some(asset.id),
+            ss58: 0, // Placeholder - not used during migration
+        };
+
+        currencies.insert(asset.name.clone(), properties);
+    }
+
+    currencies
+}
+
 async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(), Error> {
     let env_prefix =
         std::env::var("KALATORI_APP_ENV_PREFIX").unwrap_or_else(|_| DEFAULT_ENV_PREFIX.to_string());
@@ -131,7 +160,49 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
     )?;
 
     // Initialize DAO for SQLite database operations
-    let dao = DAO::new(database_config).await.map_err(error::DaoError::Sqlx)?;
+    let dao = DAO::new(database_config.clone())
+        .await
+        .map_err(error::DaoError::Sqlx)?;
+
+    // Run sled to SQLite migration if sled database exists
+    if !database_config.temporary {
+        let sled_path = std::path::PathBuf::from(&database_config.path);
+        if sled_path.exists() {
+            tracing::info!("Found sled database at {:?}, running migration to SQLite...", sled_path);
+
+            let currencies = build_currencies_from_config(&chain_config);
+
+            match sled_to_sqlite_migration::migrate_sled_to_sqlite(sled_path, &dao, &currencies)
+                .await
+            {
+                Ok(stats) => {
+                    tracing::info!(
+                        "Migration completed successfully: {} invoices ({} skipped as existing), \
+                         {} finalized transactions, {} pending transactions, {} duplicate transactions skipped, \
+                         server_info migrated: {}",
+                        stats.invoices_migrated,
+                        stats.invoices_skipped_existing,
+                        stats.finalized_transactions_migrated,
+                        stats.pending_transactions_migrated,
+                        stats.transactions_skipped_duplicates,
+                        stats.server_info_migrated
+                    );
+
+                    if !stats.warnings.is_empty() {
+                        tracing::warn!("Migration completed with {} warnings:", stats.warnings.len());
+                        for warning in &stats.warnings {
+                            tracing::warn!("  - {}", warning);
+                        }
+                    }
+                }
+                Err(e) => {
+                    return Err(Error::MigrationFailed(e));
+                }
+            }
+        } else {
+            tracing::debug!("No sled database found at {:?}, skipping migration", sled_path);
+        }
+    }
 
     let instance_id = db.initialize_server_info().await?;
 

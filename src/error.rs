@@ -60,6 +60,9 @@ pub enum Error {
 
     #[error("found duplicate config record for the token {0:?}")]
     DuplicateCurrency(String),
+
+    #[error("sled to SQLite migration failed")]
+    MigrationFailed(#[from] crate::sled_to_sqlite_migration::MigrationError),
 }
 
 impl From<Error> for ChainError {

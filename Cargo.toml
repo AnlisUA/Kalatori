@@ -67,6 +67,7 @@ blake2b_simd = "1.0"
 [dev-dependencies]
 indoc = "2"
 serial_test = "3.2"
+tempfile = "3"
 
 [build-dependencies]
 # Don't forget to update me in `[dependencies]`!

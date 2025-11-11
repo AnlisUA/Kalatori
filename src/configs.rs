@@ -123,7 +123,7 @@ fn default_database_path() -> String {
 }
 
 fn default_database_dir() -> String {
-    ".".to_string()
+    "./database".to_string()
 }
 
 #[derive(Deserialize, Clone)]

@@ -3,6 +3,7 @@ tests/kalatori-api-test-suite/node_modules/
 *.db
 *.sqlite
 *.txt
+database/
 kalatori.toml
 
 # IDE
