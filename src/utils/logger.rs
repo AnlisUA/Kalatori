@@ -17,7 +17,7 @@ pub fn initialize(directives: impl AsRef<str>) -> Result<(), Error> {
 
     tracing_subscriber::fmt()
         .with_timer(UtcTime::rfc_3339())
-        .with_env_filter(filter)
+        // .with_env_filter(filter)
         .init();
 
     Ok(())

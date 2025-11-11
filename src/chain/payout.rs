@@ -15,13 +15,16 @@ use crate::{
         tracker::ChainWatcher,
         utils::to_base58_string,
     },
-    database::{TransactionInfoDb, TransactionInfoDbInner, TxKind},
     error::{ChainError, SignerError},
-    legacy_types::{Amount, TxStatus},
     state::State,
+    types::{OutgoingTransactionMeta, Transaction, TransactionOrigin, TransactionStatus, TransactionType},
 };
+use chrono::Utc;
+use rust_decimal::Decimal;
 use subxt::config::DefaultExtrinsicParamsBuilder;
 use subxt_signer::{DeriveJunction, ExposeSecret, SecretString, bip39::Mnemonic, sr25519::Keypair};
+use tracing::info;
+use uuid::Uuid;
 
 /// Single function that should completely handle payout attmept. Just do not call anything else.
 ///
@@ -42,6 +45,7 @@ pub async fn payout(
         .ok_or_else(|| ChainError::InvalidCurrency(order.currency.currency.clone()))?;
 
     let asset_id = currency.asset_id.ok_or(ChainError::AssetId)?;
+    info!("Currency checked");
     let dest = subxt::utils::AccountId32::from(order.recipient.0);
 
     let call = crate::chain::runtime::tx()
@@ -67,13 +71,16 @@ pub async fn payout(
     // TODO: add support for password configuration and also validate keypair creation on start too
     let keypair = Keypair::from_phrase(&mnemonic, None).map_err(SignerError::from)?;
 
+    info!("Keypair initiated");
+
     let order_keypair = keypair.derive([
         DeriveJunction::hard(to_base58_string(order.recipient.0, 2)),
-        DeriveJunction::hard(&order.id),
+        DeriveJunction::hard(order.id.to_string()),
     ]);
 
     // TODO: why 42? perhaps store it into constant?
     let sender = to_base58_string(order_keypair.public_key().0, 42);
+    let recipient = to_base58_string(order.recipient.0, 42);
 
     let transaction = client
         .tx()
@@ -81,31 +88,110 @@ pub async fn payout(
         .await?;
     let encoded_extrinsic = const_hex::encode_prefixed(transaction.encoded());
 
+    // Generate transaction ID for tracking
+    let transaction_id = Uuid::new_v4();
+    let now = Utc::now();
+
+    // Build transaction record with Waiting status
+    let mut tx_record = Transaction {
+        id: transaction_id,
+        invoice_id: order.id,
+        asset_id,
+        chain: order.currency.chain_name.clone(),
+        amount: Decimal::ZERO,  // Will remain zero for transfer_all operations
+        sender: sender.clone(),
+        recipient: recipient.clone(),
+        block_number: None,
+        position_in_block: None,
+        tx_hash: None,
+        origin: TransactionOrigin::default(),
+        status: TransactionStatus::Waiting,
+        transaction_type: TransactionType::Outgoing,
+        outgoing_meta: OutgoingTransactionMeta {
+            extrinsic_bytes: Some(encoded_extrinsic.clone()),
+            built_at: Some(now),
+            sent_at: None,
+            confirmed_at: None,
+            failed_at: None,
+            failure_message: None,
+        },
+        created_at: now,
+        transaction_bytes: Some(encoded_extrinsic.clone()),
+    };
+
+    // Record transaction with Waiting status
     state
-        .record_transaction(
-            TransactionInfoDb {
-                transaction_bytes: encoded_extrinsic.clone(),
-                inner: TransactionInfoDbInner {
-                    finalized_tx_timestamp: None,
-                    finalized_tx: None,
-                    sender,
-                    recipient: to_base58_string(order.recipient.0, 42),
-                    amount: Amount::All,
-                    currency: order.currency,
-                    status: TxStatus::Pending,
-                    kind: TxKind::Withdrawal,
-                },
-            },
-            order.id.clone(),
-        )
+        .record_transaction_v2(order.id, tx_record.clone())
         .await
         .map_err(|_| ChainError::TransactionNotSaved)?;
 
-    // send_stuff(&client, &encoded_extrinsic).await?;
-    // TODO: handle result, check transfer details, find our transfer event, store it's details
-    let _result = transaction.submit_and_watch().await?;
+    info!("First transaction record saved");
 
-    state.order_withdrawn(order.id).await;
-    // TODO obvious
-    Ok(())
+    // Attempt payout with error handling
+    let payout_result = async {
+        // Update to InProgress when submitting
+        tx_record.status = TransactionStatus::InProgress;
+        tx_record.outgoing_meta.sent_at = Some(Utc::now());
+
+        state
+            .update_transaction_v2(tx_record.clone())
+            .await
+            .map_err(|_| ChainError::TransactionNotSaved)?;
+
+        info!("Transaction record updated to InProgress");
+
+        // Submit and watch for completion
+        let result = transaction.submit_and_watch().await.inspect_err(|e| tracing::error!("Got error while submit transaction: {:?}", e))?;
+
+        info!("Transaction watch result");
+
+        // Wait for finalization
+        let finalized = result.wait_for_finalized().await?;
+        let events = finalized.fetch_events().await?;
+
+        info!("Transaction finalized");
+
+        // Get block number from the finalized block
+        let block_hash = finalized.block_hash();
+        let block = client.blocks().at(block_hash).await?;
+        let block_number = block.number();
+        let position_in_block = events.extrinsic_index();
+
+        // Update to Completed
+        tx_record.status = TransactionStatus::Completed;
+        tx_record.block_number = Some(block_number);
+        tx_record.position_in_block = Some(position_in_block);
+        tx_record.outgoing_meta.confirmed_at = Some(Utc::now());
+
+        // TODO: Extract actual transferred amount from events if needed
+        // For now, keeping amount as Decimal::ZERO for transfer_all operations
+
+        state
+            .update_transaction_v2(tx_record.clone())
+            .await
+            .map_err(|_| ChainError::TransactionNotSaved)?;
+
+        info!("Transaction record updated to Completed");
+
+        Ok::<(), ChainError>(())
+    }.await;
+
+    // Handle payout result and mark as failed if error
+    match payout_result {
+        Ok(()) => {
+            state.order_withdrawn(order.id).await;
+            Ok(())
+        }
+        Err(e) => {
+            // Mark transaction as failed
+            tx_record.status = TransactionStatus::Failed;
+            tx_record.outgoing_meta.failed_at = Some(Utc::now());
+            tx_record.outgoing_meta.failure_message = Some(e.to_string());
+
+            // Try to update, but don't fail if update fails
+            drop(state.update_transaction_v2(tx_record).await);
+
+            Err(e)
+        }
+    }
 }

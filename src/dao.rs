@@ -10,7 +10,7 @@ use sqlx::types::{Json, Text};
 use uuid::Uuid;
 
 use crate::configs::DatabaseConfig;
-use crate::legacy_types::ServerInfo;
+use crate::legacy_types::{ServerInfo, WithdrawalStatus};
 use crate::types::{
     Invoice,
     InvoiceRow,
@@ -23,6 +23,7 @@ use crate::types::{
 pub type DaoError = sqlx::Error;
 pub type DaoResult<T> = Result<T, DaoError>;
 
+#[derive(Clone)]
 pub struct DAO {
     pool: sqlx::SqlitePool,
 }
@@ -104,19 +105,20 @@ impl DAO {
         &self,
         invoice_id: Uuid,
         status: InvoiceStatus,
-    ) -> DaoResult<()> {
+    ) -> DaoResult<Invoice> {
         // TODO: add status transition validation
-        sqlx::query(
+        let result = sqlx::query_as::<_, InvoiceRow>(
             "UPDATE invoices
                 SET status = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?",
+                WHERE id = ?
+                RETURNING *",
         )
             .bind(status)
             .bind(invoice_id)
-            .execute(&self.pool)
+            .fetch_one(&self.pool)
             .await?;
 
-        Ok(())
+        Ok(result.into())
     }
 
     pub async fn update_invoice_data(&self, data: UpdateInvoiceData) -> DaoResult<u64> {
@@ -134,6 +136,20 @@ impl DAO {
             .await?;
 
         Ok(result.rows_affected())
+    }
+
+    pub async fn update_invoice_withdrawal_status(&self, invoice_id: Uuid, status: WithdrawalStatus) -> DaoResult<Invoice> {
+        sqlx::query_as::<_, InvoiceRow>(
+            "UPDATE invoices
+                SET withdrawal_status = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND withdrawal_status == 'Waiting'
+                RETURNING *",
+        )
+            .bind(status)
+            .bind(invoice_id)
+            .fetch_one(&self.pool)
+            .await
+            .map(From::from)
     }
 
     pub async fn create_transaction(&self, transaction: Transaction) -> DaoResult<()> {
@@ -157,6 +173,35 @@ impl DAO {
             .bind(Json(&transaction.outgoing_meta))
             .bind(transaction.created_at)
             .bind(&transaction.transaction_bytes)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn update_transaction(&self, transaction: Transaction) -> DaoResult<()> {
+        sqlx::query(
+            "UPDATE transactions
+             SET invoice_id = ?, asset_id = ?, chain = ?, amount = ?, sender = ?, recipient = ?,
+                 block_number = ?, position_in_block = ?, tx_hash = ?, origin = ?, status = ?,
+                 transaction_type = ?, outgoing_meta = ?, transaction_bytes = ?
+             WHERE id = ?"
+        )
+            .bind(transaction.invoice_id)
+            .bind(transaction.asset_id)
+            .bind(&transaction.chain)
+            .bind(Text(transaction.amount))
+            .bind(&transaction.sender)
+            .bind(&transaction.recipient)
+            .bind(transaction.block_number)
+            .bind(transaction.position_in_block)
+            .bind(&transaction.tx_hash)
+            .bind(Json(&transaction.origin))
+            .bind(transaction.status)
+            .bind(transaction.transaction_type)
+            .bind(Json(&transaction.outgoing_meta))
+            .bind(&transaction.transaction_bytes)
+            .bind(transaction.id)
             .execute(&self.pool)
             .await?;
 

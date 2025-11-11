@@ -8,11 +8,12 @@ use crate::{
         utils::to_base58_string,
     },
     configs::ChainConfig,
-    database::{FinalizedTxDb, TransactionInfoDb, TransactionInfoDbInner, TxKind},
+    database::TxKind,
     definitions::Balance,
     error::ChainError,
-    legacy_types::{Amount, CurrencyProperties, Health, RpcInfo, TokenKind, TxStatus},
+    legacy_types::{CurrencyProperties, Health, RpcInfo, TokenKind, TxStatus},
     state::State,
+    types::{OutgoingTransactionMeta, Transaction, TransactionOrigin},
     utils::task_tracker::TaskTracker,
 };
 use std::{collections::HashMap, time::SystemTime};
@@ -26,12 +27,110 @@ use tokio::{
     time::{Duration, timeout},
 };
 use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
 use zeroize::Zeroize;
 
 type Extrinsics = subxt::blocks::Extrinsics<AssetHubConfig, AssetHubOnlineClient>;
 type TransferExtrinsic = crate::chain::runtime::assets::calls::types::Transfer;
 type TransferAllExtrinsic = crate::chain::runtime::assets::calls::types::TransferAll;
 type TransferredEvent = crate::chain::runtime::assets::events::Transferred;
+
+/// Extract transaction hash from hex-encoded extrinsic bytes
+fn extract_tx_hash(transaction_bytes: &str) -> Option<String> {
+    // Remove 0x prefix if present
+    let bytes_str = transaction_bytes.strip_prefix("0x").unwrap_or(transaction_bytes);
+
+    // Decode hex to bytes
+    let bytes = const_hex::decode(bytes_str).ok()?;
+
+    // Calculate blake2 256-bit hash (standard for Substrate tx hashes)
+    let mut hasher = blake2b_simd::Params::new()
+        .hash_length(32)
+        .to_state();
+    hasher.update(&bytes);
+    let hash = hasher.finalize();
+
+    // Return as 0x-prefixed hex string
+    Some(format!("0x{}", const_hex::encode(hash.as_bytes())))
+}
+
+/// Convert `TxKind` to `TransactionType`
+fn tx_kind_to_transaction_type(kind: TxKind) -> crate::types::TransactionType {
+    match kind {
+        TxKind::Payment => crate::types::TransactionType::Incoming,
+        TxKind::Withdrawal => crate::types::TransactionType::Outgoing,
+    }
+}
+
+/// Convert `TxStatus` to `TransactionStatus`
+fn tx_status_to_transaction_status(status: TxStatus) -> crate::types::TransactionStatus {
+    match status {
+        TxStatus::Pending => crate::types::TransactionStatus::Waiting,
+        TxStatus::Finalized => crate::types::TransactionStatus::Completed,
+        TxStatus::Failed => crate::types::TransactionStatus::Failed,
+    }
+}
+
+/// Convert `f64` amount to `Decimal`
+fn amount_to_decimal(amount: f64) -> rust_decimal::Decimal {
+    // This should not fail for normal f64 values
+    rust_decimal::Decimal::try_from(amount).unwrap_or_else(|e| {
+        tracing::error!("Failed to convert amount {amount} to Decimal: {e}");
+        rust_decimal::Decimal::ZERO
+    })
+}
+
+/// Parse RFC3339 timestamp string to `DateTime<Utc>`
+fn parse_timestamp(timestamp_str: &str) -> chrono::DateTime<chrono::Utc> {
+    chrono::DateTime::parse_from_rfc3339(timestamp_str)
+        .map(|dt| dt.with_timezone(&chrono::Utc))
+        .unwrap_or_else(|e| {
+            tracing::error!("Failed to parse timestamp {timestamp_str}: {e}");
+            chrono::Utc::now()
+        })
+}
+
+/// Build a Transaction object from the available data
+#[expect(clippy::too_many_arguments)]
+fn build_transaction(
+    invoice_id: Uuid,
+    asset_id: u32,
+    chain: String,
+    amount: f64,
+    sender: String,
+    recipient: String,
+    block_number: u32,
+    position_in_block: u32,
+    transaction_bytes: String,
+    timestamp_str: &str,
+    tx_kind: TxKind,
+    tx_status: TxStatus,
+) -> Transaction {
+    let tx_hash = extract_tx_hash(&transaction_bytes);
+    let amount_decimal = amount_to_decimal(amount);
+    let created_at = parse_timestamp(timestamp_str);
+    let transaction_type = tx_kind_to_transaction_type(tx_kind);
+    let status = tx_status_to_transaction_status(tx_status);
+
+    Transaction {
+        id: Uuid::new_v4(),
+        invoice_id,
+        asset_id,
+        chain,
+        amount: amount_decimal,
+        sender,
+        recipient,
+        block_number: Some(block_number),
+        position_in_block: Some(position_in_block),
+        tx_hash,
+        origin: TransactionOrigin::default(), // No origin for detected payments
+        status,
+        transaction_type,
+        outgoing_meta: OutgoingTransactionMeta::default(),
+        created_at,
+        transaction_bytes: Some(transaction_bytes),
+    }
+}
 
 enum AnyTransferExtrinsic {
     Transfer(FoundExtrinsic<AssetHubConfig, AssetHubOnlineClient, TransferExtrinsic>),
@@ -73,9 +172,15 @@ async fn parse_transfer_event(
     let mut found_events = events.find::<TransferredEvent>().filter_map(Result::ok);
 
     found_events.find_map(|event| {
-        if event.from == acc_id {
-            Some((TxKind::Withdrawal, event.to, Balance(event.amount)))
-        } else if event.to == acc_id {
+        // if event.from == acc_id {
+        //     Some((TxKind::Withdrawal, event.to, Balance(event.amount)))
+        // } else if event.to == acc_id {
+        //     Some((TxKind::Payment, event.from, Balance(event.amount)))
+        // } else {
+        //     None
+        // }
+
+        if event.to == acc_id {
             Some((TxKind::Payment, event.from, Balance(event.amount)))
         } else {
             None
@@ -98,7 +203,7 @@ pub fn start_chain_watch(
         .clone()
         .spawn(format!("Chain {} watcher", chain.name.clone()), async move {
             let watchdog = 120_000;
-            let mut watched_accounts = HashMap::new();
+            let mut watched_accounts: HashMap<Uuid, Invoice> = HashMap::new();
             let mut shutdown = false;
 
             if chain.allow_insecure_endpoints {
@@ -216,52 +321,44 @@ pub fn start_chain_watch(
 
                                                 #[expect(clippy::arithmetic_side_effects)]
                                                 let finalized_tx_timestamp = (OffsetDateTime::UNIX_EPOCH + Duration::from_millis(timestamp))
-                                                    .format(&Rfc3339).unwrap().into();
+                                                    .format(&Rfc3339).unwrap();
 
-                                                let finalized_tx = FinalizedTxDb {
-                                                    block_number: block.number(),
-                                                    position_in_block,
-                                                }.into();
-
-                                                let amount = Amount::Exact(transfer_amount.format(invoice.currency.decimals));
                                                 let status = TxStatus::Finalized;
-                                                let currency = invoice.currency.clone();
                                                 let transaction_bytes = const_hex::encode_prefixed(raw_extrinsic);
+                                                let amount_f64 = transfer_amount.format(invoice.currency.decimals);
 
-                                                match tx_kind {
-                                                    kind @ TxKind::Payment => {
-                                                        state.record_transaction(
-                                                            TransactionInfoDb {
-                                                                transaction_bytes,
-                                                                inner: TransactionInfoDbInner {
-                                                                    finalized_tx,
-                                                                    finalized_tx_timestamp,
-                                                                    sender: to_base58_string(another_account.0, 42),
-                                                                    recipient: to_base58_string(invoice.address.0, 42),
-                                                                    amount,
-                                                                    currency,
-                                                                    status,
-                                                                    kind,
-                                                                } },
-                                                                id.clone()).await?;
-                                                    }
-                                                    kind @ TxKind::Withdrawal => {
-                                                        state.record_transaction(
-                                                            TransactionInfoDb {
-                                                                transaction_bytes,
-                                                                inner: TransactionInfoDbInner {
-                                                                    finalized_tx,
-                                                                    finalized_tx_timestamp,
-                                                                    sender: to_base58_string(invoice.address.0, 42),
-                                                                    recipient: to_base58_string(another_account.0, 42),
-                                                                    amount,
-                                                                    currency,
-                                                                    status,
-                                                                    kind,
-                                                                } },
-                                                                id.clone()).await?;
-                                                    }
-                                                }
+                                                // Extract asset_id from currency
+                                                let asset_id = invoice.currency.asset_id.ok_or_else(|| {
+                                                    ChainError::InvalidCurrency(invoice.currency.currency.clone())
+                                                })?;
+
+                                                let (sender, recipient) = match tx_kind {
+                                                    TxKind::Payment => (
+                                                        to_base58_string(another_account.0, 42),
+                                                        to_base58_string(invoice.address.0, 42),
+                                                    ),
+                                                    TxKind::Withdrawal => (
+                                                        to_base58_string(invoice.address.0, 42),
+                                                        to_base58_string(another_account.0, 42),
+                                                    ),
+                                                };
+
+                                                let transaction = build_transaction(
+                                                    *id,
+                                                    asset_id,
+                                                    invoice.currency.chain_name.clone(),
+                                                    amount_f64,
+                                                    sender,
+                                                    recipient,
+                                                    block.number(),
+                                                    position_in_block,
+                                                    transaction_bytes,
+                                                    &finalized_tx_timestamp,
+                                                    tx_kind,
+                                                    status,
+                                                );
+
+                                                state.record_transaction_v2(*id, transaction).await?;
                                             }
                                         }
                                     }
@@ -392,7 +489,7 @@ impl ChainWatcher {
     pub async fn prepare_chain(
         client: &AssetHubOnlineClient,
         chain: ChainConfig,
-        watched_accounts: &mut HashMap<String, Invoice>,
+        watched_accounts: &mut HashMap<Uuid, Invoice>,
         rpc_url: &str,
         chain_tx: mpsc::Sender<ChainTrackerRequest>,
         state: State,

@@ -206,14 +206,14 @@ impl ChainManager {
 
     pub async fn add_invoice(
         &self,
-        id: String,
+        invoice_id: uuid::Uuid,
         order: OrderInfo,
         recipient: AccountId32,
     ) -> Result<(), ChainError> {
         let (res, rx) = oneshot::channel();
         self.tx
             .send(ChainRequest::WatchAccount(WatchAccount::new(
-                id, order, recipient, res,
+                invoice_id, order, recipient, res,
             )?))
             .await
             .map_err(|_| ChainError::MessageDropped)?;
@@ -231,14 +231,14 @@ impl ChainManager {
 
     pub async fn reap(
         &self,
-        id: String,
+        invoice_id: uuid::Uuid,
         order: OrderInfo,
         recipient: AccountId32,
     ) -> Result<(), ChainError> {
         let (res, rx) = oneshot::channel();
         self.tx
             .send(ChainRequest::Reap(WatchAccount::new(
-                id, order, recipient, res,
+                invoice_id, order, recipient, res,
             )?))
             .await
             .map_err(|_| ChainError::MessageDropped)?;

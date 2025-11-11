@@ -11,6 +11,7 @@ use crate::{
 };
 use subxt::utils::AccountId32;
 use tokio::sync::oneshot;
+use uuid::Uuid;
 
 pub enum ChainRequest {
     WatchAccount(WatchAccount),
@@ -21,7 +22,7 @@ pub enum ChainRequest {
 
 #[derive(Debug)]
 pub struct WatchAccount {
-    pub id: String,
+    pub id: Uuid,
     pub address: AccountId32,
     pub currency: CurrencyInfo,
     pub amount: f64,
@@ -32,7 +33,7 @@ pub struct WatchAccount {
 
 impl WatchAccount {
     pub fn new(
-        id: String,
+        id: Uuid,
         order: OrderInfo,
         recipient: AccountId32,
         res: oneshot::Sender<Result<(), ChainError>>,
@@ -63,7 +64,7 @@ pub enum ChainTrackerRequest {
 
 #[derive(Clone, Debug)]
 pub struct Invoice {
-    pub id: String,
+    pub id: Uuid,
     pub address: AccountId32,
     pub currency: CurrencyInfo,
     pub amount: f64,
