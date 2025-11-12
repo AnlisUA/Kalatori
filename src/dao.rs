@@ -110,6 +110,21 @@ impl DAO {
         Ok(invoice.map(From::from))
     }
 
+    /// Get all active invoices that need to be monitored
+    /// Returns invoices with status 'Waiting' or 'PartiallyPaid'
+    pub async fn get_active_invoices(&self) -> DaoResult<Vec<Invoice>> {
+        let invoices = sqlx::query_as::<_, InvoiceRow>(
+            "SELECT id, order_id, asset_id, chain, amount, payment_address, status, withdrawal_status, callback, cart, valid_till, created_at, updated_at, version
+             FROM invoices
+             WHERE status IN ('Waiting', 'PartiallyPaid')
+             ORDER BY created_at ASC",
+        )
+            .fetch_all(&self.pool)
+            .await?;
+
+        Ok(invoices.into_iter().map(From::from).collect())
+    }
+
     pub async fn update_invoice_status(
         &self,
         invoice_id: Uuid,

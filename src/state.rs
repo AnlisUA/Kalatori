@@ -1,7 +1,7 @@
 use crate::error::ForceWithdrawalError;
 use crate::{
     chain::{ChainManager, utils::to_base58_string},
-    database::{ConfigWoChains, Database, TransactionInfoDb},
+    database::{ConfigWoChains, Database},
     error::{DaoError, Error, OrderError},
     legacy_types::{
         Amount, CurrencyProperties, FinalizedTx, Health, OrderInfo, OrderQuery, OrderResponse,
@@ -59,8 +59,10 @@ impl State {
         // Remember to always spawn async here or things might deadlock
         task_tracker.clone().spawn("State Handler", async move {
             let chain_manager = chain_manager_receiver.await.map_err(|_| Error::Fatal)?;
-            let db_wakeup = db.clone();
-            let chain_manager_wakeup = chain_manager.clone();
+            
+            // Clone chain_manager for restoration before moving into StateData
+            let chain_manager_for_restoration = chain_manager.clone();
+            
             let currencies = HashMap::new();
             let mut state = StateData {
                 currencies,
@@ -71,31 +73,8 @@ impl State {
                 chain_manager,
                 signer,
                 account_lifetime,
+                invoices_restored: false,
             };
-
-            // TODO: consider doing this even more lazy
-            let order_list = db_wakeup.order_list().await?;
-            let recipient_cloned = state.recipient.clone();
-            let dao_cloned = state.dao.clone();
-            task_tracker.spawn("Restore saved orders", async move {
-                for (order_id, order_details) in order_list {
-                    // Look up invoice_id from order_id for the new system
-                    match dao_cloned.get_invoice_by_order_id(&order_id).await {
-                        Ok(Some(invoice)) => {
-                            drop(chain_manager_wakeup
-                                .add_invoice(invoice.id, order_details, recipient_cloned.clone())
-                                .await);
-                        }
-                        Ok(None) => {
-                            tracing::warn!("Invoice with order_id {order_id} not found in new database during restoration");
-                        }
-                        Err(e) => {
-                            tracing::error!("Failed to look up invoice for order_id {order_id}: {e:?}");
-                        }
-                    }
-                }
-                Ok("All saved orders restored")
-            });
 
             loop {
                 tokio::select! {
@@ -110,6 +89,12 @@ impl State {
                                 // it MUST be asserted in chain tracker that assets are those and only
                                 // those that user requested
                                 state.update_currencies(assets);
+
+                                // Restore active invoices now that currencies are populated
+                                state.restore_active_invoices(
+                                    chain_manager_for_restoration.clone(),
+                                    &task_tracker
+                                ).await;
                             }
                             StateAccessRequest::GetInvoiceStatus(request) => {
                                 request
@@ -182,15 +167,6 @@ impl State {
                                     Err(e) => {
                                         tracing::error!("Failed to look up invoice {invoice_id}: {e:?}");
                                     }
-                                }
-                            }
-                            StateAccessRequest::RecordTransaction { order, tx: new_tx } => {
-                                let record = state.db.record_transaction(order, new_tx).await;
-
-                                if let Err(e) = record {
-                                    tracing::error!(
-                                        "Found a transaction related to an order, but this could not be recorded! {e:?}"
-                                    );
                                 }
                             }
                             StateAccessRequest::RecordTransactionV2 { invoice_id, transaction } => {
@@ -445,17 +421,6 @@ impl State {
         }
     }
 
-    pub async fn record_transaction(
-        &self,
-        tx: TransactionInfoDb,
-        order: String,
-    ) -> Result<(), Error> {
-        self.tx
-            .send(StateAccessRequest::RecordTransaction { order, tx })
-            .await
-            .map_err(|_| Error::Fatal)
-    }
-
     pub async fn record_transaction_v2(
         &self,
         invoice_id: Uuid,
@@ -493,10 +458,6 @@ enum StateAccessRequest {
     ServerHealth(oneshot::Sender<ServerHealth>),
     OrderPaid(Uuid),
     IsOrderPaid(Uuid, oneshot::Sender<bool>),
-    RecordTransaction {
-        order: String,
-        tx: TransactionInfoDb,
-    },
     RecordTransactionV2 {
         invoice_id: Uuid,
         transaction: Transaction,
@@ -527,11 +488,91 @@ struct StateData {
     chain_manager: ChainManager,
     signer: Signer,
     account_lifetime: crate::legacy_types::Timestamp,
+    invoices_restored: bool,
 }
 
 impl StateData {
     fn update_currencies(&mut self, currencies: HashMap<String, CurrencyProperties>) {
         self.currencies.extend(currencies);
+    }
+
+    async fn restore_active_invoices(
+        &mut self,
+        chain_manager_wakeup: ChainManager,
+        task_tracker: &TaskTracker,
+    ) {
+        // Only restore once
+        if self.invoices_restored {
+            tracing::debug!("Invoices already restored, skipping");
+            return;
+        }
+
+        tracing::info!("Starting invoice restoration from database");
+
+        // Fetch active invoices from the new SQLite database
+        let active_invoices = match self.dao.get_active_invoices().await {
+            Ok(invoices) => invoices,
+            Err(e) => {
+                tracing::error!("Failed to fetch active invoices from database: {e:?}");
+                return;
+            }
+        };
+
+        tracing::info!("Found {} active invoices to restore", active_invoices.len());
+
+        // Pre-process invoices: convert to OrderInfo using state methods
+        let mut invoices_to_restore = Vec::new();
+        for invoice in active_invoices {
+            match self.get_currency_info(&invoice.chain, invoice.asset_id) {
+                Ok(currency) => {
+                    let order_info = self.invoice_to_order_info(&invoice, &currency);
+                    invoices_to_restore.push((invoice.id, invoice.order_id.clone(), order_info));
+                }
+                Err(e) => {
+                    tracing::error!(
+                        "Failed to get currency info for invoice {} (order: {}): {e:?}",
+                        invoice.id,
+                        invoice.order_id
+                    );
+                }
+            }
+        }
+
+        let recipient_cloned = self.recipient.clone();
+        task_tracker.spawn("Restore saved orders", async move {
+            let mut restored_count = 0;
+            let mut failed_count = 0;
+
+            for (invoice_id, order_id, order_info) in invoices_to_restore {
+                match chain_manager_wakeup
+                    .add_invoice(invoice_id, order_info, recipient_cloned.clone())
+                    .await
+                {
+                    Ok(()) => {
+                        tracing::info!("Restored invoice {} (order: {})", invoice_id, order_id);
+                        restored_count += 1;
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            "Failed to restore invoice {} (order: {}): {e:?}",
+                            invoice_id,
+                            order_id
+                        );
+                        failed_count += 1;
+                    }
+                }
+            }
+
+            tracing::info!(
+                "Invoice restoration complete: {} restored, {} failed",
+                restored_count,
+                failed_count
+            );
+
+            Ok("All saved orders restored")
+        });
+
+        self.invoices_restored = true;
     }
 
     async fn get_invoice_status(&self, order: String) -> Result<OrderResponse, Error> {
