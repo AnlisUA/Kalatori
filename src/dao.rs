@@ -275,7 +275,7 @@ impl DAO {
 
     pub async fn initialize_server_info(&self) -> DaoResult<String> {
         let info = sqlx::query_as::<_, ServerInfo>(
-            "SELECT instance_id, version, kalatori_remark FROM server_info",
+            "SELECT instance_id, version, remark as kalatori_remark FROM server_info",
         )
         .fetch_optional(&self.pool)
         .await?;
