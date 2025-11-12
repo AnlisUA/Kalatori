@@ -8,10 +8,9 @@ use crate::{
         utils::to_base58_string,
     },
     configs::ChainConfig,
-    database::TxKind,
     definitions::Balance,
     error::ChainError,
-    legacy_types::{CurrencyProperties, Health, RpcInfo, TokenKind, TxStatus},
+    legacy_types::{CurrencyProperties, Health, RpcInfo, TokenKind, TxKind, TxStatus},
     state::State,
     types::{OutgoingTransactionMeta, Transaction, TransactionOrigin},
     utils::task_tracker::TaskTracker,
@@ -38,15 +37,15 @@ type TransferredEvent = crate::chain::runtime::assets::events::Transferred;
 /// Extract transaction hash from hex-encoded extrinsic bytes
 fn extract_tx_hash(transaction_bytes: &str) -> Option<String> {
     // Remove 0x prefix if present
-    let bytes_str = transaction_bytes.strip_prefix("0x").unwrap_or(transaction_bytes);
+    let bytes_str = transaction_bytes
+        .strip_prefix("0x")
+        .unwrap_or(transaction_bytes);
 
     // Decode hex to bytes
     let bytes = const_hex::decode(bytes_str).ok()?;
 
     // Calculate blake2 256-bit hash (standard for Substrate tx hashes)
-    let mut hasher = blake2b_simd::Params::new()
-        .hash_length(32)
-        .to_state();
+    let mut hasher = blake2b_simd::Params::new().hash_length(32).to_state();
     hasher.update(&bytes);
     let hash = hasher.finalize();
 

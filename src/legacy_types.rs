@@ -70,6 +70,7 @@ pub struct OrderInfo {
 }
 
 impl OrderInfo {
+    #[expect(dead_code, reason = "Legacy type kept for backward compatibility")]
     pub fn new(
         query: OrderQuery,
         currency: CurrencyInfo,
@@ -89,6 +90,7 @@ impl OrderInfo {
     }
 }
 
+#[expect(dead_code, reason = "Legacy type kept for backward compatibility")]
 pub enum OrderCreateResponse {
     New(OrderInfo),
     Modified(OrderInfo),
@@ -256,4 +258,78 @@ pub enum TxStatus {
     Pending,
     Finalized,
     Failed,
+}
+
+// ============================================================================
+// Legacy Database Types (from database.rs)
+// These types are used for sled database operations and migration
+// ============================================================================
+
+use subxt::utils::AccountId32;
+
+/// Configuration without chain-specific details
+pub struct ConfigWoChains {
+    pub recipient: AccountId32,
+    pub remark: Option<String>,
+    pub account_lifetime: Timestamp,
+}
+
+/// Transaction info as stored in sled database
+#[derive(Encode, Decode)]
+pub struct TransactionInfoDb {
+    pub transaction_bytes: String,
+    pub inner: TransactionInfoDbInner,
+}
+
+/// Inner transaction data for sled encoding
+#[derive(Encode, Decode)]
+pub struct TransactionInfoDbInner {
+    pub finalized_tx: Option<FinalizedTxDb>,
+    pub finalized_tx_timestamp: Option<String>,
+    pub sender: String,
+    pub recipient: String,
+    pub amount: Amount,
+    pub currency: CurrencyInfo,
+    pub status: TxStatus,
+    pub kind: TxKind,
+}
+
+/// Transaction kind (payment vs withdrawal)
+#[derive(Encode, Decode, Debug, Clone, Copy)]
+pub enum TxKind {
+    Payment,
+    Withdrawal,
+}
+
+/// Finalized transaction data in sled format
+#[derive(Encode, Decode, Debug)]
+pub struct FinalizedTxDb {
+    pub block_number: BlockNumber,
+    pub position_in_block: ExtrinsicIndex,
+}
+
+/// Convert from sled format to API format
+impl From<TransactionInfoDb> for TransactionInfo {
+    fn from(value: TransactionInfoDb) -> Self {
+        let finalized_tx = value.inner.finalized_tx.and_then(|tx| {
+            value
+                .inner
+                .finalized_tx_timestamp
+                .map(|timestamp| FinalizedTx {
+                    block_number: tx.block_number,
+                    position_in_block: tx.position_in_block,
+                    timestamp,
+                })
+        });
+
+        Self {
+            finalized_tx,
+            transaction_bytes: value.transaction_bytes,
+            sender: value.inner.sender,
+            recipient: value.inner.recipient,
+            amount: value.inner.amount,
+            currency: value.inner.currency,
+            status: value.inner.status,
+        }
+    }
 }

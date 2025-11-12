@@ -12,7 +12,6 @@ use utils::{
 mod chain;
 mod configs;
 mod dao;
-mod database;
 mod definitions;
 mod error;
 mod handlers;
@@ -26,15 +25,15 @@ mod utils;
 
 use chain::ChainManager;
 use dao::DAO;
-use database::ConfigWoChains;
 use error::{Error, PrettyCause};
+use legacy_types::ConfigWoChains;
 use signer::Signer;
 use state::State;
 
 use crate::{
     configs::{
-        chain_config_with_prefix, database_config_with_prefix, payments_config_with_prefix,
-        seed_config_with_prefix, web_server_config_with_prefix, ChainConfig,
+        ChainConfig, chain_config_with_prefix, database_config_with_prefix,
+        payments_config_with_prefix, seed_config_with_prefix, web_server_config_with_prefix,
     },
     legacy_types::{CurrencyProperties, Timestamp, TokenKind},
 };
@@ -114,11 +113,7 @@ fn build_currencies_from_config(
             chain_name: chain_config.name.clone(),
             kind: TokenKind::Asset,
             decimals: 0, // Placeholder - not used during migration validation
-            rpc_url: chain_config
-                .endpoints
-                .first()
-                .cloned()
-                .unwrap_or_default(),
+            rpc_url: chain_config.endpoints.first().cloned().unwrap_or_default(),
             asset_id: Some(asset.id),
             ss58: 0, // Placeholder - not used during migration
         };
@@ -153,12 +148,6 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
     let signer = Signer::init(recipient.clone(), &task_tracker, seed_config.seed.clone());
     let seed_secret = seed_config.seed;
 
-    let db = database::Database::init(
-        database_config.clone(),
-        &task_tracker,
-        Timestamp(payments_config.account_lifetime_millis),
-    )?;
-
     // Initialize DAO for SQLite database operations
     let dao = DAO::new(database_config.clone())
         .await
@@ -168,7 +157,10 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
     if !database_config.temporary {
         let sled_path = std::path::PathBuf::from(&database_config.path);
         if sled_path.exists() {
-            tracing::info!("Found sled database at {:?}, running migration to SQLite...", sled_path);
+            tracing::info!(
+                "Found sled database at {:?}, running migration to SQLite...",
+                sled_path
+            );
 
             let currencies = build_currencies_from_config(&chain_config);
 
@@ -189,7 +181,10 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
                     );
 
                     if !stats.warnings.is_empty() {
-                        tracing::warn!("Migration completed with {} warnings:", stats.warnings.len());
+                        tracing::warn!(
+                            "Migration completed with {} warnings:",
+                            stats.warnings.len()
+                        );
                         for warning in &stats.warnings {
                             tracing::warn!("  - {}", warning);
                         }
@@ -200,11 +195,17 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
                 }
             }
         } else {
-            tracing::debug!("No sled database found at {:?}, skipping migration", sled_path);
+            tracing::debug!(
+                "No sled database found at {:?}, skipping migration",
+                sled_path
+            );
         }
     }
 
-    let instance_id = db.initialize_server_info().await?;
+    let instance_id = dao
+        .initialize_server_info()
+        .await
+        .map_err(error::DaoError::Sqlx)?;
 
     let (cm_tx, cm_rx) = oneshot::channel();
 
@@ -215,7 +216,6 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
             remark: payments_config.remark,
             account_lifetime: Timestamp(payments_config.account_lifetime_millis),
         },
-        db,
         dao,
         cm_rx,
         instance_id,

@@ -1,14 +1,16 @@
 use crate::error::ForceWithdrawalError;
 use crate::{
     chain::{ChainManager, utils::to_base58_string},
-    database::{ConfigWoChains, Database},
     error::{DaoError, Error, OrderError},
     legacy_types::{
-        Amount, CurrencyProperties, FinalizedTx, Health, OrderInfo, OrderQuery, OrderResponse,
-        OrderStatus, RpcInfo, ServerHealth, ServerInfo, ServerStatus, TransactionInfo, TxStatus,
+        Amount, ConfigWoChains, CurrencyProperties, FinalizedTx, Health, OrderInfo, OrderQuery,
+        OrderResponse, OrderStatus, RpcInfo, ServerHealth, ServerInfo, ServerStatus,
+        TransactionInfo, TxStatus,
     },
     signer::Signer,
-    types::{Invoice, InvoiceCart, InvoiceStatus, Transaction, TransactionStatus, UpdateInvoiceData},
+    types::{
+        Invoice, InvoiceCart, InvoiceStatus, Transaction, TransactionStatus, UpdateInvoiceData,
+    },
     utils::task_tracker::TaskTracker,
 };
 use std::collections::HashMap;
@@ -28,8 +30,11 @@ impl State {
     #[expect(clippy::too_many_lines)]
     pub fn initialise(
         signer: Signer,
-        ConfigWoChains { recipient, remark, account_lifetime }: ConfigWoChains,
-        db: Database,
+        ConfigWoChains {
+            recipient,
+            remark,
+            account_lifetime,
+        }: ConfigWoChains,
         dao: crate::dao::DAO,
         chain_manager_receiver: oneshot::Receiver<ChainManager>,
         instance_id: String,
@@ -59,16 +64,15 @@ impl State {
         // Remember to always spawn async here or things might deadlock
         task_tracker.clone().spawn("State Handler", async move {
             let chain_manager = chain_manager_receiver.await.map_err(|_| Error::Fatal)?;
-            
+
             // Clone chain_manager for restoration before moving into StateData
             let chain_manager_for_restoration = chain_manager.clone();
-            
+
             let currencies = HashMap::new();
             let mut state = StateData {
                 currencies,
                 recipient: recipient.clone(),
                 server_info,
-                db,
                 dao,
                 chain_manager,
                 signer,
@@ -205,7 +209,7 @@ impl State {
                                 match state.dao.get_invoice_by_order_id(&order_id).await {
                                     Ok(Some(invoice)) => {
                                         let currency_info = state.get_currency_info(&invoice.chain, invoice.asset_id);
-                                        let order = currency_info.and_then(|info| Ok(state.invoice_to_order_info(&invoice, &info)));
+                                        let order = currency_info.map(|info| state.invoice_to_order_info(&invoice, &info));
                                         // let order = state.invoice_to_order_info(&invoice, &currency_info);
 
                                         match order {
@@ -268,12 +272,8 @@ impl State {
                     () = shutdown_notification.cancelled() => {
                         // Web server shuts down on its own; it does not matter what it sends now.
 
-                        // First shut down active actions for external world. If something yet
-                        // happens, we should record it in db.
+                        // First shut down active actions for external world.
                         state.chain_manager.shutdown().await;
-
-                        // Now that nothing happens we can wind down the ledger
-                        state.db.shutdown().await;
 
                         // Try to zeroize secrets
                         state.signer.shutdown().await;
@@ -435,10 +435,7 @@ impl State {
             .map_err(|_| Error::Fatal)
     }
 
-    pub async fn update_transaction_v2(
-        &self,
-        transaction: Transaction,
-    ) -> Result<(), Error> {
+    pub async fn update_transaction_v2(&self, transaction: Transaction) -> Result<(), Error> {
         self.tx
             .send(StateAccessRequest::UpdateTransactionV2 { transaction })
             .await
@@ -483,7 +480,6 @@ struct StateData {
     currencies: HashMap<String, CurrencyProperties>,
     recipient: AccountId32,
     server_info: ServerInfo,
-    db: Database,
     dao: crate::dao::DAO,
     chain_manager: ChainManager,
     signer: Signer,
@@ -540,8 +536,8 @@ impl StateData {
 
         let recipient_cloned = self.recipient.clone();
         task_tracker.spawn("Restore saved orders", async move {
-            let mut restored_count = 0;
-            let mut failed_count = 0;
+            let mut restored_count: u32 = 0;
+            let mut failed_count: u32 = 0;
 
             for (invoice_id, order_id, order_info) in invoices_to_restore {
                 match chain_manager_wakeup
@@ -550,7 +546,7 @@ impl StateData {
                 {
                     Ok(()) => {
                         tracing::info!("Restored invoice {} (order: {})", invoice_id, order_id);
-                        restored_count += 1;
+                        restored_count = restored_count.saturating_add(1);
                     }
                     Err(e) => {
                         tracing::error!(
@@ -558,7 +554,7 @@ impl StateData {
                             invoice_id,
                             order_id
                         );
-                        failed_count += 1;
+                        failed_count = failed_count.saturating_add(1);
                     }
                 }
             }
@@ -577,12 +573,21 @@ impl StateData {
 
     async fn get_invoice_status(&self, order: String) -> Result<OrderResponse, Error> {
         // Fetch invoice from DAO
-        let Some(invoice) = self.dao.get_invoice_by_order_id(&order).await.map_err(DaoError::Sqlx)? else {
+        let Some(invoice) = self
+            .dao
+            .get_invoice_by_order_id(&order)
+            .await
+            .map_err(DaoError::Sqlx)?
+        else {
             return Ok(OrderResponse::NotFound);
         };
 
         // Fetch transactions for this invoice
-        let transactions = self.dao.get_invoice_transactions(invoice.id).await.map_err(DaoError::Sqlx)?;
+        let transactions = self
+            .dao
+            .get_invoice_transactions(invoice.id)
+            .await
+            .map_err(DaoError::Sqlx)?;
 
         // Convert transactions to legacy format
         let legacy_transactions: Vec<TransactionInfo> = transactions
@@ -620,12 +625,20 @@ impl StateData {
             .get(&order_query.currency)
             .ok_or(OrderError::UnknownCurrency)?;
         let currency = currency_properties.info(order_query.currency.clone());
-        let payment_account = self.signer.public(invoice_id.to_string(), currency.ss58).await?;
+        let payment_account = self
+            .signer
+            .public(invoice_id.to_string(), currency.ss58)
+            .await?;
 
         // Retry loop for optimistic locking conflicts
         for attempt in 0..MAX_RETRIES {
             // PHASE 1: Check if invoice exists
-            match self.dao.get_invoice_by_order_id(&order).await.map_err(DaoError::Sqlx)? {
+            match self
+                .dao
+                .get_invoice_by_order_id(&order)
+                .await
+                .map_err(DaoError::Sqlx)?
+            {
                 None => {
                     // PHASE 2a: Create new invoice
                     let mut invoice = Invoice::from_order_query(
@@ -638,18 +651,17 @@ impl StateData {
 
                     invoice.id = invoice_id;
 
-                    self.dao.create_invoice(invoice.clone()).await.map_err(DaoError::Sqlx)?;
+                    self.dao
+                        .create_invoice(invoice.clone())
+                        .await
+                        .map_err(DaoError::Sqlx)?;
 
                     // Convert Invoice back to OrderInfo for backward compatibility
                     let order_info = self.invoice_to_order_info(&invoice, &currency);
 
                     // Register with chain manager
                     self.chain_manager
-                        .add_invoice(
-                            invoice.id,
-                            order_info.clone(),
-                            self.recipient.clone(),
-                        )
+                        .add_invoice(invoice.id, order_info.clone(), self.recipient.clone())
                         .await?;
 
                     return Ok(OrderResponse::NewOrder(self.order_status(
@@ -660,60 +672,60 @@ impl StateData {
                 }
                 Some(existing_invoice) => {
                     // PHASE 2b: Update or collision based on status
-                    match existing_invoice.status {
-                        InvoiceStatus::Waiting => {
-                            // Try to update existing pending invoice
-                            let update_data = UpdateInvoiceData {
-                                id: existing_invoice.id,
-                                amount: rust_decimal::Decimal::try_from(order_query.amount)
-                                    .map_err(|e| DaoError::AmountConversion(format!("{e}")))?,
-                                cart: InvoiceCart::empty(),
-                                valid_till: crate::types::calculate_valid_till(self.account_lifetime),
-                                version: existing_invoice.version,
-                            };
+                    if existing_invoice.status == InvoiceStatus::Waiting {
+                        // Try to update existing pending invoice
+                        let update_data = UpdateInvoiceData {
+                            id: existing_invoice.id,
+                            amount: rust_decimal::Decimal::try_from(order_query.amount)
+                                .map_err(|e| DaoError::AmountConversion(format!("{e}")))?,
+                            cart: InvoiceCart::empty(),
+                            valid_till: crate::types::calculate_valid_till(self.account_lifetime),
+                            version: existing_invoice.version,
+                        };
 
-                            let rows_affected = self.dao.update_invoice_data(update_data).await.map_err(DaoError::Sqlx)?;
+                        let rows_affected = self
+                            .dao
+                            .update_invoice_data(update_data)
+                            .await
+                            .map_err(DaoError::Sqlx)?;
 
-                            if rows_affected == 0 {
-                                // Version conflict - retry
-                                #[expect(clippy::arithmetic_side_effects)]
-                                if attempt < MAX_RETRIES - 1 {
-                                    tracing::warn!(
-                                        "Version conflict updating invoice {}, retrying... (attempt {}/{})",
-                                        order,
-                                        attempt.saturating_add(1),
-                                        MAX_RETRIES
-                                    );
-                                    continue;
-                                } else {
-                                    return Err(DaoError::MaxRetriesReached.into());
-                                }
+                        if rows_affected == 0 {
+                            // Version conflict - retry
+                            if attempt < MAX_RETRIES.saturating_sub(1) {
+                                tracing::warn!(
+                                    "Version conflict updating invoice {}, retrying... (attempt {}/{})",
+                                    order,
+                                    attempt.saturating_add(1),
+                                    MAX_RETRIES
+                                );
+                                continue;
                             }
-
-                            // Fetch updated invoice to get new version
-                            let updated_invoice = self
-                                .dao
-                                .get_invoice_by_order_id(&order)
-                                .await
-                                .map_err(DaoError::Sqlx)?
-                                .ok_or(DaoError::InvoiceNotFound)?;
-
-                            let order_info = self.invoice_to_order_info(&updated_invoice, &currency);
-
-                            return Ok(OrderResponse::ModifiedOrder(
-                                self.order_status(order, order_info, String::new()),
-                            ));
+                            return Err(DaoError::MaxRetriesReached.into());
                         }
-                        _ => {
-                            // Paid/Expired/Canceled - collision
-                            let order_info = self.invoice_to_order_info(&existing_invoice, &currency);
-                            return Ok(OrderResponse::CollidedOrder(self.order_status(
-                                order,
-                                order_info,
-                                String::from("Order with this ID was already processed"),
-                            )));
-                        }
+
+                        // Fetch updated invoice to get new version
+                        let updated_invoice = self
+                            .dao
+                            .get_invoice_by_order_id(&order)
+                            .await
+                            .map_err(DaoError::Sqlx)?
+                            .ok_or(DaoError::InvoiceNotFound)?;
+
+                        let order_info = self.invoice_to_order_info(&updated_invoice, &currency);
+
+                        return Ok(OrderResponse::ModifiedOrder(self.order_status(
+                            order,
+                            order_info,
+                            String::new(),
+                        )));
                     }
+                    // Paid/Expired/Canceled - collision
+                    let order_info = self.invoice_to_order_info(&existing_invoice, &currency);
+                    return Ok(OrderResponse::CollidedOrder(self.order_status(
+                        order,
+                        order_info,
+                        String::from("Order with this ID was already processed"),
+                    )));
                 }
             }
         }
@@ -726,7 +738,11 @@ impl StateData {
     ///
     /// # Errors
     /// Returns error if currency not found in current configuration
-    fn get_currency_info(&self, chain: &str, asset_id: Option<u32>) -> Result<crate::legacy_types::CurrencyInfo, Error> {
+    fn get_currency_info(
+        &self,
+        chain: &str,
+        asset_id: Option<u32>,
+    ) -> Result<crate::legacy_types::CurrencyInfo, Error> {
         // Search for matching currency in the currencies HashMap
         for (currency_name, properties) in &self.currencies {
             if properties.chain_name == chain && properties.asset_id == asset_id {
@@ -759,13 +775,17 @@ impl StateData {
     ///
     /// # Errors
     /// Returns error if currency lookup fails
-    fn transaction_to_transaction_info(&self, transaction: &Transaction) -> Result<TransactionInfo, Error> {
+    fn transaction_to_transaction_info(
+        &self,
+        transaction: &Transaction,
+    ) -> Result<TransactionInfo, Error> {
         // Reconstruct CurrencyInfo from stored asset_id and chain
         let currency = self.get_currency_info(&transaction.chain, Some(transaction.asset_id))?;
 
         // Convert finalization data
         let finalized_tx = if let (Some(block_number), Some(position_in_block)) =
-            (transaction.block_number, transaction.position_in_block) {
+            (transaction.block_number, transaction.position_in_block)
+        {
             Some(FinalizedTx {
                 block_number,
                 position_in_block,
@@ -788,7 +808,11 @@ impl StateData {
 
     /// Convert Invoice to `OrderInfo` for backward compatibility with V2 API
     #[expect(clippy::unused_self)]
-    fn invoice_to_order_info(&self, invoice: &Invoice, currency: &crate::legacy_types::CurrencyInfo) -> OrderInfo {
+    fn invoice_to_order_info(
+        &self,
+        invoice: &Invoice,
+        currency: &crate::legacy_types::CurrencyInfo,
+    ) -> OrderInfo {
         use crate::legacy_types::PaymentStatus;
 
         OrderInfo {
@@ -799,7 +823,9 @@ impl StateData {
             withdrawal_status: invoice.withdrawal_status,
             death: crate::legacy_types::Timestamp(
                 #[expect(clippy::cast_sign_loss)]
-                { invoice.valid_till.timestamp_millis() as u64 }
+                {
+                    invoice.valid_till.timestamp_millis() as u64
+                },
             ),
             callback: invoice.callback.clone(),
             transactions: vec![], // Transactions would be loaded separately if needed

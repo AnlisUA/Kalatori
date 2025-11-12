@@ -17,7 +17,9 @@ use crate::{
     },
     error::{ChainError, SignerError},
     state::State,
-    types::{OutgoingTransactionMeta, Transaction, TransactionOrigin, TransactionStatus, TransactionType},
+    types::{
+        OutgoingTransactionMeta, Transaction, TransactionOrigin, TransactionStatus, TransactionType,
+    },
 };
 use chrono::Utc;
 use rust_decimal::Decimal;
@@ -98,7 +100,7 @@ pub async fn payout(
         invoice_id: order.id,
         asset_id,
         chain: order.currency.chain_name.clone(),
-        amount: Decimal::ZERO,  // Will remain zero for transfer_all operations
+        amount: Decimal::ZERO, // Will remain zero for transfer_all operations
         sender: sender.clone(),
         recipient: recipient.clone(),
         block_number: None,
@@ -141,7 +143,10 @@ pub async fn payout(
         info!("Transaction record updated to InProgress");
 
         // Submit and watch for completion
-        let result = transaction.submit_and_watch().await.inspect_err(|e| tracing::error!("Got error while submit transaction: {:?}", e))?;
+        let result = transaction
+            .submit_and_watch()
+            .await
+            .inspect_err(|e| tracing::error!("Got error while submit transaction: {:?}", e))?;
 
         info!("Transaction watch result");
 
@@ -174,7 +179,8 @@ pub async fn payout(
         info!("Transaction record updated to Completed");
 
         Ok::<(), ChainError>(())
-    }.await;
+    }
+    .await;
 
     // Handle payout result and mark as failed if error
     match payout_result {

@@ -1,23 +1,18 @@
 use super::shutdown;
-use crate::{database, error::Error, server};
+use crate::{error::Error, server};
 use tracing_subscriber::{EnvFilter, fmt::time::UtcTime};
 
-const TARGETS: &[&str] = &[
-    database::MODULE,
-    server::MODULE,
-    shutdown::MODULE,
-    env!("CARGO_PKG_NAME"),
-];
+const TARGETS: &[&str] = &[server::MODULE, shutdown::MODULE, env!("CARGO_PKG_NAME")];
 const COMMA: &str = ",";
 const INFO: &str = "=info";
 const OFF: &str = "off";
 
 pub fn initialize(directives: impl AsRef<str>) -> Result<(), Error> {
-    let filter = EnvFilter::try_new(directives)?;
+    let _filter = EnvFilter::try_new(directives)?;
 
     tracing_subscriber::fmt()
         .with_timer(UtcTime::rfc_3339())
-        // .with_env_filter(filter)
+        // .with_env_filter(_filter)
         .init();
 
     Ok(())

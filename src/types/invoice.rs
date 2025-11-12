@@ -1,9 +1,9 @@
 use std::fmt;
 
-use chrono::{DateTime, Utc, Duration};
+use chrono::{DateTime, Duration, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use sqlx::types::{Text, Json};
+use sqlx::types::{Json, Text};
 use sqlx::{FromRow, Type};
 use uuid::Uuid;
 
@@ -196,11 +196,11 @@ pub struct CreateInvoiceData {
 
 #[derive(Debug)]
 pub struct UpdateInvoiceData {
-    pub id: Uuid,              // Invoice ID to update
+    pub id: Uuid, // Invoice ID to update
     pub amount: Decimal,
     pub cart: InvoiceCart,
     pub valid_till: DateTime<Utc>,
-    pub version: u16,          // Current version for optimistic locking
+    pub version: u16, // Current version for optimistic locking
 }
 
 // Conversion utilities for backward compatibility with V2 API
@@ -254,5 +254,7 @@ pub fn calculate_valid_till(account_lifetime: Timestamp) -> DateTime<Utc> {
     #[expect(clippy::cast_possible_wrap)]
     let duration = Duration::milliseconds(lifetime_ms as i64);
     #[expect(clippy::arithmetic_side_effects)]
-    { Utc::now() + duration }
+    {
+        Utc::now() + duration
+    }
 }

@@ -31,7 +31,7 @@ mod tests {
 
     use chrono::Utc;
     use rust_decimal::Decimal;
-    use sqlx::types::{Text, Json};
+    use sqlx::types::{Json, Text};
     use uuid::Uuid;
 
     use crate::legacy_types::WithdrawalStatus;

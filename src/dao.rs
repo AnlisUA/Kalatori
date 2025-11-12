@@ -1,10 +1,3 @@
-// TODO: Remove #[expect] when DAO is integrated into the application
-#![expect(
-    dead_code,
-    clippy::upper_case_acronyms,
-    reason = "DAO module is work in progress for SQLite migration"
-)]
-
 use names::Generator;
 use sqlx::types::{Json, Text};
 use uuid::Uuid;
@@ -12,17 +5,13 @@ use uuid::Uuid;
 use crate::configs::DatabaseConfig;
 use crate::legacy_types::{ServerInfo, WithdrawalStatus};
 use crate::types::{
-    Invoice,
-    InvoiceRow,
-    InvoiceStatus,
-    UpdateInvoiceData,
-    Transaction,
-    TransactionRow,
+    Invoice, InvoiceRow, InvoiceStatus, Transaction, TransactionRow, UpdateInvoiceData,
 };
 
 pub type DaoError = sqlx::Error;
 pub type DaoResult<T> = Result<T, DaoError>;
 
+#[expect(clippy::upper_case_acronyms)]
 #[derive(Clone)]
 pub struct DAO {
     pool: sqlx::SqlitePool,
@@ -30,25 +19,23 @@ pub struct DAO {
 
 impl DAO {
     pub async fn new(config: DatabaseConfig) -> DaoResult<Self> {
-        let pool_options = sqlx::sqlite::SqlitePoolOptions::new();
-
-        let connection_options = sqlx::sqlite::SqliteConnectOptions::new()
-            .create_if_missing(true);
-
         let (pool_options, connection_options) = if config.temporary {
             tracing::info!("Using in-memory temporary database");
-            (
-                pool_options.max_connections(1),
-                connection_options.in_memory(true),
-            )
+            let pool_opts = sqlx::sqlite::SqlitePoolOptions::new().max_connections(1);
+            let conn_opts = sqlx::sqlite::SqliteConnectOptions::new()
+                .create_if_missing(true)
+                .in_memory(true);
+            (pool_opts, conn_opts)
         } else {
-            (
-                pool_options,
-                connection_options.filename(&format!("{}/kalatori_db.sqlite", config.dir)),
-            )
+            let pool_opts = sqlx::sqlite::SqlitePoolOptions::new();
+            let conn_opts = sqlx::sqlite::SqliteConnectOptions::new()
+                .create_if_missing(true)
+                .filename(format!("{}/kalatori_db.sqlite", config.dir));
+            (pool_opts, conn_opts)
         };
 
-        let pool = pool_options.connect_with(connection_options)
+        let pool = pool_options
+            .connect_with(connection_options)
             .await
             .expect("Failed to create database connection pool");
 
@@ -111,7 +98,7 @@ impl DAO {
     }
 
     /// Get all active invoices that need to be monitored
-    /// Returns invoices with status 'Waiting' or 'PartiallyPaid'
+    /// Returns invoices with status 'Waiting' or '`PartiallyPaid`'
     pub async fn get_active_invoices(&self) -> DaoResult<Vec<Invoice>> {
         let invoices = sqlx::query_as::<_, InvoiceRow>(
             "SELECT id, order_id, asset_id, chain, amount, payment_address, status, withdrawal_status, callback, cart, valid_till, created_at, updated_at, version
@@ -137,10 +124,10 @@ impl DAO {
                 WHERE id = ?
                 RETURNING *",
         )
-            .bind(status)
-            .bind(invoice_id)
-            .fetch_one(&self.pool)
-            .await?;
+        .bind(status)
+        .bind(invoice_id)
+        .fetch_one(&self.pool)
+        .await?;
 
         Ok(result.into())
     }
@@ -151,29 +138,33 @@ impl DAO {
                 SET amount = ?, cart = ?, valid_till = ?
                 WHERE id = ? AND status = 'Waiting' AND version = ?",
         )
-            .bind(Text(data.amount))
-            .bind(Json(data.cart))
-            .bind(data.valid_till)
-            .bind(data.id)
-            .bind(data.version)
-            .execute(&self.pool)
-            .await?;
+        .bind(Text(data.amount))
+        .bind(Json(data.cart))
+        .bind(data.valid_till)
+        .bind(data.id)
+        .bind(data.version)
+        .execute(&self.pool)
+        .await?;
 
         Ok(result.rows_affected())
     }
 
-    pub async fn update_invoice_withdrawal_status(&self, invoice_id: Uuid, status: WithdrawalStatus) -> DaoResult<Invoice> {
+    pub async fn update_invoice_withdrawal_status(
+        &self,
+        invoice_id: Uuid,
+        status: WithdrawalStatus,
+    ) -> DaoResult<Invoice> {
         sqlx::query_as::<_, InvoiceRow>(
             "UPDATE invoices
                 SET withdrawal_status = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ? AND withdrawal_status == 'Waiting'
                 RETURNING *",
         )
-            .bind(status)
-            .bind(invoice_id)
-            .fetch_one(&self.pool)
-            .await
-            .map(From::from)
+        .bind(status)
+        .bind(invoice_id)
+        .fetch_one(&self.pool)
+        .await
+        .map(From::from)
     }
 
     pub async fn create_transaction(&self, transaction: Transaction) -> DaoResult<()> {
@@ -209,25 +200,25 @@ impl DAO {
              SET invoice_id = ?, asset_id = ?, chain = ?, amount = ?, sender = ?, recipient = ?,
                  block_number = ?, position_in_block = ?, tx_hash = ?, origin = ?, status = ?,
                  transaction_type = ?, outgoing_meta = ?, transaction_bytes = ?
-             WHERE id = ?"
+             WHERE id = ?",
         )
-            .bind(transaction.invoice_id)
-            .bind(transaction.asset_id)
-            .bind(&transaction.chain)
-            .bind(Text(transaction.amount))
-            .bind(&transaction.sender)
-            .bind(&transaction.recipient)
-            .bind(transaction.block_number)
-            .bind(transaction.position_in_block)
-            .bind(&transaction.tx_hash)
-            .bind(Json(&transaction.origin))
-            .bind(transaction.status)
-            .bind(transaction.transaction_type)
-            .bind(Json(&transaction.outgoing_meta))
-            .bind(&transaction.transaction_bytes)
-            .bind(transaction.id)
-            .execute(&self.pool)
-            .await?;
+        .bind(transaction.invoice_id)
+        .bind(transaction.asset_id)
+        .bind(&transaction.chain)
+        .bind(Text(transaction.amount))
+        .bind(&transaction.sender)
+        .bind(&transaction.recipient)
+        .bind(transaction.block_number)
+        .bind(transaction.position_in_block)
+        .bind(&transaction.tx_hash)
+        .bind(Json(&transaction.origin))
+        .bind(transaction.status)
+        .bind(transaction.transaction_type)
+        .bind(Json(&transaction.outgoing_meta))
+        .bind(&transaction.transaction_bytes)
+        .bind(transaction.id)
+        .execute(&self.pool)
+        .await?;
 
         Ok(())
     }
@@ -253,11 +244,11 @@ impl DAO {
 
     pub async fn transaction_exists_by_bytes(&self, transaction_bytes: &str) -> DaoResult<bool> {
         let result = sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM transactions WHERE transaction_bytes = ?"
+            "SELECT COUNT(*) FROM transactions WHERE transaction_bytes = ?",
         )
-            .bind(transaction_bytes)
-            .fetch_one(&self.pool)
-            .await?;
+        .bind(transaction_bytes)
+        .fetch_one(&self.pool)
+        .await?;
 
         Ok(result > 0)
     }
@@ -269,25 +260,25 @@ impl DAO {
             "INSERT INTO server_info (instance_id, version, remark) VALUES (?, ?, ?)
              ON CONFLICT(instance_id) DO UPDATE SET
                 version = excluded.version,
-                remark = excluded.remark"
+                remark = excluded.remark",
         )
-            .bind(&server_info.instance_id)
-            .bind(&server_info.version)
-            .bind(&server_info.kalatori_remark)
-            .execute(&self.pool)
-            .await?
-            .rows_affected();
+        .bind(&server_info.instance_id)
+        .bind(&server_info.version)
+        .bind(&server_info.kalatori_remark)
+        .execute(&self.pool)
+        .await?
+        .rows_affected();
 
         // If rows_affected is 1, it was an insert; if 2, it was an update
         Ok(rows_affected == 1)
     }
 
-    async fn initialize_server_info(&self) -> DaoResult<String> {
+    pub async fn initialize_server_info(&self) -> DaoResult<String> {
         let info = sqlx::query_as::<_, ServerInfo>(
             "SELECT instance_id, version, kalatori_remark FROM server_info",
         )
-            .fetch_optional(&self.pool)
-            .await?;
+        .fetch_optional(&self.pool)
+        .await?;
 
         if let Some(server_info) = info {
             Ok(server_info.instance_id)
@@ -301,7 +292,7 @@ impl DAO {
 
             let result = sqlx::query_as::<_, ServerInfo>(
                 "INSERT INTO server_info (instance_id, version)
-                 VALUES (?, ?, ?)
+                 VALUES (?, ?)
                  RETURNING instance_id, version, kalatori_remark",
             )
             .bind(&new_instance_id)
