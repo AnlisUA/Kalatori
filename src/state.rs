@@ -683,33 +683,27 @@ impl StateData {
                             version: existing_invoice.version,
                         };
 
-                        let rows_affected = self
+                        let updated_invoice = match self
                             .dao
                             .update_invoice_data(update_data)
                             .await
-                            .map_err(DaoError::Sqlx)?;
-
-                        if rows_affected == 0 {
-                            // Version conflict - retry
-                            if attempt < MAX_RETRIES.saturating_sub(1) {
-                                tracing::warn!(
-                                    "Version conflict updating invoice {}, retrying... (attempt {}/{})",
-                                    order,
-                                    attempt.saturating_add(1),
-                                    MAX_RETRIES
-                                );
-                                continue;
+                        {
+                            Ok(invoice) => invoice,
+                            Err(sqlx::Error::RowNotFound) => {
+                                // Version conflict - retry
+                                if attempt < MAX_RETRIES.saturating_sub(1) {
+                                    tracing::warn!(
+                                        "Version conflict updating invoice {}, retrying... (attempt {}/{})",
+                                        order,
+                                        attempt.saturating_add(1),
+                                        MAX_RETRIES
+                                    );
+                                    continue;
+                                }
+                                return Err(DaoError::MaxRetriesReached.into());
                             }
-                            return Err(DaoError::MaxRetriesReached.into());
-                        }
-
-                        // Fetch updated invoice to get new version
-                        let updated_invoice = self
-                            .dao
-                            .get_invoice_by_order_id(&order)
-                            .await
-                            .map_err(DaoError::Sqlx)?
-                            .ok_or(DaoError::InvoiceNotFound)?;
+                            Err(e) => return Err(DaoError::Sqlx(e).into()),
+                        };
 
                         let order_info = self.invoice_to_order_info(&updated_invoice, &currency);
 

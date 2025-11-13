@@ -164,3 +164,25 @@ impl From<TransactionRow> for Transaction {
         }
     }
 }
+
+#[cfg(test)]
+pub fn default_transaction(invoice_id: Uuid) -> Transaction {
+    Transaction {
+        id: Uuid::new_v4(),
+        invoice_id,
+        asset_id: 1984,
+        chain: "statemint".to_string(),
+        amount: Decimal::new(10000, 2),
+        sender: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string(),
+        recipient: "5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty".to_string(),
+        block_number: Some(1000),
+        position_in_block: Some(2),
+        tx_hash: Some("0x1234567890abcdef".to_string()),
+        origin: TransactionOrigin::default(),
+        status: TransactionStatus::Waiting,
+        transaction_type: TransactionType::Incoming,
+        outgoing_meta: OutgoingTransactionMeta::default(),
+        created_at: Utc::now(),
+        transaction_bytes: Some("0xabcdef123456".to_string()),
+    }
+}

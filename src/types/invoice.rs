@@ -258,3 +258,41 @@ pub fn calculate_valid_till(account_lifetime: Timestamp) -> DateTime<Utc> {
         Utc::now() + duration
     }
 }
+
+#[cfg(test)]
+pub fn default_invoice() -> Invoice {
+    let now = Utc::now();
+    let id = Uuid::new_v4();
+
+    Invoice {
+        id,
+        order_id: id.to_string(),
+        asset_id: Some(1984),
+        chain: "statemint".to_string(),
+        amount: Decimal::new(10000, 2),
+        payment_address: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string(),
+        status: InvoiceStatus::Waiting,
+        withdrawal_status: WithdrawalStatus::Waiting,
+        callback: "http://localhost:8080/callback".to_string(),
+        cart: InvoiceCart::empty(),
+        #[expect(clippy::arithmetic_side_effects)]
+        valid_till: now + Duration::hours(24),
+        created_at: now,
+        updated_at: now,
+        version: 1,
+    }
+}
+
+#[cfg(test)]
+pub fn default_update_invoice_data(invoice_id: Uuid) -> UpdateInvoiceData {
+    let now = Utc::now();
+
+    UpdateInvoiceData {
+        id: invoice_id,
+        amount: Decimal::new(15000, 2),
+        cart: InvoiceCart::empty(),
+        #[expect(clippy::arithmetic_side_effects)]
+        valid_till: now + Duration::hours(24),
+        version: 1,
+    }
+}

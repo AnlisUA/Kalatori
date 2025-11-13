@@ -1,16 +1,15 @@
-//! New data types for `SQLite` schema
-//!
-//! This module contains the new data structures used with the `SQLite` database,
-//! including conversion traits for backward compatibility with the old sled-based types.
-//!
-//! TODO: Remove #[expect] attributes when types are integrated into the application
-#![expect(
-    dead_code,
-    unused_imports,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::struct_field_names,
-    reason = "Types module is work in progress for SQLite migration"
-)]
+/// Module defining various types used across the Kalatori application.
+/// Each domain-specific type (or collection of types) is organized into its own submodule.
+///
+/// For testing purposes, it's also recommended to create fixtures functions within each submodule
+/// to facilitate easy generation of test data. For example:
+/// ```ignore
+/// // In invoice.rs
+/// #[cfg(test)]
+/// fn default_invoice() -> Invoice {
+///    // Create and return a default Invoice instance for testing
+/// }
+/// ```
 
 mod common;
 mod invoice;

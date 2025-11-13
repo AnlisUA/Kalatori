@@ -56,13 +56,13 @@ create-network: # Create docker network `kalatori-network` required for docker c
 #####################
 
 sqlx-create-db: # Create an empty SQLite database file
-	PATH="${PWD}/bin:${PATH}" sqlx db create --database-url sqlite:./kalatori_db.sqlite
+	PATH="${PWD}/bin:${PATH}" sqlx db create --database-url sqlite:./database/kalatori_db.sqlite
 
 sqlx-migrate: # Run database migrations using sqlx-cli
-	PATH="${PWD}/bin:${PATH}" sqlx migrate run --database-url sqlite:./kalatori_db.sqlite
+	PATH="${PWD}/bin:${PATH}" sqlx migrate run --database-url sqlite:./database/kalatori_db.sqlite
 
 sqlx-prepare: # Prepare sqlx for compile-time verification of SQL queries
-	PATH="${PWD}/bin:${PATH}" cargo sqlx prepare --database-url sqlite:./kalatori_db.sqlite
+	PATH="${PWD}/bin:${PATH}" cargo sqlx prepare --database-url sqlite:./database/kalatori_db.sqlite
 
 build-release: # Build the daemon with --release flag
 	cargo build --release

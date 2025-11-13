@@ -27,6 +27,7 @@ use subxt::config::DefaultExtrinsicParamsBuilder;
 use subxt_signer::{DeriveJunction, ExposeSecret, SecretString, bip39::Mnemonic, sr25519::Keypair};
 use tracing::info;
 use uuid::Uuid;
+use zeroize::Zeroize;
 
 /// Single function that should completely handle payout attmept. Just do not call anything else.
 ///
@@ -36,7 +37,7 @@ pub async fn payout(
     order: Invoice,
     state: State,
     chain: ChainWatcher,
-    seed: SecretString,
+    mut seed: SecretString,
 ) -> Result<(), ChainError> {
     // TODO: make this retry and rotate RPCs maybe
     //
@@ -70,6 +71,7 @@ pub async fn payout(
 
     // TODO: need to validate phrase on start and somehow handle error cause it should be unexpected and probably can happen only if we zeroize seed too early
     let mnemonic = Mnemonic::parse(seed.expose_secret()).map_err(SignerError::from)?;
+    seed.zeroize();
     // TODO: add support for password configuration and also validate keypair creation on start too
     let keypair = Keypair::from_phrase(&mnemonic, None).map_err(SignerError::from)?;
 

@@ -185,29 +185,3 @@ CREATE INDEX IF NOT EXISTS idx_payouts_created_at ON payouts(created_at);
 CREATE INDEX IF NOT EXISTS idx_refunds_invoice_id ON refunds(invoice_id);
 CREATE INDEX IF NOT EXISTS idx_refunds_status ON refunds(status);
 CREATE INDEX IF NOT EXISTS idx_refunds_created_at ON refunds(created_at);
-
--- Triggers to auto-update timestamps
-
-CREATE TRIGGER IF NOT EXISTS update_invoices_timestamp
-AFTER UPDATE ON invoices
-FOR EACH ROW
-BEGIN
-    UPDATE invoices SET 
-        updated_at = datetime('now'),
-        version = OLD.version + 1
-    WHERE id = NEW.id;
-END;
-
-CREATE TRIGGER IF NOT EXISTS update_payouts_timestamp
-AFTER UPDATE ON payouts
-FOR EACH ROW
-BEGIN
-    UPDATE payouts SET updated_at = datetime('now') WHERE id = NEW.id;
-END;
-
-CREATE TRIGGER IF NOT EXISTS update_refunds_timestamp
-AFTER UPDATE ON refunds
-FOR EACH ROW
-BEGIN
-    UPDATE refunds SET updated_at = datetime('now') WHERE id = NEW.id;
-END;
