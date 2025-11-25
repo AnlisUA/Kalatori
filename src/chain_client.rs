@@ -9,13 +9,22 @@ use tokio::sync::RwLock;
 use rust_decimal::Decimal;
 use futures::stream;
 
-#[expect(clippy::enum_variant_names, reason = "All variants represent different failure points in the chain client")]
+pub use asset_hub::{PolkadotAssetHubClient, AssetHubChainConfig};
+
 #[derive(Debug)]
 pub enum ChainError {
     BlockSubscriptionFailed,
     BlockFetchFailed,
     ExtrinsicsFetchFailed,
 }
+
+impl std::fmt::Display for ChainError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl std::error::Error for ChainError {}
 
 pub type ChainResult<T> = Result<T, ChainError>;
 
@@ -89,15 +98,15 @@ pub trait BlockChainClient<T: ChainConfig>: Sync + Send + Sized {
 
     fn asset_info_store(&self) -> &AssetInfoStore<T>;
 
-    async fn new(config: crate::configs::ChainConfig) -> ChainResult<Self>;
+    async fn new(config: &crate::configs::ChainConfig) -> ChainResult<Self>;
 
-    async fn new_with_store(config: crate::configs::ChainConfig, asset_info_store: AssetInfoStore<T>) -> ChainResult<Self>;
+    async fn new_with_store(config: &crate::configs::ChainConfig, asset_info_store: AssetInfoStore<T>) -> ChainResult<Self>;
 
     async fn fetch_asset_info(&self, asset_id: &T::AssetId) -> ChainResult<AssetInfo<T>>;
 
     async fn fetch_asset_balance(&self, asset_id: &T::AssetId, account: &str) -> ChainResult<Decimal>;
 
-    async fn subscribe_transfers(&self, asset_ids: Vec<T::AssetId>) -> ChainResult<impl stream::Stream<Item = ChainResult<Vec<ChainTransfer<T>>>>>;
+    async fn subscribe_transfers(&self, asset_ids: &[T::AssetId]) -> ChainResult<impl stream::Stream<Item = ChainResult<Vec<ChainTransfer<T>>>>>;
 
     async fn build_transaction(
         &self,

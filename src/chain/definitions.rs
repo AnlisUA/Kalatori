@@ -56,6 +56,7 @@ pub enum ChainTrackerRequest {
     NewBlock(
         subxt::blocks::Block<crate::chain::AssetHubConfig, crate::chain::AssetHubOnlineClient>,
     ),
+    Transfers(Vec<crate::chain_client::ChainTransfer<crate::chain_client::AssetHubChainConfig>>),
     Reap(WatchAccount),
     #[expect(dead_code)]
     ForceReap(WatchAccount),

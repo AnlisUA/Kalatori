@@ -32,7 +32,7 @@ type UnsignedTransaction = subxt::tx::PartialTransaction<AssetHubConfig, AssetHu
 type SignedTransaction = subxt::tx::SubmittableTransaction<AssetHubConfig, AssetHubOnlineClient>;
 
 #[derive(Debug, Clone)]
-enum AssetHubChainConfig {}
+pub enum AssetHubChainConfig {}
 
 impl ChainConfig for AssetHubChainConfig {
     type AssetId = u32;
@@ -43,7 +43,7 @@ impl ChainConfig for AssetHubChainConfig {
 }
 
 #[derive(Clone)]
-struct PolkadotAssetHubClient {
+pub struct PolkadotAssetHubClient {
     client: AssetHubOnlineClient,
     asset_info_store: AssetInfoStore<AssetHubChainConfig>,
 }
@@ -63,7 +63,10 @@ impl AnyTransferExtrinsic {
 }
 
 impl PolkadotAssetHubClient {
-    async fn from_config(config: crate::configs::ChainConfig, asset_info_store: AssetInfoStore<AssetHubChainConfig>) -> ChainResult<Self> {
+    async fn from_config(
+        config: &crate::configs::ChainConfig,
+        asset_info_store: AssetInfoStore<AssetHubChainConfig>
+    ) -> ChainResult<Self> {
         // TODO: change error
         // TODO: get random endpoint
         // TODO: implement circuit breaker for endpoints
@@ -79,9 +82,6 @@ impl PolkadotAssetHubClient {
             asset_info_store,
         })
     }
-    // async fn get_transfer_events(&self, block: Block<AssetHubConfig, AssetHubOnlineClient>) -> Vec<(u64, TransferredEvent)> {
-
-    // }
 
     async fn process_block(
         &self,
@@ -93,6 +93,7 @@ impl PolkadotAssetHubClient {
         let block_number = block.number();
 
         // Extract timestamp from storage
+        // TODO: return current timestamp in case of failure, not 0
         let timestamp = match block.storage().fetch(
             &crate::chain::runtime::storage().timestamp().now()
         ).await {
@@ -187,11 +188,11 @@ impl BlockChainClient<AssetHubChainConfig> for PolkadotAssetHubClient {
         &self.asset_info_store
     }
 
-    async fn new(config: crate::configs::ChainConfig) -> ChainResult<Self> {
+    async fn new(config: &crate::configs::ChainConfig) -> ChainResult<Self> {
         PolkadotAssetHubClient::from_config(config, AssetInfoStore::new()).await
     }
 
-    async fn new_with_store(config: crate::configs::ChainConfig, asset_info_store: AssetInfoStore<AssetHubChainConfig>) -> ChainResult<Self> {
+    async fn new_with_store(config: &crate::configs::ChainConfig, asset_info_store: AssetInfoStore<AssetHubChainConfig>) -> ChainResult<Self> {
         PolkadotAssetHubClient::from_config(config, asset_info_store).await
     }
 
@@ -246,10 +247,10 @@ impl BlockChainClient<AssetHubChainConfig> for PolkadotAssetHubClient {
         Ok(amount)
     }
 
-    async fn subscribe_transfers(&self, asset_ids: Vec<u32>) -> ChainResult<impl stream::Stream<Item = ChainResult<Vec<ChainTransfer<AssetHubChainConfig>>>>> {
+    async fn subscribe_transfers(&self, asset_ids: &[u32]) -> ChainResult<impl stream::Stream<Item = ChainResult<Vec<ChainTransfer<AssetHubChainConfig>>>>> {
         let client = self.clone();
 
-        let assets = self.asset_info_store.get_assets_info(&asset_ids).await;
+        let assets = self.asset_info_store.get_assets_info(asset_ids).await;
         // TODO: check if all required assets_ids are presented in `assets` map. Return an error if they're not
 
         // Subscribe to finalized blocks
