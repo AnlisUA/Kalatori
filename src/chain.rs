@@ -56,10 +56,6 @@ use crate::legacy_types::{Health, RpcInfo};
 use definitions::{ChainRequest, ChainTrackerRequest, WatchAccount};
 use tracker::start_chain_watch;
 
-/// Logging filter
-#[expect(dead_code)]
-pub const MODULE: &str = module_path!();
-
 /// Wait this long before forgetting about stuck chain watcher
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(120_000);
 

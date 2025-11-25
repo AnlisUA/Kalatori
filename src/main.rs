@@ -10,6 +10,7 @@ use utils::{
 };
 
 mod chain;
+mod chain_client;
 mod configs;
 mod dao;
 mod definitions;
@@ -125,6 +126,17 @@ fn build_currencies_from_config(
 }
 
 async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(), Error> {
+    // Planned start order
+    // 1. Load configs
+    // 2. Init database
+    // 3. Load data from old database to the new one
+    // 4. Get info about required chains and assets from database and configs
+    // 5. Start keyring (background task)
+    // 6. Start chain monitoring (incoming transactions, background task)
+    // 7. Fetch balances of "pending" payments, ensure balance equals to expected (can be made in background)
+    //  7.1 If balance > sum(related transactions amount), fetch related transactions using API and update Invoice statuses respectively
+    // 8. Start payments executor (background task)
+    // 9. Start API (background task)
     let env_prefix =
         std::env::var("KALATORI_APP_ENV_PREFIX").unwrap_or_else(|_| DEFAULT_ENV_PREFIX.to_string());
     let configs_path = std::env::var(format!("{env_prefix}_CONFIG_DIR_PATH")).unwrap_or_default();

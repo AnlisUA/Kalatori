@@ -86,11 +86,14 @@ pub async fn payout(
     let sender = to_base58_string(order_keypair.public_key().0, 42);
     let recipient = to_base58_string(order.recipient.0, 42);
 
-    let transaction = client
+    let mut transaction = client
         .tx()
-        .create_signed(&call, &order_keypair, tx_config)
+        .create_partial(&call, &subxt::utils::AccountId32(order_keypair.public_key().0), tx_config)
         .await?;
-    let encoded_extrinsic = const_hex::encode_prefixed(transaction.encoded());
+
+    let signed_transaction = transaction.sign(&order_keypair);
+
+    let encoded_extrinsic = const_hex::encode_prefixed(signed_transaction.encoded());
 
     // Generate transaction ID for tracking
     let transaction_id = Uuid::new_v4();
@@ -145,7 +148,7 @@ pub async fn payout(
         info!("Transaction record updated to InProgress");
 
         // Submit and watch for completion
-        let result = transaction
+        let result = signed_transaction
             .submit_and_watch()
             .await
             .inspect_err(|e| tracing::error!("Got error while submit transaction: {:?}", e))?;
