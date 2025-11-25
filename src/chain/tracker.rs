@@ -5,13 +5,12 @@ use crate::{
         AssetHubConfig, AssetHubOnlineClient,
         definitions::{ChainTrackerRequest, Invoice},
         payout::payout,
-        utils::to_base58_string,
     },
-    chain_client::{AssetHubChainConfig, ChainTransfer, ChainResult},
+    chain_client::ChainResult,
     configs::ChainConfig, definitions::Balance, error::ChainError, legacy_types::{CurrencyProperties, Health, RpcInfo, TokenKind, TxKind, TxStatus}, state::State, types::{OutgoingTransactionMeta, Transaction, TransactionOrigin}, utils::task_tracker::TaskTracker
 };
 use crate::chain_client::{PolkadotAssetHubClient, BlockChainClient};
-use std::{collections::HashMap, time::SystemTime};
+use std::collections::HashMap;
 use std::str::FromStr;
 use rust_decimal::Decimal;
 use chrono::{DateTime, Utc};
@@ -20,7 +19,6 @@ use subxt::blocks::Block;
 use subxt::blocks::{ExtrinsicDetails, FoundExtrinsic};
 use subxt::utils::AccountId32;
 use subxt_signer::SecretString;
-use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tokio::{
     sync::mpsc,
     time::{Duration, timeout},
@@ -250,7 +248,7 @@ pub fn start_chain_watch(
                     .map(|asset| asset.id)
                     .collect();
 
-                let asset_hub_client_result: Result<_, crate::chain_client::ChainError> = async {
+                let asset_hub_client_result: ChainResult<_> = async {
                     let client = PolkadotAssetHubClient::new(&chain).await?;
                     client.init_asset_info(&assets).await?;
 
@@ -286,10 +284,7 @@ pub fn start_chain_watch(
                     chain.clone(),
                     &mut watched_accounts,
                     endpoint,
-                    chain_tx.clone(),
                     state.interface(),
-                    task_tracker.clone(),
-                    cancellation_token.clone(),
                 )
                     .await
                 {
@@ -326,7 +321,7 @@ pub fn start_chain_watch(
                 // fulfill requests
                 while let Ok(Some(req)) =
                     timeout(Duration::from_millis(watchdog), async {
-                        let req = tokio::select! {
+                        tokio::select! {
                             transfer = transfers_sub.next() => {
                                 transfer
                                     .map(|result| result
@@ -339,150 +334,10 @@ pub fn start_chain_watch(
                             req = chain_rx.recv() => {
                                 req
                             }
-                        };
-
-                        if req.is_none() {
-                            tracing::info!("Got None req");
-                        } else {
-                            tracing::info!("Got some request in tokio select");
                         }
-
-                        req
                     }).await
                 {
-                    tracing::info!("Got request for processing");
-
                     match req {
-                        ChainTrackerRequest::NewBlock(block) => {
-                            let block_hash = block.hash();
-                            tracing::debug!("Block hash {} from {}", block_hash, chain.name);
-                            tracing::debug!("Watched accounts: {watched_accounts:?}");
-
-                            #[expect(clippy::cast_possible_truncation)]
-                            let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis() as u64;
-
-                            let mut id_remove_list = Vec::new();
-
-                            match transfer_events(&block).await {
-                                Ok((timestamp, extrinsics)) => {
-                                    tracing::debug!("Got a block with timestamp {timestamp:?} & {} extrinsics", extrinsics.len());
-
-                                    // TODO: handle Err results? Log them at least?
-                                    let transfer_extrinsics = extrinsics.find::<TransferExtrinsic>()
-                                        .filter_map(Result::ok)
-                                        .map(AnyTransferExtrinsic::Transfer);
-
-                                    let transfer_all_extrinsics = extrinsics.find::<TransferAllExtrinsic>()
-                                        .filter_map(Result::ok)
-                                        .map(AnyTransferExtrinsic::TransferAll);
-
-                                    let all_transfer_extrinsics: Vec<_> = transfer_extrinsics.chain(transfer_all_extrinsics).collect();
-
-                                    // TODO: Current implementation is quite unoptimized for work with subxt, need to be refactored
-                                    for (id, invoice) in &watched_accounts {
-                                        for extrinsic in &all_transfer_extrinsics {
-                                            if let Some((tx_kind, another_account, transfer_amount)) = parse_transfer_event(&invoice.address, extrinsic).await {
-                                                tracing::debug!("Found {tx_kind:?} from/to {another_account:?} with {transfer_amount:?} token(s).");
-                                                let position_in_block = extrinsic.details().index();
-                                                let raw_extrinsic = extrinsic.details().bytes();
-
-                                                let status = TxStatus::Finalized;
-                                                let transaction_bytes = const_hex::encode_prefixed(raw_extrinsic);
-                                                let amount_f64 = transfer_amount.format(invoice.currency.decimals);
-
-                                                // Extract asset_id from currency
-                                                let asset_id = invoice.currency.asset_id.ok_or_else(|| {
-                                                    ChainError::InvalidCurrency(invoice.currency.currency.clone())
-                                                })?;
-
-                                                let (sender, recipient) = match tx_kind {
-                                                    TxKind::Payment => (
-                                                        to_base58_string(another_account.0, 42),
-                                                        to_base58_string(invoice.address.0, 42),
-                                                    ),
-                                                    TxKind::Withdrawal => (
-                                                        to_base58_string(invoice.address.0, 42),
-                                                        to_base58_string(another_account.0, 42),
-                                                    ),
-                                                };
-
-                                                let transaction = build_transaction(
-                                                    *id,
-                                                    asset_id,
-                                                    invoice.currency.chain_name.clone(),
-                                                    amount_to_decimal(amount_f64),
-                                                    sender,
-                                                    recipient,
-                                                    block.number(),
-                                                    position_in_block,
-                                                    transaction_bytes,
-                                                    timestamp,
-                                                    tx_kind,
-                                                    status,
-                                                );
-
-                                                state.record_transaction_v2(*id, transaction).await?;
-                                            }
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    tracing::warn!("events fetch error: {0:?}", e);
-                                }
-                            }
-
-                            // Important! There used to be a significant oprimisation that
-                            // watched events and checked only accounts that have tranfers into
-                            // them in given block; this was found to be unreliable: there are
-                            // ways to transfer funds without emitting a transfer event (one
-                            // notable example is through asset exchange procedure directed
-                            // straight into invoice account), and probably even without any
-                            // reliably expected event (through XCM). Thus we just scan all
-                            // accounts, every time. Please submit a PR or an issue if you
-                            // figure out a reliable optimization for this.
-                            for (id, invoice) in &watched_accounts {
-                                match invoice.check(&subxt_client, &watcher).await {
-                                    Ok(true) => {
-                                        state.order_paid(id.clone()).await;
-                                    },
-                                    Err(e) => {
-                                        tracing::warn!("account fetch error: {0:?}", e);
-                                    }
-                                    _ => {}
-                                }
-
-                                if invoice.death.0 <= now {
-                                    match state.is_order_paid(id.clone()).await {
-                                        Ok(paid_db) => {
-                                            if !paid_db {
-                                                match invoice.check(&subxt_client, &watcher).await {
-                                                    Ok(paid) => {
-                                                        if paid {
-                                                            state.order_paid(id.clone()).await;
-                                                        }
-                                                    }
-                                                    Err(e) => {
-                                                        tracing::warn!("account fetch error: {0:?}", e);
-                                                    }
-                                                }
-                                            }
-
-                                            tracing::debug!("Removing an account {id:?} due to passing its death timestamp");
-                                            id_remove_list.push(id.to_owned());
-                                        }
-                                        Err(e) => {
-                                            tracing::warn!("account read error: {e:?}");
-                                        }
-                                    }
-                                }
-                            }
-
-                            for id in id_remove_list {
-                                watched_accounts.remove(&id);
-                            };
-
-                            tracing::debug!("Block {} from {} processed successfully", block_hash, chain.name);
-                        }
                         ChainTrackerRequest::Transfers(transfers) => {
                             tracing::debug!("Got transfers for processing: {:?}", transfers);
                             let mut id_remove_list = Vec::new();
@@ -624,10 +479,7 @@ impl ChainWatcher {
         chain: ChainConfig,
         watched_accounts: &mut HashMap<Uuid, Invoice>,
         rpc_url: &str,
-        chain_tx: mpsc::Sender<ChainTrackerRequest>,
         state: State,
-        task_tracker: TaskTracker,
-        cancellation_token: CancellationToken,
     ) -> Result<Self, ChainError> {
         // Have to perform separate call to get spec name cause `client.runtime_version()` returns a struct
         // which doesn't contain that info. Please watch out for a possible subxt update that may add it.
@@ -710,53 +562,6 @@ impl ChainWatcher {
         for id in id_remove_list {
             watched_accounts.remove(&id);
         }
-
-        let rpc = rpc_url.to_string();
-        let mut blocks = client.blocks().subscribe_finalized().await?;
-
-        task_tracker.spawn(format!("watching blocks at {rpc}"), async move {
-            tracing::info!("Start watching blocks task for {:?}", rpc);
-
-            // TODO: task doesn't terminate cause not listen for the termination signal
-            loop {
-                tokio::select! {
-                    () = cancellation_token.cancelled() => {
-                        tracing::info!("Received task cancellation signal, shut down ChainWatch");
-                        break
-                    },
-                    received_block = blocks.next() => {
-                        let next_block = {
-                            received_block.ok_or_else(|| ChainError::BlockSubscriptionTerminated)?
-                        };
-
-                        match next_block {
-                            Ok(block) => {
-                                let block_number = block.number();
-                                tracing::debug!("received block {block_number} from {rpc}");
-
-                                // let result = chain_tx
-                                //     .send(ChainTrackerRequest::NewBlock(block))
-                                //     .await;
-
-                                // if let Err(e) = result {
-                                //     tracing::warn!(
-                                //         "Block watch internal communication error: {e} at {rpc}"
-                                //     );
-                                //     break;
-                                // }
-                            }
-                            Err(e) => {
-                                tracing::warn! {"Block watch error: {e} at {rpc}"};
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-            // this should reset chain monitor on timeout;
-            // but if this breaks, it means that the latter is already down either way
-            Ok(format!("Block watch at {rpc} stopped"))
-        });
 
         Ok(chain_watcher)
     }
