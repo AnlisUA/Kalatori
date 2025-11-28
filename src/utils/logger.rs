@@ -11,8 +11,9 @@ pub fn initialize(directives: impl AsRef<str>) -> Result<(), Error> {
     let _filter = EnvFilter::try_new(directives)?;
 
     tracing_subscriber::fmt()
-        .with_timer(UtcTime::rfc_3339())
+        // .with_timer(UtcTime::rfc_3339())
         // .with_env_filter(_filter)
+        .json()
         .init();
 
     Ok(())
@@ -35,13 +36,13 @@ fn default_filter_capacity() -> usize {
 pub fn default_filter() -> String {
     let mut filter = String::with_capacity(default_filter_capacity());
 
-    filter.push_str(OFF);
+    // filter.push_str(OFF);
 
-    for target in TARGETS {
-        filter.push_str(COMMA);
-        filter.push_str(target);
-        filter.push_str(INFO);
-    }
+    // for target in TARGETS {
+    //     filter.push_str(COMMA);
+    //     filter.push_str(target);
+    //     filter.push_str(INFO);
+    // }
 
     filter
 }

@@ -3,15 +3,12 @@
 use std::str::FromStr;
 
 use crate::{
-    chain::AssetHubOnlineClient,
-    chain::tracker::ChainWatcher,
-    definitions::Balance,
-    error::ChainError,
-    legacy_types::{CurrencyInfo, OrderInfo, RpcInfo, Timestamp},
+    chain::tracker::ChainWatcher, chain_client::{BlockChainClient, PolkadotAssetHubClient}, definitions::Balance, error::ChainError, legacy_types::{CurrencyInfo, OrderInfo, RpcInfo, Timestamp}
 };
 use subxt::utils::AccountId32;
 use tokio::sync::oneshot;
 use uuid::Uuid;
+use rust_decimal::prelude::{Decimal, ToPrimitive};
 
 pub enum ChainRequest {
     WatchAccount(WatchAccount),
@@ -23,6 +20,7 @@ pub enum ChainRequest {
 #[derive(Debug)]
 pub struct WatchAccount {
     pub id: Uuid,
+    pub order_id: String,
     pub address: AccountId32,
     pub currency: CurrencyInfo,
     pub amount: f64,
@@ -40,6 +38,7 @@ impl WatchAccount {
     ) -> Result<WatchAccount, ChainError> {
         Ok(WatchAccount {
             id,
+            order_id: order.order_id,
             address: AccountId32::from_str(&order.payment_account)
                 .map_err(|e| ChainError::InvoiceAccount(e.to_string()))?,
             currency: order.currency,
@@ -63,6 +62,7 @@ pub enum ChainTrackerRequest {
 #[derive(Clone, Debug)]
 pub struct Invoice {
     pub id: Uuid,
+    pub order_id: String,
     pub address: AccountId32,
     pub currency: CurrencyInfo,
     pub amount: f64,
@@ -75,6 +75,7 @@ impl Invoice {
         drop(watch_account.res.send(Ok(())));
         Invoice {
             id: watch_account.id,
+            order_id: watch_account.order_id,
             address: watch_account.address,
             currency: watch_account.currency,
             amount: watch_account.amount,
@@ -85,7 +86,7 @@ impl Invoice {
 
     pub async fn balance(
         &self,
-        client: &AssetHubOnlineClient,
+        client: &PolkadotAssetHubClient,
         chain_watcher: &ChainWatcher,
     ) -> Result<Balance, ChainError> {
         let currency = chain_watcher
@@ -98,25 +99,15 @@ impl Invoice {
             return Err(ChainError::InvalidCurrency(self.currency.currency.clone()));
         };
 
-        let request_data = crate::chain::runtime::storage()
-            .assets()
-            // TODO: change stored type to subxt's account id
-            .account(asset_id, subxt::utils::AccountId32(self.address.0));
-
-        let balance = client
-            .storage()
-            .at_latest()
-            .await?
-            .fetch(&request_data)
-            .await?
-            .map_or(0, |result| result.balance);
+        let amount = client.fetch_asset_balance(&asset_id, &self.address).await.map_err(|_| ChainError::StorageQuery)?;
+        let balance = (amount / Decimal::new(1, 6)).to_u128().unwrap();
 
         Ok(Balance(balance))
     }
 
     pub async fn check(
         &self,
-        client: &AssetHubOnlineClient,
+        client: &PolkadotAssetHubClient,
         chain_watcher: &ChainWatcher,
     ) -> Result<bool, ChainError> {
         // TODO: what if we receive significantly more money then expect? Perhaps need to check in some range?

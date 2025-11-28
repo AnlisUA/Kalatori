@@ -28,16 +28,19 @@ use chain::ChainManager;
 use dao::DAO;
 use error::{Error, PrettyCause};
 use legacy_types::ConfigWoChains;
-use signer::Signer;
 use state::State;
 
-use crate::{
-    configs::{
-        ChainConfig, chain_config_with_prefix, database_config_with_prefix,
-        payments_config_with_prefix, seed_config_with_prefix, web_server_config_with_prefix,
-    },
-    legacy_types::{CurrencyProperties, Timestamp, TokenKind},
+use crate::chain_client::Keyring;
+use crate::configs::{
+    ChainConfig,
+    DatabaseConfig,
+    chain_config_with_prefix,
+    database_config_with_prefix,
+    payments_config_with_prefix,
+    seed_config_with_prefix,
+    web_server_config_with_prefix,
 };
+use crate::legacy_types::{CurrencyProperties, Timestamp, TokenKind};
 
 const DEFAULT_ENV_PREFIX: &str = "KALATORI";
 
@@ -108,13 +111,14 @@ fn build_currencies_from_config(
     chain_config: &ChainConfig,
 ) -> std::collections::HashMap<String, CurrencyProperties> {
     let mut currencies = std::collections::HashMap::new();
+    let rpc_url = chain_config.endpoints.first().cloned().unwrap_or_default();
 
     for asset in &chain_config.assets {
         let properties = CurrencyProperties {
             chain_name: chain_config.name.clone(),
             kind: TokenKind::Asset,
             decimals: 0, // Placeholder - not used during migration validation
-            rpc_url: chain_config.endpoints.first().cloned().unwrap_or_default(),
+            rpc_url: rpc_url.clone(),
             asset_id: Some(asset.id),
             ss58: 0, // Placeholder - not used during migration
         };
@@ -125,46 +129,11 @@ fn build_currencies_from_config(
     currencies
 }
 
-async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(), Error> {
-    // Planned start order
-    // 1. Load configs
-    // 2. Init database
-    // 3. Load data from old database to the new one
-    // 4. Get info about required chains and assets from database and configs
-    // 5. Start keyring (background task)
-    // 6. Start chain monitoring (incoming transactions, background task)
-    // 7. Fetch balances of "pending" payments, ensure balance equals to expected (can be made in background)
-    //  7.1 If balance > sum(related transactions amount), fetch related transactions using API and update Invoice statuses respectively
-    // 8. Start payments executor (background task)
-    // 9. Start API (background task)
-    let env_prefix =
-        std::env::var("KALATORI_APP_ENV_PREFIX").unwrap_or_else(|_| DEFAULT_ENV_PREFIX.to_string());
-    let configs_path = std::env::var(format!("{env_prefix}_CONFIG_DIR_PATH")).unwrap_or_default();
-
-    let seed_config = seed_config_with_prefix(&configs_path, &env_prefix);
-
-    let chain_config = chain_config_with_prefix(&configs_path, &env_prefix);
-    let payments_config = payments_config_with_prefix(&configs_path, &env_prefix);
-    let web_server_config = web_server_config_with_prefix(&configs_path, &env_prefix);
-    let database_config = database_config_with_prefix(&configs_path, &env_prefix);
-
-    // Start services
-
-    let (task_tracker, error_rx) = TaskTracker::new();
-
-    // TODO: replace with expect?
-    let recipient = AccountId32::from_str(&payments_config.recipient).unwrap();
-
-    // TODO: quite dirty hack to make it work right now. Should be refactored ASAP.
-    // Spawn separate task for handling payouts. This task should replace Signer and store seed phrase
-    let signer = Signer::init(recipient.clone(), &task_tracker, seed_config.seed.clone());
-    let seed_secret = seed_config.seed;
-
-    // Initialize DAO for SQLite database operations
-    let dao = DAO::new(database_config.clone())
-        .await
-        .map_err(error::DaoError::Sqlx)?;
-
+async fn sled_to_sqlite_migration(
+    database_config: &DatabaseConfig,
+    chain_config: &ChainConfig,
+    dao: &DAO,
+) -> Result<(), Error> {
     // Run sled to SQLite migration if sled database exists
     if !database_config.temporary {
         let sled_path = std::path::PathBuf::from(&database_config.path);
@@ -182,8 +151,8 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
                 Ok(stats) => {
                     tracing::info!(
                         "Migration completed successfully: {} invoices ({} skipped as existing), \
-                         {} finalized transactions, {} pending transactions, {} duplicate transactions skipped, \
-                         server_info migrated: {}",
+                            {} finalized transactions, {} pending transactions, {} duplicate transactions skipped, \
+                            server_info migrated: {}",
                         stats.invoices_migrated,
                         stats.invoices_skipped_existing,
                         stats.finalized_transactions_migrated,
@@ -214,15 +183,61 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
         }
     }
 
+    Ok(())
+}
+
+async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(), Error> {
+    // Planned start order
+    // 1. Load configs
+    // 2. Init database
+    // 3. Load data from old database to the new one
+    // 4. Get info about required chains and assets from database and configs
+    // 5. Start keyring (background task)
+    // 6. Start chain monitoring (incoming transactions, background task)
+    // 7. Fetch balances of "pending" payments, ensure balance equals to expected (can be made in background)
+    //  7.1 If balance > sum(related transactions amount), fetch related transactions using API and update Invoice statuses respectively
+    // 8. Start payments executor (background task)
+    // 9. Start API (background task)
+    let env_prefix =
+        std::env::var("KALATORI_APP_ENV_PREFIX").unwrap_or_else(|_| DEFAULT_ENV_PREFIX.to_string());
+
+    let configs_path = std::env::var(format!("{env_prefix}_CONFIG_DIR_PATH")).unwrap_or_default();
+
+    let seed_config = seed_config_with_prefix(&configs_path, &env_prefix);
+
+    let chain_config = chain_config_with_prefix(&configs_path, &env_prefix);
+    let payments_config = payments_config_with_prefix(&configs_path, &env_prefix);
+    let web_server_config = web_server_config_with_prefix(&configs_path, &env_prefix);
+    let database_config = database_config_with_prefix(&configs_path, &env_prefix);
+
+    // Start services
+
+    let (task_tracker, error_rx) = TaskTracker::new();
+
+    // TODO: replace with expect?
+    let recipient = AccountId32::from_str(&payments_config.recipient).unwrap();
+
+    // TODO: quite dirty hack to make it work right now. Should be refactored ASAP.
+    // Spawn separate task for handling payouts. This task should replace Signer and store seed phrase
+    // let signer = Signer::init(recipient.clone(), &task_tracker, seed_config.seed.clone());
+
+    // Initialize DAO for SQLite database operations
+    let dao = DAO::new(database_config.clone())
+        .await
+        .map_err(error::DaoError::Sqlx)?;
+
     let instance_id = dao
         .initialize_server_info()
         .await
         .map_err(error::DaoError::Sqlx)?;
 
+    let keyring = Keyring::new(seed_config.seed);
+    let (keyring_handle, keyring_client) = keyring.ignite().await;
+
     let (cm_tx, cm_rx) = oneshot::channel();
 
     let state = State::initialise(
-        signer.interface(),
+        keyring_client.clone(),
         ConfigWoChains {
             recipient,
             remark: payments_config.remark,
@@ -237,7 +252,7 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
 
     cm_tx
         .send(ChainManager::ignite(
-            seed_secret,
+            keyring_client,
             chain_config,
             &state,
             &task_tracker,
@@ -250,7 +265,7 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
         web_server_config,
         state.interface(),
     )
-    .await?;
+        .await?;
 
     task_tracker.spawn("the server module", server);
 
@@ -272,5 +287,5 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
         }
         shutdown_listener_result = &mut shutdown_listener => shutdown_listener_result
     }
-    .expect("shutdown listener shouldn't panic")
+        .expect("shutdown listener shouldn't panic")
 }

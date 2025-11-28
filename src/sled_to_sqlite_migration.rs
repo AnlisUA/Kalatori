@@ -756,6 +756,7 @@ mod tests {
     /// Create test `OrderInfo`
     fn create_test_order(order_id: &str, amount: f64, currency: &CurrencyInfo) -> OrderInfo {
         OrderInfo {
+            order_id: order_id.to_string(),
             withdrawal_status: WithdrawalStatus::Waiting,
             payment_status: PaymentStatus::Pending,
             amount,

@@ -2,35 +2,25 @@
 
 use crate::{
     chain::{
-        AssetHubConfig, AssetHubOnlineClient,
         definitions::{ChainTrackerRequest, Invoice},
-        payout::payout,
+        payout::payout, utils::to_base58_string,
     },
     chain_client::ChainResult,
     configs::ChainConfig, definitions::Balance, error::ChainError, legacy_types::{CurrencyProperties, Health, RpcInfo, TokenKind, TxKind, TxStatus}, state::State, types::{OutgoingTransactionMeta, Transaction, TransactionOrigin}, utils::task_tracker::TaskTracker
 };
-use crate::chain_client::{PolkadotAssetHubClient, BlockChainClient};
+use crate::chain_client::{PolkadotAssetHubClient, BlockChainClient, KeyringClient};
 use std::collections::HashMap;
 use std::str::FromStr;
 use rust_decimal::Decimal;
 use chrono::{DateTime, Utc};
 use futures::{StreamExt, pin_mut};
-use subxt::blocks::Block;
-use subxt::blocks::{ExtrinsicDetails, FoundExtrinsic};
 use subxt::utils::AccountId32;
-use subxt_signer::SecretString;
 use tokio::{
     sync::mpsc,
     time::{Duration, timeout},
 };
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
-use zeroize::Zeroize;
-
-type Extrinsics = subxt::blocks::Extrinsics<AssetHubConfig, AssetHubOnlineClient>;
-type TransferExtrinsic = crate::chain::runtime::assets::calls::types::Transfer;
-type TransferAllExtrinsic = crate::chain::runtime::assets::calls::types::TransferAll;
-type TransferredEvent = crate::chain::runtime::assets::events::Transferred;
 
 /// Extract transaction hash from hex-encoded extrinsic bytes
 fn extract_tx_hash(transaction_bytes: &str) -> Option<String> {
@@ -94,8 +84,8 @@ fn build_transaction(
     asset_id: u32,
     chain: String,
     amount: Decimal,
-    sender: String,
-    recipient: String,
+    sender: AccountId32,
+    recipient: AccountId32,
     block_number: u32,
     position_in_block: u32,
     transaction_bytes: String,
@@ -107,6 +97,8 @@ fn build_transaction(
     let transaction_type = tx_kind_to_transaction_type(tx_kind);
     let created_at = DateTime::from_timestamp_millis(timestamp as i64).unwrap_or_else(|| Utc::now());
     let status = tx_status_to_transaction_status(tx_status);
+    let sender = to_base58_string(sender.0, 42);
+    let recipient = to_base58_string(recipient.0, 42);
 
     Transaction {
         id: Uuid::new_v4(),
@@ -128,65 +120,9 @@ fn build_transaction(
     }
 }
 
-enum AnyTransferExtrinsic {
-    Transfer(FoundExtrinsic<AssetHubConfig, AssetHubOnlineClient, TransferExtrinsic>),
-    TransferAll(FoundExtrinsic<AssetHubConfig, AssetHubOnlineClient, TransferAllExtrinsic>),
-}
-
-impl AnyTransferExtrinsic {
-    pub fn details(&self) -> &ExtrinsicDetails<AssetHubConfig, AssetHubOnlineClient> {
-        match self {
-            AnyTransferExtrinsic::Transfer(e) => &e.details,
-            AnyTransferExtrinsic::TransferAll(e) => &e.details,
-        }
-    }
-}
-
-async fn transfer_events(
-    block: &Block<AssetHubConfig, AssetHubOnlineClient>,
-) -> Result<(u64, Extrinsics), subxt::Error> {
-    let timestamp_address = crate::chain::runtime::storage().timestamp().now();
-
-    let timestamp = block
-        .storage()
-        .fetch(&timestamp_address)
-        .await?
-        .ok_or_else(|| subxt::Error::Other("Timestamp is empty".into()))?;
-
-    let extrinsics = block.extrinsics().await?;
-
-    Ok((timestamp, extrinsics))
-}
-
-async fn parse_transfer_event(
-    account_id: &AccountId32,
-    extrinsic: &AnyTransferExtrinsic,
-) -> Option<(TxKind, AccountId32, Balance)> {
-    let acc_id = subxt::utils::AccountId32::from(account_id.0);
-    let events = extrinsic.details().events().await.ok()?;
-
-    let mut found_events = events.find::<TransferredEvent>().filter_map(Result::ok);
-
-    found_events.find_map(|event| {
-        // if event.from == acc_id {
-        //     Some((TxKind::Withdrawal, event.to, Balance(event.amount)))
-        // } else if event.to == acc_id {
-        //     Some((TxKind::Payment, event.from, Balance(event.amount)))
-        // } else {
-        //     None
-        // }
-
-        if event.to == acc_id {
-            Some((TxKind::Payment, event.from, Balance(event.amount)))
-        } else {
-            None
-        }
-    })
-}
-
 #[expect(clippy::too_many_lines, clippy::too_many_arguments)]
 pub fn start_chain_watch(
-    mut seed_secret: SecretString,
+    keyring_client: KeyringClient,
     chain: ChainConfig,
     chain_tx: mpsc::Sender<ChainTrackerRequest>,
     mut chain_rx: mpsc::Receiver<ChainTrackerRequest>,
@@ -221,27 +157,6 @@ pub fn start_chain_watch(
                 }).await);
 
                 tracing::info!("Trying to establish connection to endpoint {:?}...", endpoint);
-
-                let subxt_client_initializer = if chain.allow_insecure_endpoints {
-                    AssetHubOnlineClient::from_insecure_url(endpoint).await
-                } else {
-                    AssetHubOnlineClient::from_url(endpoint).await
-                };
-
-                let subxt_client = match subxt_client_initializer {
-                    Ok(client) => client,
-                    Err(error) => {
-                        tracing::error!("Error while initialize subxt WS client for endpoint {:?}: {:?}", endpoint, error);
-
-                        drop(rpc_update_tx.send(RpcInfo {
-                            chain_name: chain.name.clone(),
-                            rpc_url: endpoint.clone(),
-                            status: Health::Critical,
-                        }).await);
-
-                        continue
-                    }
-                };
 
                 let assets: Vec<_> = chain.assets
                     .iter()
@@ -280,7 +195,7 @@ pub fn start_chain_watch(
 
                 // prepare chain
                 let watcher = match ChainWatcher::prepare_chain(
-                    &subxt_client,
+                    &asset_hub_client,
                     chain.clone(),
                     &mut watched_accounts,
                     endpoint,
@@ -344,7 +259,7 @@ pub fn start_chain_watch(
 
                             for transfer in transfers {
                                 for (id, invoice) in &watched_accounts {
-                                    if invoice.address == AccountId32::from_str(&transfer.recipient).unwrap() {
+                                    if invoice.address == transfer.recipient {
                                         let transaction = build_transaction(
                                             *id,
                                             transfer.asset_id,
@@ -368,7 +283,7 @@ pub fn start_chain_watch(
                             let now = Utc::now().timestamp_millis() as u64;
 
                             for (id, invoice) in &watched_accounts {
-                                match invoice.check(&subxt_client, &watcher).await {
+                                match invoice.check(&asset_hub_client, &watcher).await {
                                     Ok(true) => {
                                         state.order_paid(id.clone()).await;
                                     },
@@ -382,7 +297,7 @@ pub fn start_chain_watch(
                                     match state.is_order_paid(id.clone()).await {
                                         Ok(paid_db) => {
                                             if !paid_db {
-                                                match invoice.check(&subxt_client, &watcher).await {
+                                                match invoice.check(&asset_hub_client, &watcher).await {
                                                     Ok(paid) => {
                                                         if paid {
                                                             state.order_paid(id.clone()).await;
@@ -415,8 +330,8 @@ pub fn start_chain_watch(
                             let id = request.id.clone();
                             let reap_state_handle = state.interface();
                             let watcher_for_reaper = watcher.clone();
-                            let seed = seed_secret.clone();
-                            let client_cloned = subxt_client.clone();
+                            let keyring_client_cloned = keyring_client.clone();
+                            let client_cloned = asset_hub_client.clone();
 
                             task_tracker.clone().spawn(format!("Initiate payout for order {}", id.clone()), async move {
                                 let () = payout(
@@ -424,7 +339,7 @@ pub fn start_chain_watch(
                                     Invoice::from_request(request),
                                     reap_state_handle,
                                     watcher_for_reaper,
-                                    seed,
+                                    keyring_client_cloned,
                                 ).await?;
 
                                 Ok(format!("Payout attempt for order {id} terminated"))
@@ -434,8 +349,8 @@ pub fn start_chain_watch(
                             let id = request.id.clone();
                             let reap_state_handle = state.interface();
                             let watcher_for_reaper = watcher.clone();
-                            let client_cloned = subxt_client.clone();
-                            let seed = seed_secret.clone();
+                            let keyring_client_cloned = keyring_client.clone();
+                            let client_cloned = asset_hub_client.clone();
 
                             task_tracker.clone().spawn(format!("Initiate forced payout for order {}", id.clone()), async move {
                                 let () = payout(
@@ -443,7 +358,7 @@ pub fn start_chain_watch(
                                     Invoice::from_request(request),
                                     reap_state_handle,
                                     watcher_for_reaper,
-                                    seed,
+                                    keyring_client_cloned,
                                 ).await?;
 
                                 Ok(format!("Forced payout attempt for order {id} terminated"))
@@ -457,8 +372,6 @@ pub fn start_chain_watch(
                     }
                 };
             }
-
-            seed_secret.zeroize();
 
             Ok(format!("Chain {} monitor shut down", chain.name))
         });
@@ -475,28 +388,18 @@ pub struct ChainWatcher {
 impl ChainWatcher {
     #[expect(clippy::too_many_arguments)]
     pub async fn prepare_chain(
-        client: &AssetHubOnlineClient,
+        client: &PolkadotAssetHubClient,
         chain: ChainConfig,
         watched_accounts: &mut HashMap<Uuid, Invoice>,
         rpc_url: &str,
         state: State,
     ) -> Result<Self, ChainError> {
-        // Have to perform separate call to get spec name cause `client.runtime_version()` returns a struct
-        // which doesn't contain that info. Please watch out for a possible subxt update that may add it.
-        let version_call = crate::chain::runtime::apis().core().version();
-
-        let name = client
-            .runtime_api()
-            .at_latest()
-            .await?
-            .call(version_call)
-            .await?
-            .spec_name;
+        let name = client.chain_name();
 
         if name != chain.name {
             return Err(ChainError::WrongNetwork {
                 expected: chain.name,
-                actual: name,
+                actual: name.to_string(),
                 rpc: rpc_url.to_string(),
             });
         }
@@ -509,21 +412,12 @@ impl ChainWatcher {
 
         // TODO: add check that there is at least one asset? Seems to be better have that check on config validation
         for asset in chain.assets {
-            let request_data = crate::chain::runtime::storage().assets().metadata(asset.id);
-
-            let Some(response) = client
-                .storage()
-                .at_latest()
-                .await?
-                .fetch(&request_data)
-                .await?
-            else {
-                // TODO: panic or work without this asset? Need to notify user about error somehow
-                panic!(
-                    "Asset {} with id {} not found on chain {}",
-                    asset.name, asset.id, chain.name
-                )
-            };
+            let response = client
+                .asset_info_store()
+                .get_asset_info(&asset.id)
+                .await
+                // unwrap is safe here cause we already initialized those assets right before this function call
+                .unwrap();
 
             let properties = CurrencyProperties {
                 chain_name: chain.name.clone(),

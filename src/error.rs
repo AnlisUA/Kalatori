@@ -61,6 +61,9 @@ pub enum Error {
     #[error("found duplicate config record for the token {0:?}")]
     DuplicateCurrency(String),
 
+    #[error("keyring error {0:?}")]
+    KeyringError(#[from] crate::chain_client::KeyringError),
+
     #[error("sled to SQLite migration failed")]
     MigrationFailed(#[from] crate::sled_to_sqlite_migration::MigrationError),
 }

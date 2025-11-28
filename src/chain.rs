@@ -1,44 +1,14 @@
 //! Everything related to actual interaction with blockchain
 
-use runtime::runtime_types::staging_xcm::v3::multilocation::MultiLocation;
 use std::collections::HashMap;
-use subxt::config::{Config, DefaultExtrinsicParams, SubstrateConfig};
 use subxt::utils::AccountId32;
-use subxt_signer::SecretString;
 use tokio::{
     sync::{mpsc, oneshot},
     time::{Duration, timeout},
 };
 use tokio_util::sync::CancellationToken;
 
-#[subxt::subxt(
-    runtime_metadata_path = "./metadata.scale",
-    generate_docs,
-    // derive_for_all_types = "Clone, PartialEq, Eq",
-    derive_for_type(
-        path = "staging_xcm::v3::multilocation::MultiLocation",
-        derive = "Clone, codec::Encode",
-        recursive
-    )
-)]
-pub mod runtime {}
-
-// We don't need to construct this at runtime, so an empty enum is appropriate.
-#[derive(Debug)]
-pub enum AssetHubConfig {}
-
-impl Config for AssetHubConfig {
-    type AccountId = <SubstrateConfig as Config>::AccountId;
-    type Address = <SubstrateConfig as Config>::Address;
-    type Signature = <SubstrateConfig as Config>::Signature;
-    type Hasher = <SubstrateConfig as Config>::Hasher;
-    type Header = <SubstrateConfig as Config>::Header;
-    type ExtrinsicParams = DefaultExtrinsicParams<AssetHubConfig>;
-    // Here we use the MultiLocation from the metadata as a part of the config:
-    // The `ChargeAssetTxPayment` signed extension that is part of the ExtrinsicParams above, now uses the type:
-    type AssetId = MultiLocation;
-}
-
+use crate::chain_client::KeyringClient;
 use crate::configs::ChainConfig;
 use crate::{
     error::{ChainError, Error},
@@ -59,8 +29,6 @@ use tracker::start_chain_watch;
 /// Wait this long before forgetting about stuck chain watcher
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(120_000);
 
-pub type AssetHubOnlineClient = subxt::OnlineClient<AssetHubConfig>;
-
 /// RPC server handle
 #[derive(Clone, Debug)]
 pub struct ChainManager {
@@ -72,7 +40,7 @@ impl ChainManager {
     /// - all modules should be restarted, probably.
     #[expect(clippy::too_many_lines)]
     pub fn ignite(
-        seed_secret: SecretString,
+        keyring_client: KeyringClient,
         chain_info: ChainConfig,
         state: &State,
         task_tracker: &TaskTracker,
@@ -105,7 +73,7 @@ impl ChainManager {
         }
 
         start_chain_watch(
-            seed_secret,
+            keyring_client,
             chain_info,
             chain_tx.clone(),
             chain_rx,

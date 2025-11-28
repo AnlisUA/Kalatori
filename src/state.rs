@@ -1,3 +1,4 @@
+use crate::chain_client::KeyringClient;
 use crate::error::ForceWithdrawalError;
 use crate::{
     chain::{ChainManager, utils::to_base58_string},
@@ -29,7 +30,7 @@ pub struct State {
 impl State {
     #[expect(clippy::too_many_lines)]
     pub fn initialise(
-        signer: Signer,
+        signer: KeyringClient,
         ConfigWoChains {
             recipient,
             remark,
@@ -275,9 +276,6 @@ impl State {
                         // First shut down active actions for external world.
                         state.chain_manager.shutdown().await;
 
-                        // Try to zeroize secrets
-                        state.signer.shutdown().await;
-
                         // And shut down finally
                         break;
                     }
@@ -482,7 +480,7 @@ struct StateData {
     server_info: ServerInfo,
     dao: crate::dao::DAO,
     chain_manager: ChainManager,
-    signer: Signer,
+    signer: KeyringClient,
     account_lifetime: crate::legacy_types::Timestamp,
     invoices_restored: bool,
 }
@@ -625,10 +623,18 @@ impl StateData {
             .get(&order_query.currency)
             .ok_or(OrderError::UnknownCurrency)?;
         let currency = currency_properties.info(order_query.currency.clone());
-        let payment_account = self
+
+        let derivation_params = vec![
+            to_base58_string(self.recipient.0, 2),
+            order.clone(),
+        ];
+
+        let payment_account_id = self
             .signer
-            .public(invoice_id.to_string(), currency.ss58)
+            .generate_asset_hub_address(derivation_params.into())
             .await?;
+
+        let payment_account = to_base58_string(payment_account_id.0, currency.ss58);
 
         // Retry loop for optimistic locking conflicts
         for attempt in 0..MAX_RETRIES {
@@ -810,6 +816,7 @@ impl StateData {
         use crate::legacy_types::PaymentStatus;
 
         OrderInfo {
+            order_id: invoice.order_id.clone(),
             currency: currency.clone(),
             amount: invoice.amount.to_string().parse::<f64>().unwrap_or(0.0),
             payment_account: invoice.payment_address.clone(),

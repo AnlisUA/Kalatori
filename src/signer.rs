@@ -9,12 +9,13 @@
 //!
 //! Also this abstraction could be used to implement off-system signer
 
-use crate::chain::utils::to_base58_string;
-use crate::{error::SignerError, utils::task_tracker::TaskTracker};
 use subxt::utils::AccountId32;
 use subxt_signer::{DeriveJunction, ExposeSecret, SecretString, bip39::Mnemonic, sr25519::Keypair};
 use tokio::sync::{mpsc, oneshot};
 use zeroize::Zeroize;
+
+use crate::chain::utils::to_base58_string;
+use crate::{error::SignerError, utils::task_tracker::TaskTracker};
 
 /// Signer handle
 pub struct Signer {
