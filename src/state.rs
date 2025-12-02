@@ -625,7 +625,6 @@ impl StateData {
         let currency = currency_properties.info(order_query.currency.clone());
 
         let derivation_params = vec![
-            to_base58_string(self.recipient.0, 2),
             order.clone(),
         ];
 

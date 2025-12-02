@@ -3,7 +3,7 @@
 use std::str::FromStr;
 
 use crate::{
-    chain::tracker::ChainWatcher, chain_client::{BlockChainClient, PolkadotAssetHubClient}, definitions::Balance, error::ChainError, legacy_types::{CurrencyInfo, OrderInfo, RpcInfo, Timestamp}
+    chain::tracker::ChainWatcher, chain_client::{BlockChainClient, AssetHubClient}, definitions::Balance, error::ChainError, legacy_types::{CurrencyInfo, OrderInfo, RpcInfo, Timestamp}
 };
 use subxt::utils::AccountId32;
 use tokio::sync::oneshot;
@@ -86,7 +86,7 @@ impl Invoice {
 
     pub async fn balance(
         &self,
-        client: &PolkadotAssetHubClient,
+        client: &AssetHubClient,
         chain_watcher: &ChainWatcher,
     ) -> Result<Balance, ChainError> {
         let currency = chain_watcher
@@ -107,7 +107,7 @@ impl Invoice {
 
     pub async fn check(
         &self,
-        client: &PolkadotAssetHubClient,
+        client: &AssetHubClient,
         chain_watcher: &ChainWatcher,
     ) -> Result<bool, ChainError> {
         // TODO: what if we receive significantly more money then expect? Perhaps need to check in some range?

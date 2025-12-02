@@ -48,11 +48,11 @@ export async function transferFunds(rpcUrl: string, paymentAccount: string, amou
   };
 
   const unsub = await transfer.signAndSend(sender, signerOptions, async ({ status }) => {
-    if (status.isInBlock || status.isFinalized) {
+    if (status.isFinalized) {
       unsub();
     }
   });
 
   // Wait for transaction to be included in block
-  await new Promise(resolve => setTimeout(resolve, 10000));
+  // await new Promise(resolve => setTimeout(resolve, 10000));
 }

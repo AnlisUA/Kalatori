@@ -64,6 +64,18 @@ pub enum Error {
     #[error("keyring error {0:?}")]
     KeyringError(#[from] crate::chain_client::KeyringError),
 
+    #[error("chain client initialization failed")]
+    ChainClientInit(#[from] crate::chain_client::ClientError),
+
+    #[error("chain query failed")]
+    ChainQuery(#[from] crate::chain_client::QueryError),
+
+    #[error("chain subscription failed")]
+    ChainSubscription(#[from] crate::chain_client::SubscriptionError),
+
+    #[error("transaction failed")]
+    ChainTransaction(#[from] crate::chain_client::TransactionError<crate::chain_client::AssetHubChainConfig>),
+
     #[error("sled to SQLite migration failed")]
     MigrationFailed(#[from] crate::sled_to_sqlite_migration::MigrationError),
 }

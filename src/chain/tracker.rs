@@ -5,12 +5,11 @@ use crate::{
         definitions::{ChainTrackerRequest, Invoice},
         payout::payout, utils::to_base58_string,
     },
-    chain_client::ChainResult,
-    configs::ChainConfig, definitions::Balance, error::ChainError, legacy_types::{CurrencyProperties, Health, RpcInfo, TokenKind, TxKind, TxStatus}, state::State, types::{OutgoingTransactionMeta, Transaction, TransactionOrigin}, utils::task_tracker::TaskTracker
+    chain_client::ClientError,
+    configs::ChainConfig, error::ChainError, legacy_types::{CurrencyProperties, Health, RpcInfo, TokenKind, TxKind, TxStatus}, state::State, types::{OutgoingTransactionMeta, Transaction, TransactionOrigin}, utils::task_tracker::TaskTracker
 };
-use crate::chain_client::{PolkadotAssetHubClient, BlockChainClient, KeyringClient};
+use crate::chain_client::{AssetHubClient, BlockChainClient, KeyringClient};
 use std::collections::HashMap;
-use std::str::FromStr;
 use rust_decimal::Decimal;
 use chrono::{DateTime, Utc};
 use futures::{StreamExt, pin_mut};
@@ -163,8 +162,8 @@ pub fn start_chain_watch(
                     .map(|asset| asset.id)
                     .collect();
 
-                let asset_hub_client_result: ChainResult<_> = async {
-                    let client = PolkadotAssetHubClient::new(&chain).await?;
+                let asset_hub_client_result: Result<_, ClientError> = async {
+                    let client = AssetHubClient::new(&chain).await?;
                     client.init_asset_info(&assets).await?;
 
                     Ok(client)
@@ -388,7 +387,7 @@ pub struct ChainWatcher {
 impl ChainWatcher {
     #[expect(clippy::too_many_arguments)]
     pub async fn prepare_chain(
-        client: &PolkadotAssetHubClient,
+        client: &AssetHubClient,
         chain: ChainConfig,
         watched_accounts: &mut HashMap<Uuid, Invoice>,
         rpc_url: &str,

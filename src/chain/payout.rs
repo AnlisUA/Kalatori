@@ -9,7 +9,7 @@ use crate::{
         definitions::Invoice,
         tracker::ChainWatcher,
         utils::to_base58_string,
-    }, chain_client::{BlockChainClient, Encodeable, KeyringClient, PolkadotAssetHubClient}, error::ChainError, state::State, types::{
+    }, chain_client::{BlockChainClient, Encodeable, KeyringClient, AssetHubClient}, error::ChainError, state::State, types::{
         OutgoingTransactionMeta, Transaction, TransactionOrigin, TransactionStatus, TransactionType,
     }
 };
@@ -21,7 +21,7 @@ use uuid::Uuid;
 ///
 /// TODO: make this an additional runner independent from chain monitors
 pub async fn payout(
-    client: PolkadotAssetHubClient,
+    client: AssetHubClient,
     order: Invoice,
     state: State,
     chain: ChainWatcher,
@@ -36,10 +36,8 @@ pub async fn payout(
         .ok_or_else(|| ChainError::InvalidCurrency(order.currency.currency.clone()))?;
 
     let asset_id = currency.asset_id.ok_or(ChainError::AssetId)?;
-    info!("Currency checked");
 
     let derivation_params = vec![
-        to_base58_string(order.recipient.0, 2),
         order.order_id,
     ];
 

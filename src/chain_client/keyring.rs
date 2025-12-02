@@ -3,6 +3,7 @@ use subxt_signer::sr25519::Keypair;
 use subxt_signer::{DeriveJunction, ExposeSecret, SecretString};
 use tokio::sync::{mpsc, oneshot};
 use thiserror::Error;
+use tracing::instrument;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use super::asset_hub::{
@@ -114,7 +115,6 @@ impl Keyring {
             },
         }
     }
-
 }
 
 struct Envelope<T, R> {
@@ -154,13 +154,18 @@ impl<R> ResponseReceiver<R> {
         self.receiver
             .await
             .inspect_err(|e| {
-                // TODO: add functions for logging such kind of errors
+                tracing::debug!(
+                    error.category = crate::utils::logging::category::CHAIN_CLIENT,
+                    error.operation = "keyring_response",
+                    error.source = ?e,
+                    "Failed to receive response from Keyring actor"
+                );
             })
             .map_err(|_| KeyringError::MessageTransmissionFailed)?
     }
 }
 
-// TODO: adding new operations can be simplified using macros
+// adding new operations can be simplified using macros
 enum KeyringMessage {
     SignAssetHubTransaction(Envelope<
         SignTransactionRequestData<AssetHubUnsignedTransaction>,
@@ -203,13 +208,19 @@ impl KeyringClient {
             .send(message)
             .await
             .inspect_err(|e| {
-                // TODO: add functions for logging such kind of errors
+                tracing::debug!(
+                    error.category = crate::utils::logging::category::CHAIN_CLIENT,
+                    error.operation = "keyring_request",
+                    error.source = ?e,
+                    "Failed to send request to Keyring actor"
+                );
             })
             .map_err(|_| KeyringError::MessageTransmissionFailed)?;
 
         response_receiver.receive().await
     }
 
+    #[instrument(skip(self, data))]
     pub async fn sign_asset_hub_transaction(
         &self,
         data: SignTransactionRequestData<AssetHubUnsignedTransaction>,
@@ -218,6 +229,7 @@ impl KeyringClient {
         self.send_message_with_response(params.0, params.1).await
     }
 
+    #[instrument(skip(self, data))]
     pub async fn generate_asset_hub_address(
         &self,
         data: GenerateAddressData,
