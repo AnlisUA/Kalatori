@@ -55,6 +55,7 @@ impl From<PayoutStatus> for WithdrawalStatus {
     }
 }
 
+#[expect(dead_code)]
 /// Payout from `SQLite`
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, FromRow)]
 pub struct Payout {

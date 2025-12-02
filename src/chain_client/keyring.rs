@@ -37,6 +37,7 @@ pub enum KeyringError {
     InvalidSeed,
     #[error("Unexpected error while send request to or receive response from Keyring")]
     MessageTransmissionFailed,
+    #[expect(dead_code)]
     #[error("Timeout while send request to Keyring")]
     ResponseTimeout,
 }
@@ -105,13 +106,13 @@ impl Keyring {
                 let (req, resp) = envelope.unpack();
                 let result = self.process_sign_asset_hub_transaction(req);
                 // TODO: add logs
-                let _ = resp.send(result);
+                let _unused = resp.send(result);
             },
             KeyringMessage::GenerateAssetHubAddress(envelope) => {
                 let (req, resp) = envelope.unpack();
                 let result = self.process_generate_asset_hub_address(req);
                 // TODO: add logs
-                let _ = resp.send(result);
+                let _unused = resp.send(result);
             },
         }
     }

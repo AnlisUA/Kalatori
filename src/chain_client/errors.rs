@@ -21,6 +21,7 @@ pub enum ClientError {
     #[error("Invalid configuration: {field}")]
     InvalidConfiguration { field: String },
 
+    #[expect(dead_code)]
     /// Unknown asset ID in configuration (validated at init AND runtime per Principle 1)
     #[error("Unknown asset ID in configuration: {asset_id}")]
     UnknownAssetId { asset_id: u32 },
@@ -41,6 +42,7 @@ pub enum QueryError {
     #[error("Storage query returned no data: {query_type}")]
     NotFound { query_type: String },
 
+    #[expect(dead_code)]
     /// Data decoding failed (SCALE or other format)
     #[error("Data decoding failed: {data_type}")]
     DecodeFailed { data_type: String },

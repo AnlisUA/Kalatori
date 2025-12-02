@@ -218,8 +218,6 @@ impl AssetHubClient {
                             return None
                         };
 
-                        let transaction_bytes = String::new(); // Placeholder
-
                         Some(ChainTransfer {
                             asset_id: event.asset_id,
                             // TODO: check event.amount? Cast is quite unsafe
@@ -227,7 +225,6 @@ impl AssetHubClient {
                             sender: event.from,
                             recipient: event.to,
                             transaction_id: (block_number, index),
-                            transaction_bytes,
                             timestamp,
                         })
                     })
@@ -437,6 +434,7 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
                         );
                     })
                     .map_err(|_e| SubscriptionError::StreamClosed)?;
+
                 let result = client.process_block(block, &assets).await?;
 
                 if !result.is_empty() {
@@ -717,7 +715,6 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
             asset_id: event.asset_id,
             sender: event.from,
             recipient: event.to,
-            transaction_bytes: String::new(),
             transaction_id: (block_number, extrinsic_index),
             timestamp: chrono::Utc::now().timestamp_millis() as u64
         })

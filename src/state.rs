@@ -8,7 +8,6 @@ use crate::{
         OrderResponse, OrderStatus, RpcInfo, ServerHealth, ServerInfo, ServerStatus,
         TransactionInfo, TxStatus,
     },
-    signer::Signer,
     types::{
         Invoice, InvoiceCart, InvoiceStatus, Transaction, TransactionStatus, UpdateInvoiceData,
     },

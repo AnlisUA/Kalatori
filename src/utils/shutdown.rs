@@ -15,8 +15,6 @@ use std::{
 use tokio::{signal, time};
 use tokio_util::sync::CancellationToken;
 
-pub const MODULE: &str = module_path!();
-
 const TIP_FUSE_SECS: u64 = 15;
 
 #[derive(Clone)]

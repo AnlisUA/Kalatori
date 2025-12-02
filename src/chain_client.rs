@@ -43,7 +43,6 @@ pub struct ChainTransfer<T: ChainConfig> {
     pub amount: Decimal,
     pub sender: T::AccountId,        // base58 ss58 format
     pub recipient: T::AccountId,     // base58 ss58 format
-    pub transaction_bytes: String,   // hex-encoded
     pub transaction_id: T::TransactionId,
     pub timestamp: u64,              // milliseconds since epoch
 }
@@ -100,14 +99,26 @@ pub trait BlockChainClient<T: ChainConfig>: Sync + Send + Sized {
 
     async fn new(config: &crate::configs::ChainConfig) -> Result<Self, ClientError>;
 
-    async fn new_with_store(config: &crate::configs::ChainConfig, asset_info_store: AssetInfoStore<T>) -> Result<Self, ClientError>;
+    #[expect(dead_code)]
+    async fn new_with_store(
+        config: &crate::configs::ChainConfig,
+        asset_info_store: AssetInfoStore<T>,
+    ) -> Result<Self, ClientError>;
 
     async fn fetch_asset_info(&self, asset_id: &T::AssetId) -> Result<AssetInfo<T>, QueryError>;
 
-    async fn fetch_asset_balance(&self, asset_id: &T::AssetId, account: &T::AccountId) -> Result<Decimal, QueryError>;
+    async fn fetch_asset_balance(
+        &self,
+        asset_id: &T::AssetId,
+        account: &T::AccountId,
+    ) -> Result<Decimal, QueryError>;
 
-    async fn subscribe_transfers(&self, asset_ids: &[T::AssetId]) -> Result<impl stream::Stream<Item = Result<Vec<ChainTransfer<T>>, SubscriptionError>>, SubscriptionError>;
+    async fn subscribe_transfers(
+        &self,
+        asset_ids: &[T::AssetId],
+    ) -> Result<impl stream::Stream<Item = Result<Vec<ChainTransfer<T>>, SubscriptionError>>, SubscriptionError>;
 
+    #[expect(dead_code)]
     /// Build transaction to transfer exact amount to recipient
     async fn build_transfer(
         &self,

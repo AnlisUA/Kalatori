@@ -26,6 +26,7 @@ pub enum InvoiceStatus {
     AdminCanceled,
 }
 
+#[expect(dead_code)]
 impl InvoiceStatus {
     /// Check if invoice is in an active state (still being monitored)
     pub const fn is_active(&self) -> bool {
@@ -182,6 +183,7 @@ impl From<InvoiceRow> for Invoice {
     }
 }
 
+#[expect(dead_code)]
 #[derive(Debug)]
 pub struct CreateInvoiceData {
     pub order_id: String,

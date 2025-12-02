@@ -41,6 +41,7 @@ impl std::str::FromStr for RefundStatus {
     }
 }
 
+#[expect(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, FromRow)]
 pub struct Refund {
     pub id: Uuid,

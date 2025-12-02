@@ -15,7 +15,7 @@ documentation = "https://docs.rs/Kalatori"
 readme = "README.md"
 keywords = ["substrate", "blockchain", "finance", "service", "middleware"]
 categories = ["finance"]
-exclude = [".github", "cliff.toml", "Dockerfile", "chopsticks/", "configs", "is_version_greater.sh", "shoot.sh", "start.sh", "/tests"]
+exclude = [".github", "cliff.toml", "Dockerfile", "chopsticks/", "configs", "is_version_greater.sh", "/tests"]
 rust-version = "1.85"
 
 [dependencies]
@@ -87,8 +87,6 @@ future_incompatible = "warn"
 let_underscore = "warn"
 rust_2018_idioms = "warn"
 unused = "warn"
-# TODO: https://github.com/rust-lang/cargo/issues/12918
-rust-2024-compatibility = { level = "warn", priority = -1 }
 
 [lints.clippy]
 allow_attributes = "warn"

@@ -26,13 +26,6 @@ impl Sub for Balance {
 }
 
 impl Balance {
-    pub fn format(&self, decimals: crate::legacy_types::Decimals) -> f64 {
-        #[expect(clippy::cast_precision_loss)]
-        let float = **self as f64;
-
-        float / decimal_exponent_product(decimals)
-    }
-
     pub fn parse(float: f64, decimals: crate::legacy_types::Decimals) -> Self {
         let parsed_float = (float * decimal_exponent_product(decimals)).round();
 
@@ -43,21 +36,4 @@ impl Balance {
 
 pub fn decimal_exponent_product(decimals: crate::legacy_types::Decimals) -> f64 {
     10f64.powi(decimals.into())
-}
-
-#[cfg(test)]
-#[test]
-#[expect(
-    clippy::inconsistent_digit_grouping,
-    clippy::unreadable_literal,
-    clippy::float_cmp
-)]
-fn balance_insufficient_precision() {
-    const DECIMALS: crate::legacy_types::Decimals = 10;
-
-    let float = 931395.862219815_3;
-    let parsed = Balance::parse(float, DECIMALS);
-
-    assert_eq!(*parsed, 931395_862219815_2);
-    assert_eq!(parsed.format(DECIMALS), 931395.862219815_1);
 }

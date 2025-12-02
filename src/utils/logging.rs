@@ -3,12 +3,14 @@
 //! These constants are used in tracing fields to enable consistent log categorization
 //! and filtering in production.
 
+#[expect(dead_code)]
 /// Log category constants for identifying the source subsystem
 pub mod category {
     pub const CHAIN_CLIENT: &str = "chain_client";
     pub const DATABASE: &str = "database";
 }
 
+#[expect(dead_code)]
 /// Log operation constants for identifying specific operations within subsystems
 pub mod operation {
     // Chain client operations

@@ -19,8 +19,6 @@ use std::{borrow::Cow, collections::HashMap, future::Future, net::SocketAddr};
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 
-pub const MODULE: &str = module_path!();
-
 pub async fn new(
     shutdown_notification: CancellationToken,
     config: WebServerConfig,

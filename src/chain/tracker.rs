@@ -21,25 +21,6 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-/// Extract transaction hash from hex-encoded extrinsic bytes
-fn extract_tx_hash(transaction_bytes: &str) -> Option<String> {
-    // Remove 0x prefix if present
-    let bytes_str = transaction_bytes
-        .strip_prefix("0x")
-        .unwrap_or(transaction_bytes);
-
-    // Decode hex to bytes
-    let bytes = const_hex::decode(bytes_str).ok()?;
-
-    // Calculate blake2 256-bit hash (standard for Substrate tx hashes)
-    let mut hasher = blake2b_simd::Params::new().hash_length(32).to_state();
-    hasher.update(&bytes);
-    let hash = hasher.finalize();
-
-    // Return as 0x-prefixed hex string
-    Some(format!("0x{}", const_hex::encode(hash.as_bytes())))
-}
-
 /// Convert `TxKind` to `TransactionType`
 fn tx_kind_to_transaction_type(kind: TxKind) -> crate::types::TransactionType {
     match kind {
@@ -57,25 +38,6 @@ fn tx_status_to_transaction_status(status: TxStatus) -> crate::types::Transactio
     }
 }
 
-/// Convert `f64` amount to `Decimal`
-fn amount_to_decimal(amount: f64) -> rust_decimal::Decimal {
-    // This should not fail for normal f64 values
-    Decimal::try_from(amount).unwrap_or_else(|e| {
-        tracing::error!("Failed to convert amount {amount} to Decimal: {e}");
-        Decimal::ZERO
-    })
-}
-
-/// Parse RFC3339 timestamp string to `DateTime<Utc>`
-fn parse_timestamp(timestamp_str: &str) -> DateTime<Utc> {
-    DateTime::parse_from_rfc3339(timestamp_str)
-        .map(|dt| dt.with_timezone(&Utc))
-        .unwrap_or_else(|e| {
-            tracing::error!("Failed to parse timestamp {timestamp_str}: {e}");
-            Utc::now()
-        })
-}
-
 /// Build a Transaction object from the available data
 #[expect(clippy::too_many_arguments)]
 fn build_transaction(
@@ -87,12 +49,10 @@ fn build_transaction(
     recipient: AccountId32,
     block_number: u32,
     position_in_block: u32,
-    transaction_bytes: String,
     timestamp: u64,
     tx_kind: TxKind,
     tx_status: TxStatus,
 ) -> Transaction {
-    let tx_hash = extract_tx_hash(&transaction_bytes);
     let transaction_type = tx_kind_to_transaction_type(tx_kind);
     let created_at = DateTime::from_timestamp_millis(timestamp as i64).unwrap_or_else(|| Utc::now());
     let status = tx_status_to_transaction_status(tx_status);
@@ -109,13 +69,13 @@ fn build_transaction(
         recipient,
         block_number: Some(block_number),
         position_in_block: Some(position_in_block),
-        tx_hash,
+        tx_hash: None,
         origin: TransactionOrigin::default(), // No origin for detected payments
         status,
         transaction_type,
+        transaction_bytes: None,
         outgoing_meta: OutgoingTransactionMeta::default(),
         created_at,
-        transaction_bytes: Some(transaction_bytes),
     }
 }
 
@@ -123,7 +83,7 @@ fn build_transaction(
 pub fn start_chain_watch(
     keyring_client: KeyringClient,
     chain: ChainConfig,
-    chain_tx: mpsc::Sender<ChainTrackerRequest>,
+    _chain_tx: mpsc::Sender<ChainTrackerRequest>,
     mut chain_rx: mpsc::Receiver<ChainTrackerRequest>,
     state: State,
     task_tracker: TaskTracker,
@@ -268,7 +228,6 @@ pub fn start_chain_watch(
                                             transfer.recipient.clone(),
                                             transfer.transaction_id.0,
                                             transfer.transaction_id.1,
-                                            String::new(),
                                             transfer.timestamp,
                                             TxKind::Payment,
                                             TxStatus::Finalized,

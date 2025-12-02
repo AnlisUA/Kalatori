@@ -18,7 +18,6 @@ mod error;
 mod handlers;
 mod legacy_types;
 mod server;
-mod signer;
 mod sled_to_sqlite_migration;
 mod state;
 mod types;
@@ -91,7 +90,7 @@ fn main() -> ExitCode {
 }
 
 fn try_main(shutdown_notification: ShutdownNotification) -> Result<(), Error> {
-    logger::initialize(logger::default_filter())?;
+    logger::initialize("")?;
     shutdown::set_panic_hook(
         |panic| tracing::error!("{panic}"),
         shutdown_notification.clone(),
@@ -129,7 +128,7 @@ fn build_currencies_from_config(
     currencies
 }
 
-async fn sled_to_sqlite_migration(
+async fn perform_sled_to_sqlite_migration(
     database_config: &DatabaseConfig,
     chain_config: &ChainConfig,
     dao: &DAO,
@@ -211,7 +210,6 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
     let database_config = database_config_with_prefix(&configs_path, &env_prefix);
 
     // Start services
-
     let (task_tracker, error_rx) = TaskTracker::new();
 
     // TODO: replace with expect?
@@ -225,6 +223,8 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
     let dao = DAO::new(database_config.clone())
         .await
         .map_err(error::DaoError::Sqlx)?;
+
+    perform_sled_to_sqlite_migration(&database_config, &chain_config, &dao).await.unwrap();
 
     let instance_id = dao
         .initialize_server_info()
@@ -283,7 +283,8 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
         () = task_tracker.wait_and_shutdown(error_rx, shutdown_notification) => {
             shutdown_completed.cancel();
 
-            shutdown_listener.await
+            let (shutdown_result, _keyring_result) = tokio::join!(shutdown_listener, keyring_handle);
+            shutdown_result
         }
         shutdown_listener_result = &mut shutdown_listener => shutdown_listener_result
     }
