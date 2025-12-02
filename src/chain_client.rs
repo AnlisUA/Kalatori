@@ -1,20 +1,35 @@
 mod asset_hub;
-mod keyring;
 mod errors;
+mod keyring;
 
 use std::collections::HashMap;
 use std::hash::Hash;
-use std::sync::Arc;
 use std::str::FromStr;
+use std::sync::Arc;
 
-use tracing::{instrument, info};
-use tokio::sync::RwLock;
-use rust_decimal::Decimal;
 use futures::stream;
+use rust_decimal::Decimal;
+use tokio::sync::RwLock;
+use tracing::{
+    info,
+    instrument,
+};
 
-pub use asset_hub::{AssetHubClient, AssetHubChainConfig};
-pub use keyring::{Keyring, KeyringClient, KeyringError};
-pub use errors::{ClientError, QueryError, SubscriptionError, TransactionError};
+pub use asset_hub::{
+    AssetHubChainConfig,
+    AssetHubClient,
+};
+pub use errors::{
+    ClientError,
+    QueryError,
+    SubscriptionError,
+    TransactionError,
+};
+pub use keyring::{
+    Keyring,
+    KeyringClient,
+    KeyringError,
+};
 
 pub trait Encodeable {
     fn to_hex_string(&self) -> String;
@@ -41,10 +56,10 @@ pub struct AssetInfo<T: ChainConfig> {
 pub struct ChainTransfer<T: ChainConfig> {
     pub asset_id: T::AssetId,
     pub amount: Decimal,
-    pub sender: T::AccountId,        // base58 ss58 format
-    pub recipient: T::AccountId,     // base58 ss58 format
+    pub sender: T::AccountId,    // base58 ss58 format
+    pub recipient: T::AccountId, // base58 ss58 format
     pub transaction_id: T::TransactionId,
-    pub timestamp: u64,              // milliseconds since epoch
+    pub timestamp: u64, // milliseconds since epoch
 }
 
 #[derive(Clone)]
@@ -55,25 +70,32 @@ pub struct AssetInfoStore<T: ChainConfig> {
 impl<T: ChainConfig> AssetInfoStore<T> {
     pub fn new() -> Self {
         Self {
-            assets: Arc::new(RwLock::new(HashMap::new()))
+            assets: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
-    pub async fn get_asset_info(&self, asset_id: &T::AssetId) -> Option<AssetInfo<T>> {
+    pub async fn get_asset_info(
+        &self,
+        asset_id: &T::AssetId,
+    ) -> Option<AssetInfo<T>> {
         let assets = self.assets.read().await;
         assets.get(asset_id).cloned()
     }
 
-    pub async fn get_assets_info(&self, assets_ids: &[T::AssetId]) -> HashMap<T::AssetId, AssetInfo<T>> {
+    pub async fn get_assets_info(
+        &self,
+        assets_ids: &[T::AssetId],
+    ) -> HashMap<T::AssetId, AssetInfo<T>> {
         let assets = self.assets.read().await;
 
         assets_ids
             .into_iter()
-            .filter_map(|id| assets
-                .get(id)
-                .cloned()
-                .map(|val| (id.clone(), val))
-            )
+            .filter_map(|id| {
+                assets
+                    .get(id)
+                    .cloned()
+                    .map(|val| (id.clone(), val))
+            })
             .collect()
     }
 }
@@ -105,7 +127,10 @@ pub trait BlockChainClient<T: ChainConfig>: Sync + Send + Sized {
         asset_info_store: AssetInfoStore<T>,
     ) -> Result<Self, ClientError>;
 
-    async fn fetch_asset_info(&self, asset_id: &T::AssetId) -> Result<AssetInfo<T>, QueryError>;
+    async fn fetch_asset_info(
+        &self,
+        asset_id: &T::AssetId,
+    ) -> Result<AssetInfo<T>, QueryError>;
 
     async fn fetch_asset_balance(
         &self,
@@ -116,7 +141,10 @@ pub trait BlockChainClient<T: ChainConfig>: Sync + Send + Sized {
     async fn subscribe_transfers(
         &self,
         asset_ids: &[T::AssetId],
-    ) -> Result<impl stream::Stream<Item = Result<Vec<ChainTransfer<T>>, SubscriptionError>>, SubscriptionError>;
+    ) -> Result<
+        impl stream::Stream<Item = Result<Vec<ChainTransfer<T>>, SubscriptionError>>,
+        SubscriptionError,
+    >;
 
     #[expect(dead_code)]
     /// Build transaction to transfer exact amount to recipient
@@ -128,7 +156,8 @@ pub trait BlockChainClient<T: ChainConfig>: Sync + Send + Sized {
         amount: Decimal,
     ) -> Result<UnsignedTransaction<T>, TransactionError<T>>;
 
-    /// Build transaction to sweep entire balance (all funds minus fees) to recipient
+    /// Build transaction to sweep entire balance (all funds minus fees) to
+    /// recipient
     async fn build_transfer_all(
         &self,
         sender: &T::AccountId,
@@ -148,14 +177,24 @@ pub trait BlockChainClient<T: ChainConfig>: Sync + Send + Sized {
         transaction: SignedTransaction<T>,
     ) -> Result<ChainTransfer<T>, TransactionError<T>>;
 
-    // This method should be called at the very start of the program, right after client initialization.
+    // This method should be called at the very start of the program, right after
+    // client initialization.
     #[instrument(skip(self))]
-    async fn init_asset_info(&self, asset_ids: &[T::AssetId]) -> Result<(), ClientError> {
+    async fn init_asset_info(
+        &self,
+        asset_ids: &[T::AssetId],
+    ) -> Result<(), ClientError> {
         info!(message = "Initialize asset info store");
-        let mut store = self.asset_info_store().assets.write().await;
+        let mut store = self
+            .asset_info_store()
+            .assets
+            .write()
+            .await;
 
         for id in asset_ids {
-            let asset_info = self.fetch_asset_info(id).await
+            let asset_info = self
+                .fetch_asset_info(id)
+                .await
                 .map_err(|_e| ClientError::MetadataFetchFailed)?;
             store.insert(id.clone(), asset_info);
         }

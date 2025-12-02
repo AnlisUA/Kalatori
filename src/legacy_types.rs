@@ -1,16 +1,25 @@
 //! Legacy V2 API Types
 //!
-//! This module contains all structures, enums, and type aliases used by the V2 HTTP API endpoints.
-//! These types are preserved for backward compatibility with existing API clients.
+//! This module contains all structures, enums, and type aliases used by the V2
+//! HTTP API endpoints. These types are preserved for backward compatibility
+//! with existing API clients.
 //!
-//! According to the architectural vision in CLAUDE.md, new code should use types from the `types`
-//! module which work with the `SQLite` database schema. These legacy types will gradually be phased
-//! out as the API evolves, but the V2 endpoints must remain unchanged for backward compatibility.
+//! According to the architectural vision in CLAUDE.md, new code should use
+//! types from the `types` module which work with the `SQLite` database schema.
+//! These legacy types will gradually be phased out as the API evolves, but the
+//! V2 endpoints must remain unchanged for backward compatibility.
 
 use std::collections::HashMap;
 
-use codec::{Decode, Encode};
-use serde::{Deserialize, Serialize, Serializer};
+use codec::{
+    Decode,
+    Encode,
+};
+use serde::{
+    Deserialize,
+    Serialize,
+    Serializer,
+};
 
 pub const AMOUNT: &str = "amount";
 pub const CURRENCY: &str = "currency";
@@ -183,7 +192,10 @@ pub struct CurrencyProperties {
 }
 
 impl CurrencyProperties {
-    pub fn info(&self, currency: String) -> CurrencyInfo {
+    pub fn info(
+        &self,
+        currency: String,
+    ) -> CurrencyInfo {
         CurrencyInfo {
             currency,
             chain_name: self.chain_name.clone(),
@@ -231,12 +243,15 @@ pub struct FinalizedTx {
     pub timestamp: String,
 }
 
-// TODO: `Encode` macro generates some code which cast usize to u8 and trigger clippy.
-// It seems to be old issue happened again, https://github.com/paritytech/parity-scale-codec/issues/713
+// TODO: `Encode` macro generates some code which cast usize to u8 and trigger
+// clippy. It seems to be old issue happened again, https://github.com/paritytech/parity-scale-codec/issues/713
 // Check for updates periodically and remove this module when problem is fixed
 #[expect(clippy::cast_possible_truncation)]
 mod amount {
-    use super::{Decode, Encode};
+    use super::{
+        Decode,
+        Encode,
+    };
 
     #[derive(Clone, Debug, Decode, Encode)]
     pub enum Amount {
@@ -247,7 +262,10 @@ mod amount {
 
 pub use amount::Amount;
 
-fn amount_serializer<S: Serializer>(amount: &Amount, serializer: S) -> Result<S::Ok, S::Error> {
+fn amount_serializer<S: Serializer>(
+    amount: &Amount,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
     match amount {
         Amount::All => serializer.serialize_str("all"),
         Amount::Exact(exact) => exact.serialize(serializer),

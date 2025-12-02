@@ -1,6 +1,9 @@
 use thiserror::Error;
 
-use super::{ChainConfig, KeyringError};
+use super::{
+    ChainConfig,
+    KeyringError,
+};
 
 // ============================================================================
 // Domain 1: Client Initialization Errors
@@ -22,7 +25,8 @@ pub enum ClientError {
     InvalidConfiguration { field: String },
 
     #[expect(dead_code)]
-    /// Unknown asset ID in configuration (validated at init AND runtime per Principle 1)
+    /// Unknown asset ID in configuration (validated at init AND runtime per
+    /// Principle 1)
     #[error("Unknown asset ID in configuration: {asset_id}")]
     UnknownAssetId { asset_id: u32 },
 }
@@ -110,7 +114,8 @@ pub enum TransactionError<T: ChainConfig> {
         transaction_id: T::TransactionId,
     },
 
-    /// Unknown asset ID (runtime check, despite init validation - defense in depth)
+    /// Unknown asset ID (runtime check, despite init validation - defense in
+    /// depth)
     #[error("Unknown asset: {asset_id:?}")]
     UnknownAsset {
         transaction_id: T::TransactionId,
@@ -156,10 +161,17 @@ impl<T: ChainConfig> From<QueryError> for TransactionError<T> {
             QueryError::RpcRequestFailed => TransactionError::BuildFailed {
                 reason: "RPC request failed during transaction build".to_string(),
             },
-            QueryError::NotFound { query_type } => TransactionError::BuildFailed {
-                reason: format!("Required data not found: {}", query_type),
+            QueryError::NotFound {
+                query_type,
+            } => TransactionError::BuildFailed {
+                reason: format!(
+                    "Required data not found: {}",
+                    query_type
+                ),
             },
-            QueryError::DecodeFailed { data_type } => TransactionError::BuildFailed {
+            QueryError::DecodeFailed {
+                data_type,
+            } => TransactionError::BuildFailed {
                 reason: format!("Data decoding failed: {}", data_type),
             },
         }
@@ -173,9 +185,11 @@ impl<T: ChainConfig> From<QueryError> for TransactionError<T> {
 /// Check if a DispatchError indicates insufficient balance
 ///
 /// Examines error details to determine if failure was due to low balance.
-/// This enables converting generic ExecutionFailed to more specific InsufficientBalance.
+/// This enables converting generic ExecutionFailed to more specific
+/// InsufficientBalance.
 ///
-/// Note: Generic over any type that implements Debug to support different runtime error types
+/// Note: Generic over any type that implements Debug to support different
+/// runtime error types
 pub fn is_insufficient_balance_error<T: std::fmt::Debug>(error: &T) -> bool {
     // Check if error contains balance-related error strings
     let error_details = format!("{:?}", error);

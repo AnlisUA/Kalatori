@@ -1,14 +1,3 @@
-use std::{process::ExitCode, str::FromStr};
-use subxt::utils::AccountId32;
-use tokio::{runtime::Runtime, sync::oneshot};
-use tokio_util::sync::CancellationToken;
-use tracing::Level;
-use utils::{
-    logger,
-    shutdown::{self, ShutdownNotification, ShutdownOutcome},
-    task_tracker::TaskTracker,
-};
-
 mod chain;
 mod chain_client;
 mod configs;
@@ -23,14 +12,32 @@ mod state;
 mod types;
 mod utils;
 
+use std::process::ExitCode;
+use std::str::FromStr;
+
+use subxt::utils::AccountId32;
+use tokio::runtime::Runtime;
+use tokio::sync::oneshot;
+use tokio_util::sync::CancellationToken;
+use tracing::Level;
+
+use utils::logger;
+use utils::shutdown::{
+    self,
+    ShutdownNotification,
+    ShutdownOutcome,
+};
+use utils::task_tracker::TaskTracker;
 use chain::ChainManager;
 use dao::DAO;
-use error::{Error, PrettyCause};
+use error::{
+    Error,
+    PrettyCause,
+};
 use legacy_types::ConfigWoChains;
 use state::State;
-
-use crate::chain_client::Keyring;
-use crate::configs::{
+use chain_client::Keyring;
+use configs::{
     ChainConfig,
     DatabaseConfig,
     chain_config_with_prefix,
@@ -39,23 +46,30 @@ use crate::configs::{
     seed_config_with_prefix,
     web_server_config_with_prefix,
 };
-use crate::legacy_types::{CurrencyProperties, Timestamp, TokenKind};
+use legacy_types::{
+    CurrencyProperties,
+    Timestamp,
+    TokenKind,
+};
 
 const DEFAULT_ENV_PREFIX: &str = "KALATORI";
 
 fn main() -> ExitCode {
     let shutdown_notification = ShutdownNotification::new();
 
-    // Sets the panic hook to print directly to the standard error because the logger isn't
-    // initialized yet.
-    shutdown::set_panic_hook(|panic| eprintln!("{panic}"), shutdown_notification.clone());
+    // Sets the panic hook to print directly to the standard error because the
+    // logger isn't initialized yet.
+    shutdown::set_panic_hook(
+        |panic| eprintln!("{panic}"),
+        shutdown_notification.clone(),
+    );
 
     let result = try_main(shutdown_notification.clone());
 
     if let Err(error) = result {
         // TODO: https://github.com/rust-lang/rust/issues/92698
-        // An equilibristic to conditionally print an error message without storing it as `String`
-        // on the heap.
+        // An equilibristic to conditionally print an error message without storing it
+        // as `String` on the heap.
         let print = |message| {
             if tracing::event_enabled!(Level::ERROR) {
                 tracing::error!("{message}");
@@ -71,20 +85,25 @@ fn main() -> ExitCode {
 
         ExitCode::FAILURE
     } else {
-        match *shutdown_notification.outcome.read_blocking() {
+        match *shutdown_notification
+            .outcome
+            .read_blocking()
+        {
             ShutdownOutcome::UserRequested => {
                 tracing::info!("Goodbye!");
 
                 ExitCode::SUCCESS
-            }
-            ShutdownOutcome::UnrecoverableError { panic } => {
+            },
+            ShutdownOutcome::UnrecoverableError {
+                panic,
+            } => {
                 tracing::error!(
                     "Badbye! The daemon's shut down with errors{}.",
                     if panic { " due to internal bugs" } else { "" }
                 );
 
                 ExitCode::FAILURE
-            }
+            },
         }
     }
 }
@@ -96,21 +115,29 @@ fn try_main(shutdown_notification: ShutdownNotification) -> Result<(), Error> {
         shutdown_notification.clone(),
     );
 
-    tracing::info!("Kalatori {} is starting...", env!("CARGO_PKG_VERSION"));
+    tracing::info!(
+        "Kalatori {} is starting...",
+        env!("CARGO_PKG_VERSION")
+    );
 
     Runtime::new()
         .map_err(Error::Runtime)?
         .block_on(async_try_main(shutdown_notification))
 }
 
-/// Build a simplified currencies `HashMap` from `ChainConfig` for migration purposes.
-/// Note: This uses placeholder values for decimals since we don't have blockchain connection yet.
-/// The actual decimals are fetched asynchronously by `ChainTracker` during normal operation.
+/// Build a simplified currencies `HashMap` from `ChainConfig` for migration
+/// purposes. Note: This uses placeholder values for decimals since we don't
+/// have blockchain connection yet. The actual decimals are fetched
+/// asynchronously by `ChainTracker` during normal operation.
 fn build_currencies_from_config(
-    chain_config: &ChainConfig,
+    chain_config: &ChainConfig
 ) -> std::collections::HashMap<String, CurrencyProperties> {
     let mut currencies = std::collections::HashMap::new();
-    let rpc_url = chain_config.endpoints.first().cloned().unwrap_or_default();
+    let rpc_url = chain_config
+        .endpoints
+        .first()
+        .cloned()
+        .unwrap_or_default();
 
     for asset in &chain_config.assets {
         let properties = CurrencyProperties {
@@ -144,7 +171,7 @@ async fn perform_sled_to_sqlite_migration(
 
             let currencies = build_currencies_from_config(&chain_config);
 
-            match sled_to_sqlite_migration::migrate_sled_to_sqlite(sled_path, &dao, &currencies)
+            match sled_to_sqlite_migration::migrate_sled_to_sqlite(sled_path, dao, &currencies)
                 .await
             {
                 Ok(stats) => {
@@ -169,10 +196,10 @@ async fn perform_sled_to_sqlite_migration(
                             tracing::warn!("  - {}", warning);
                         }
                     }
-                }
+                },
                 Err(e) => {
                     return Err(Error::MigrationFailed(e));
-                }
+                },
             }
         } else {
             tracing::debug!(
@@ -193,8 +220,10 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
     // 4. Get info about required chains and assets from database and configs
     // 5. Start keyring (background task)
     // 6. Start chain monitoring (incoming transactions, background task)
-    // 7. Fetch balances of "pending" payments, ensure balance equals to expected (can be made in background)
-    //  7.1 If balance > sum(related transactions amount), fetch related transactions using API and update Invoice statuses respectively
+    // 7. Fetch balances of "pending" payments, ensure balance equals to expected
+    //    (can be made in background)
+    //  7.1 If balance > sum(related transactions amount), fetch related
+    // transactions using API and update Invoice statuses respectively
     // 8. Start payments executor (background task)
     // 9. Start API (background task)
     let env_prefix =
@@ -216,15 +245,18 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
     let recipient = AccountId32::from_str(&payments_config.recipient).unwrap();
 
     // TODO: quite dirty hack to make it work right now. Should be refactored ASAP.
-    // Spawn separate task for handling payouts. This task should replace Signer and store seed phrase
-    // let signer = Signer::init(recipient.clone(), &task_tracker, seed_config.seed.clone());
+    // Spawn separate task for handling payouts. This task should replace Signer and
+    // store seed phrase let signer = Signer::init(recipient.clone(),
+    // &task_tracker, seed_config.seed.clone());
 
     // Initialize DAO for SQLite database operations
     let dao = DAO::new(database_config.clone())
         .await
         .map_err(error::DaoError::Sqlx)?;
 
-    perform_sled_to_sqlite_migration(&database_config, &chain_config, &dao).await.unwrap();
+    perform_sled_to_sqlite_migration(&database_config, &chain_config, &dao)
+        .await
+        .unwrap();
 
     let instance_id = dao
         .initialize_server_info()
@@ -265,7 +297,7 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
         web_server_config,
         state.interface(),
     )
-        .await?;
+    .await?;
 
     task_tracker.spawn("the server module", server);
 
@@ -277,7 +309,8 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
 
     tracing::info!("The initialization has been completed.");
 
-    // Start the main loop and wait for it to gracefully end or the early termination signal.
+    // Start the main loop and wait for it to gracefully end or the early
+    // termination signal.
     tokio::select! {
         biased;
         () = task_tracker.wait_and_shutdown(error_rx, shutdown_notification) => {

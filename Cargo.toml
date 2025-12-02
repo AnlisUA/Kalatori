@@ -89,12 +89,13 @@ rust_2018_idioms = "warn"
 unused = "warn"
 
 [lints.clippy]
-allow_attributes = "warn"
-shadow_reuse = "warn"
-shadow_same = "warn"
-shadow_unrelated = "warn"
+allow_attributes = "deny"
 cargo_common_metadata = "warn"
-arithmetic_side_effects = "warn"
+arithmetic_side_effects = "deny"
+cast_possible_truncation = "deny"
+needless_borrow = "deny"
+ignored_unit_patterns = "deny"
+let_unit_value = "deny"
 # Having multiple module layout styles in a project can be confusing. Moreover, `mod.rs` files don't
 # really harmonize with Git as they can be renamed back to self-named modules and Git fundamentally
 # prone to poorly handle the file renaming that can result in their history erasure.

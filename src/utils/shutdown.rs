@@ -1,19 +1,33 @@
 //! The shutdown module.
 //!
-//! Handles a graceful shutdown with an asynchronous runtime with respect of panics (by
-//! incorporating a custom panic handler) & unrecoverable errors from another modules.
+//! Handles a graceful shutdown with an asynchronous runtime with respect of
+//! panics (by incorporating a custom panic handler) & unrecoverable errors from
+//! another modules.
+
+use std::fmt::{
+    Display,
+    Formatter,
+    Result as FmtResult,
+};
+use std::io::Result as IoResult;
+use std::panic::{
+    self,
+    PanicHookInfo,
+};
+use std::sync::Arc;
+use std::time::Duration;
+
+use async_lock::{
+    RwLock,
+    RwLockUpgradableReadGuard,
+};
+use tokio::{
+    signal,
+    time,
+};
+use tokio_util::sync::CancellationToken;
 
 use crate::error::Error;
-use async_lock::{RwLock, RwLockUpgradableReadGuard};
-use std::{
-    fmt::{Display, Formatter, Result as FmtResult},
-    io::Result as IoResult,
-    panic::{self, PanicHookInfo},
-    sync::Arc,
-    time::Duration,
-};
-use tokio::{signal, time};
-use tokio_util::sync::CancellationToken;
 
 const TIP_FUSE_SECS: u64 = 15;
 
@@ -28,7 +42,9 @@ impl ShutdownNotification {
     pub fn new() -> Self {
         Self {
             token: CancellationToken::new(),
-            outcome: Arc::new(RwLock::new(ShutdownOutcome::UserRequested)),
+            outcome: Arc::new(RwLock::new(
+                ShutdownOutcome::UserRequested,
+            )),
         }
     }
 }
@@ -77,7 +93,8 @@ pub async fn listener(
         }
     }
 
-    tip.await.expect("tip task shouldn't panic");
+    tip.await
+        .expect("tip task shouldn't panic");
 
     tracing::debug!("The shutdown signal listener is shut down.");
 
@@ -105,23 +122,32 @@ pub fn set_panic_hook(
     shutdown_notification: ShutdownNotification,
 ) {
     panic::set_hook(Box::new(move |panic_info| {
-        let outcome = shutdown_notification.outcome.upgradable_read_blocking();
+        let outcome = shutdown_notification
+            .outcome
+            .upgradable_read_blocking();
 
         let first = if matches!(
             *outcome,
-            ShutdownOutcome::UnrecoverableError { panic: true }
+            ShutdownOutcome::UnrecoverableError {
+                panic: true
+            }
         ) {
             false
         } else {
             *RwLockUpgradableReadGuard::upgrade_blocking(outcome) =
-                ShutdownOutcome::UnrecoverableError { panic: true };
+                ShutdownOutcome::UnrecoverableError {
+                    panic: true,
+                };
 
             shutdown_notification.token.cancel();
 
             true
         };
 
-        print(PrettyPanic { panic_info, first });
+        print(PrettyPanic {
+            panic_info,
+            first,
+        });
     }));
 }
 
@@ -130,11 +156,15 @@ pub struct PrettyPanic<'a> {
     first: bool,
 }
 
-// It looks like it's impossible to acquire `PanicInfo` outside of `panic::set_hook`, which
-// could alter execution of other unit tests, so, without mocking the `panic_info` field,
-// there's no way to test the `Display`ing.
+// It looks like it's impossible to acquire `PanicInfo` outside of
+// `panic::set_hook`, which could alter execution of other unit tests, so,
+// without mocking the `panic_info` field, there's no way to test the
+// `Display`ing.
 impl Display for PrettyPanic<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+    fn fmt(
+        &self,
+        f: &mut Formatter<'_>,
+    ) -> FmtResult {
         f.write_str("A panic detected")?;
 
         if let Some(location) = self.panic_info.location() {
@@ -145,7 +175,9 @@ impl Display for PrettyPanic<'_> {
         let payload = self.panic_info.payload();
         let message_option = match payload.downcast_ref() {
             Some(string) => Some(*string),
-            None => payload.downcast_ref::<String>().map(|string| &string[..]),
+            None => payload
+                .downcast_ref::<String>()
+                .map(|string| &string[..]),
         };
 
         if let Some(panic_message) = message_option {

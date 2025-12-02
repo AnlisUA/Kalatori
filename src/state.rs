@@ -1,26 +1,48 @@
-use crate::chain_client::KeyringClient;
-use crate::error::ForceWithdrawalError;
-use crate::{
-    chain::{ChainManager, utils::to_base58_string},
-    error::{DaoError, Error, OrderError},
-    legacy_types::{
-        Amount, ConfigWoChains, CurrencyProperties, FinalizedTx, Health, OrderInfo, OrderQuery,
-        OrderResponse, OrderStatus, RpcInfo, ServerHealth, ServerInfo, ServerStatus,
-        TransactionInfo, TxStatus,
-    },
-    types::{
-        Invoice, InvoiceCart, InvoiceStatus, Transaction, TransactionStatus, UpdateInvoiceData,
-    },
-    utils::task_tracker::TaskTracker,
-};
 use std::collections::HashMap;
+
 use subxt::utils::AccountId32;
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-/// Struct to store state of daemon. If something requires cooperation of more than one component,
-/// it should go through here.
+use crate::chain::ChainManager;
+use crate::chain::utils::to_base58_string;
+use crate::chain_client::KeyringClient;
+use crate::error::{
+    DaoError,
+    Error,
+    ForceWithdrawalError,
+    OrderError,
+};
+use crate::legacy_types::{
+    Amount,
+    ConfigWoChains,
+    CurrencyProperties,
+    FinalizedTx,
+    Health,
+    OrderInfo,
+    OrderQuery,
+    OrderResponse,
+    OrderStatus,
+    RpcInfo,
+    ServerHealth,
+    ServerInfo,
+    ServerStatus,
+    TransactionInfo,
+    TxStatus,
+};
+use crate::types::{
+    Invoice,
+    InvoiceCart,
+    InvoiceStatus,
+    Transaction,
+    TransactionStatus,
+    UpdateInvoiceData,
+};
+use crate::utils::task_tracker::TaskTracker;
+
+/// Struct to store state of daemon. If something requires cooperation of more
+/// than one component, it should go through here.
 #[derive(Clone, Debug)]
 pub struct State {
     tx: tokio::sync::mpsc::Sender<StateAccessRequest>,
@@ -284,34 +306,54 @@ impl State {
             Ok("State handler is shutting down")
         });
 
-        Self { tx }
+        Self {
+            tx,
+        }
     }
+
     fn overall_health(connected_rpcs: &[RpcInfo]) -> Health {
-        if connected_rpcs.iter().all(|rpc| rpc.status == Health::Ok) {
+        if connected_rpcs
+            .iter()
+            .all(|rpc| rpc.status == Health::Ok)
+        {
             Health::Ok
-        } else if connected_rpcs.iter().any(|rpc| rpc.status == Health::Ok) {
+        } else if connected_rpcs
+            .iter()
+            .any(|rpc| rpc.status == Health::Ok)
+        {
             Health::Degraded
         } else {
             Health::Critical
         }
     }
 
-    pub async fn connect_chain(&self, assets: HashMap<String, CurrencyProperties>) {
+    pub async fn connect_chain(
+        &self,
+        assets: HashMap<String, CurrencyProperties>,
+    ) {
         self.tx
             .send(StateAccessRequest::ConnectChain(assets))
             .await
             .unwrap_or_else(|e| {
-                tracing::error!("Failed to send ConnectChain request: {}", e);
+                tracing::error!(
+                    "Failed to send ConnectChain request: {}",
+                    e
+                );
             });
     }
 
-    pub async fn order_status(&self, order: &str) -> Result<OrderResponse, Error> {
+    pub async fn order_status(
+        &self,
+        order: &str,
+    ) -> Result<OrderResponse, Error> {
         let (res, rx) = oneshot::channel();
         self.tx
-            .send(StateAccessRequest::GetInvoiceStatus(GetInvoiceStatus {
-                order: order.to_string(),
-                res,
-            }))
+            .send(StateAccessRequest::GetInvoiceStatus(
+                GetInvoiceStatus {
+                    order: order.to_string(),
+                    res,
+                },
+            ))
             .await
             .map_err(|_| Error::Fatal)?;
         rx.await.map_err(|_| Error::Fatal)?
@@ -335,7 +377,10 @@ impl State {
         rx.await.map_err(|_| Error::Fatal)
     }
 
-    pub async fn create_order(&self, order_query: OrderQuery) -> Result<OrderResponse, Error> {
+    pub async fn create_order(
+        &self,
+        order_query: OrderQuery,
+    ) -> Result<OrderResponse, Error> {
         let (res, rx) = oneshot::channel();
         /*
                 Invoicee {
@@ -346,40 +391,57 @@ impl State {
                     },
         */
         self.tx
-            .send(StateAccessRequest::CreateInvoice(CreateInvoice {
-                order_query,
-                res,
-            }))
+            .send(StateAccessRequest::CreateInvoice(
+                CreateInvoice {
+                    order_query,
+                    res,
+                },
+            ))
             .await
             .map_err(|_| Error::Fatal)?;
         rx.await.map_err(|_| Error::Fatal)?
     }
 
-    pub async fn is_currency_supported(&self, currency: &str) -> Result<bool, Error> {
+    pub async fn is_currency_supported(
+        &self,
+        currency: &str,
+    ) -> Result<bool, Error> {
         let (res, rx) = oneshot::channel();
         self.tx
-            .send(StateAccessRequest::IsCurrencySupported {
-                currency: currency.to_string(),
-                res,
-            })
+            .send(
+                StateAccessRequest::IsCurrencySupported {
+                    currency: currency.to_string(),
+                    res,
+                },
+            )
             .await
             .map_err(|_| Error::Fatal)?;
         rx.await.map_err(|_| Error::Fatal)
     }
 
-    pub async fn is_order_paid(&self, invoice_id: Uuid) -> Result<bool, Error> {
+    pub async fn is_order_paid(
+        &self,
+        invoice_id: Uuid,
+    ) -> Result<bool, Error> {
         let (res, rx) = oneshot::channel();
         self.tx
-            .send(StateAccessRequest::IsOrderPaid(invoice_id, res))
+            .send(StateAccessRequest::IsOrderPaid(
+                invoice_id, res,
+            ))
             .await
             .map_err(|_| Error::Fatal)?;
         rx.await.map_err(|_| Error::Fatal)
     }
 
-    pub async fn order_paid(&self, invoice_id: Uuid) {
+    pub async fn order_paid(
+        &self,
+        invoice_id: Uuid,
+    ) {
         if self
             .tx
-            .send(StateAccessRequest::OrderPaid(invoice_id))
+            .send(StateAccessRequest::OrderPaid(
+                invoice_id,
+            ))
             .await
             .is_err()
         {
@@ -387,10 +449,15 @@ impl State {
         }
     }
 
-    pub async fn order_withdrawn(&self, order: Uuid) {
+    pub async fn order_withdrawn(
+        &self,
+        order: Uuid,
+    ) {
         if self
             .tx
-            .send(StateAccessRequest::OrderWithdrawn(order))
+            .send(StateAccessRequest::OrderWithdrawn(
+                order,
+            ))
             .await
             .is_err()
         {
@@ -403,7 +470,9 @@ impl State {
         order: String,
     ) -> Result<OrderResponse, ForceWithdrawalError> {
         self.tx
-            .send(StateAccessRequest::ForceWithdrawal(order.clone()))
+            .send(StateAccessRequest::ForceWithdrawal(
+                order.clone(),
+            ))
             .await
             .map_err(|_| ForceWithdrawalError::InvalidParameter(order.clone()))?;
 
@@ -412,6 +481,7 @@ impl State {
             Err(_) => Ok(OrderResponse::NotFound),
         }
     }
+
     pub fn interface(&self) -> Self {
         State {
             tx: self.tx.clone(),
@@ -424,17 +494,26 @@ impl State {
         transaction: Transaction,
     ) -> Result<(), Error> {
         self.tx
-            .send(StateAccessRequest::RecordTransactionV2 {
-                invoice_id,
-                transaction,
-            })
+            .send(
+                StateAccessRequest::RecordTransactionV2 {
+                    invoice_id,
+                    transaction,
+                },
+            )
             .await
             .map_err(|_| Error::Fatal)
     }
 
-    pub async fn update_transaction_v2(&self, transaction: Transaction) -> Result<(), Error> {
+    pub async fn update_transaction_v2(
+        &self,
+        transaction: Transaction,
+    ) -> Result<(), Error> {
         self.tx
-            .send(StateAccessRequest::UpdateTransactionV2 { transaction })
+            .send(
+                StateAccessRequest::UpdateTransactionV2 {
+                    transaction,
+                },
+            )
             .await
             .map_err(|_| Error::Fatal)
     }
@@ -485,7 +564,10 @@ struct StateData {
 }
 
 impl StateData {
-    fn update_currencies(&mut self, currencies: HashMap<String, CurrencyProperties>) {
+    fn update_currencies(
+        &mut self,
+        currencies: HashMap<String, CurrencyProperties>,
+    ) {
         self.currencies.extend(currencies);
     }
 
@@ -508,10 +590,13 @@ impl StateData {
             Err(e) => {
                 tracing::error!("Failed to fetch active invoices from database: {e:?}");
                 return;
-            }
+            },
         };
 
-        tracing::info!("Found {} active invoices to restore", active_invoices.len());
+        tracing::info!(
+            "Found {} active invoices to restore",
+            active_invoices.len()
+        );
 
         // Pre-process invoices: convert to OrderInfo using state methods
         let mut invoices_to_restore = Vec::new();
@@ -519,15 +604,19 @@ impl StateData {
             match self.get_currency_info(&invoice.chain, invoice.asset_id) {
                 Ok(currency) => {
                     let order_info = self.invoice_to_order_info(&invoice, &currency);
-                    invoices_to_restore.push((invoice.id, invoice.order_id.clone(), order_info));
-                }
+                    invoices_to_restore.push((
+                        invoice.id,
+                        invoice.order_id.clone(),
+                        order_info,
+                    ));
+                },
                 Err(e) => {
                     tracing::error!(
                         "Failed to get currency info for invoice {} (order: {}): {e:?}",
                         invoice.id,
                         invoice.order_id
                     );
-                }
+                },
             }
         }
 
@@ -538,13 +627,21 @@ impl StateData {
 
             for (invoice_id, order_id, order_info) in invoices_to_restore {
                 match chain_manager_wakeup
-                    .add_invoice(invoice_id, order_info, recipient_cloned.clone())
+                    .add_invoice(
+                        invoice_id,
+                        order_info,
+                        recipient_cloned.clone(),
+                    )
                     .await
                 {
                     Ok(()) => {
-                        tracing::info!("Restored invoice {} (order: {})", invoice_id, order_id);
+                        tracing::info!(
+                            "Restored invoice {} (order: {})",
+                            invoice_id,
+                            order_id
+                        );
                         restored_count = restored_count.saturating_add(1);
-                    }
+                    },
                     Err(e) => {
                         tracing::error!(
                             "Failed to restore invoice {} (order: {}): {e:?}",
@@ -552,7 +649,7 @@ impl StateData {
                             order_id
                         );
                         failed_count = failed_count.saturating_add(1);
-                    }
+                    },
                 }
             }
 
@@ -568,7 +665,10 @@ impl StateData {
         self.invoices_restored = true;
     }
 
-    async fn get_invoice_status(&self, order: String) -> Result<OrderResponse, Error> {
+    async fn get_invoice_status(
+        &self,
+        order: String,
+    ) -> Result<OrderResponse, Error> {
         // Fetch invoice from DAO
         let Some(invoice) = self
             .dao
@@ -612,7 +712,10 @@ impl StateData {
         }))
     }
 
-    async fn create_invoice(&self, order_query: OrderQuery) -> Result<OrderResponse, Error> {
+    async fn create_invoice(
+        &self,
+        order_query: OrderQuery,
+    ) -> Result<OrderResponse, Error> {
         const MAX_RETRIES: u8 = 3;
 
         let invoice_id = Uuid::new_v4();
@@ -623,9 +726,7 @@ impl StateData {
             .ok_or(OrderError::UnknownCurrency)?;
         let currency = currency_properties.info(order_query.currency.clone());
 
-        let derivation_params = vec![
-            order.clone(),
-        ];
+        let derivation_params = vec![order.clone()];
 
         let payment_account_id = self
             .signer
@@ -665,15 +766,17 @@ impl StateData {
 
                     // Register with chain manager
                     self.chain_manager
-                        .add_invoice(invoice.id, order_info.clone(), self.recipient.clone())
+                        .add_invoice(
+                            invoice.id,
+                            order_info.clone(),
+                            self.recipient.clone(),
+                        )
                         .await?;
 
-                    return Ok(OrderResponse::NewOrder(self.order_status(
-                        order,
-                        order_info,
-                        String::new(),
-                    )));
-                }
+                    return Ok(OrderResponse::NewOrder(
+                        self.order_status(order, order_info, String::new()),
+                    ));
+                },
                 Some(existing_invoice) => {
                     // PHASE 2b: Update or collision based on status
                     if existing_invoice.status == InvoiceStatus::Waiting {
@@ -705,26 +808,26 @@ impl StateData {
                                     continue;
                                 }
                                 return Err(DaoError::MaxRetriesReached.into());
-                            }
+                            },
                             Err(e) => return Err(DaoError::Sqlx(e).into()),
                         };
 
                         let order_info = self.invoice_to_order_info(&updated_invoice, &currency);
 
-                        return Ok(OrderResponse::ModifiedOrder(self.order_status(
-                            order,
-                            order_info,
-                            String::new(),
-                        )));
+                        return Ok(OrderResponse::ModifiedOrder(
+                            self.order_status(order, order_info, String::new()),
+                        ));
                     }
                     // Paid/Expired/Canceled - collision
                     let order_info = self.invoice_to_order_info(&existing_invoice, &currency);
-                    return Ok(OrderResponse::CollidedOrder(self.order_status(
-                        order,
-                        order_info,
-                        String::from("Order with this ID was already processed"),
-                    )));
-                }
+                    return Ok(OrderResponse::CollidedOrder(
+                        self.order_status(
+                            order,
+                            order_info,
+                            String::from("Order with this ID was already processed"),
+                        ),
+                    ));
+                },
             }
         }
 
@@ -732,7 +835,8 @@ impl StateData {
         Err(DaoError::MaxRetriesReached.into())
     }
 
-    /// Get `CurrencyInfo` from chain and `asset_id` by looking up in currencies `HashMap`
+    /// Get `CurrencyInfo` from chain and `asset_id` by looking up in currencies
+    /// `HashMap`
     ///
     /// # Errors
     /// Returns error if currency not found in current configuration
@@ -765,11 +869,15 @@ impl StateData {
     fn decimal_to_amount(amount: rust_decimal::Decimal) -> Amount {
         // Convert Decimal to f64 for legacy API
         // Note: This may lose precision for very large or very precise numbers
-        let amount_f64 = amount.to_string().parse::<f64>().unwrap_or(0.0);
+        let amount_f64 = amount
+            .to_string()
+            .parse::<f64>()
+            .unwrap_or(0.0);
         Amount::Exact(amount_f64)
     }
 
-    /// Convert `Transaction` (new) to `TransactionInfo` (legacy) for backward compatibility
+    /// Convert `Transaction` (new) to `TransactionInfo` (legacy) for backward
+    /// compatibility
     ///
     /// # Errors
     /// Returns error if currency lookup fails
@@ -778,12 +886,16 @@ impl StateData {
         transaction: &Transaction,
     ) -> Result<TransactionInfo, Error> {
         // Reconstruct CurrencyInfo from stored asset_id and chain
-        let currency = self.get_currency_info(&transaction.chain, Some(transaction.asset_id))?;
+        let currency = self.get_currency_info(
+            &transaction.chain,
+            Some(transaction.asset_id),
+        )?;
 
         // Convert finalization data
-        let finalized_tx = if let (Some(block_number), Some(position_in_block)) =
-            (transaction.block_number, transaction.position_in_block)
-        {
+        let finalized_tx = if let (Some(block_number), Some(position_in_block)) = (
+            transaction.block_number,
+            transaction.position_in_block,
+        ) {
             Some(FinalizedTx {
                 block_number,
                 position_in_block,
@@ -795,7 +907,10 @@ impl StateData {
 
         Ok(TransactionInfo {
             finalized_tx,
-            transaction_bytes: transaction.transaction_bytes.clone().unwrap_or_default(),
+            transaction_bytes: transaction
+                .transaction_bytes
+                .clone()
+                .unwrap_or_default(),
             sender: transaction.sender.clone(),
             recipient: transaction.recipient.clone(),
             amount: Self::decimal_to_amount(transaction.amount),
@@ -816,7 +931,11 @@ impl StateData {
         OrderInfo {
             order_id: invoice.order_id.clone(),
             currency: currency.clone(),
-            amount: invoice.amount.to_string().parse::<f64>().unwrap_or(0.0),
+            amount: invoice
+                .amount
+                .to_string()
+                .parse::<f64>()
+                .unwrap_or(0.0),
             payment_account: invoice.payment_address.clone(),
             payment_status: PaymentStatus::from(invoice.status),
             withdrawal_status: invoice.withdrawal_status,
@@ -831,7 +950,12 @@ impl StateData {
         }
     }
 
-    fn order_status(&self, order: String, order_info: OrderInfo, message: String) -> OrderStatus {
+    fn order_status(
+        &self,
+        order: String,
+        order_info: OrderInfo,
+        message: String,
+    ) -> OrderStatus {
         OrderStatus {
             order,
             message,

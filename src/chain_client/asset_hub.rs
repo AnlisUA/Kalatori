@@ -1,29 +1,49 @@
 use std::collections::HashMap;
 
-use rust_decimal::prelude::{Decimal, ToPrimitive};
-use futures::{stream, StreamExt};
-use subxt::{Config, SubstrateConfig};
-use subxt::blocks::Block;
-use subxt::blocks::{ExtrinsicDetails, FoundExtrinsic};
-use subxt::config::{DefaultExtrinsicParams, DefaultExtrinsicParamsBuilder, ExtrinsicParams};
+use futures::{
+    StreamExt,
+    stream,
+};
+use rust_decimal::prelude::{
+    Decimal,
+    ToPrimitive,
+};
+use subxt::blocks::{
+    Block,
+    ExtrinsicDetails,
+    FoundExtrinsic,
+};
+use subxt::config::{
+    DefaultExtrinsicParams,
+    DefaultExtrinsicParamsBuilder,
+    ExtrinsicParams,
+};
 use subxt::utils::H256;
-use tracing::{instrument, warn, debug};
+use subxt::{
+    Config,
+    SubstrateConfig,
+};
+use tracing::{
+    debug,
+    instrument,
+    warn,
+};
 
 use crate::chain_client::Encodeable;
 
 use super::{
-    AssetInfoStore,
-    ChainConfig,
-    BlockChainClient,
     AssetInfo,
+    AssetInfoStore,
+    BlockChainClient,
+    ChainConfig,
     ChainTransfer,
-    KeyringClient,
-    UnsignedTransaction,
-    SignedTransaction,
     ClientError,
+    KeyringClient,
     QueryError,
+    SignedTransaction,
     SubscriptionError,
     TransactionError,
+    UnsignedTransaction,
 };
 
 use super::errors::is_insufficient_balance_error;
@@ -42,7 +62,8 @@ use super::keyring::SignTransactionRequestData;
 pub mod runtime {}
 
 use runtime::runtime_types::staging_xcm::v3::multilocation::MultiLocation;
-use runtime::runtime_types::xcm::v3::{junction::Junction, junctions::Junctions};
+use runtime::runtime_types::xcm::v3::junction::Junction;
+use runtime::runtime_types::xcm::v3::junctions::Junctions;
 
 const DEFAULT_MORTALITY: u64 = 32;
 const DEFAULT_MULTILOCATION_PARENTS: u8 = 0;
@@ -55,13 +76,14 @@ pub enum SubxtAssetHubConfig {}
 impl Config for SubxtAssetHubConfig {
     type AccountId = <SubstrateConfig as Config>::AccountId;
     type Address = <SubstrateConfig as Config>::Address;
-    type Signature = <SubstrateConfig as Config>::Signature;
+    // Here we use the MultiLocation from the metadata as a part of the config:
+    // The `ChargeAssetTxPayment` signed extension that is part of the
+    // ExtrinsicParams above, now uses the type:
+    type AssetId = MultiLocation;
+    type ExtrinsicParams = DefaultExtrinsicParams<SubxtAssetHubConfig>;
     type Hasher = <SubstrateConfig as Config>::Hasher;
     type Header = <SubstrateConfig as Config>::Header;
-    type ExtrinsicParams = DefaultExtrinsicParams<SubxtAssetHubConfig>;
-    // Here we use the MultiLocation from the metadata as a part of the config:
-    // The `ChargeAssetTxPayment` signed extension that is part of the ExtrinsicParams above, now uses the type:
-    type AssetId = MultiLocation;
+    type Signature = <SubstrateConfig as Config>::Signature;
 }
 
 type SubxtAssetHubClient = subxt::OnlineClient<SubxtAssetHubConfig>;
@@ -71,8 +93,10 @@ type TransferExtrinsic = runtime::assets::calls::types::Transfer;
 type TransferAllExtrinsic = runtime::assets::calls::types::TransferAll;
 type TransferredEvent = runtime::assets::events::Transferred;
 
-pub type AssetHubUnsignedTransaction = subxt::tx::PartialTransaction<SubxtAssetHubConfig, SubxtAssetHubClient>;
-pub type AssetHubSignedTransaction = subxt::tx::SubmittableTransaction<SubxtAssetHubConfig, SubxtAssetHubClient>;
+pub type AssetHubUnsignedTransaction =
+    subxt::tx::PartialTransaction<SubxtAssetHubConfig, SubxtAssetHubClient>;
+pub type AssetHubSignedTransaction =
+    subxt::tx::SubmittableTransaction<SubxtAssetHubConfig, SubxtAssetHubClient>;
 pub type AssetHubAccountId = subxt::utils::AccountId32;
 
 impl Encodeable for AssetHubSignedTransaction {
@@ -85,13 +109,14 @@ impl Encodeable for AssetHubSignedTransaction {
 pub enum AssetHubChainConfig {}
 
 impl ChainConfig for AssetHubChainConfig {
-    type AssetId = u32;
-    type TransactionId = (u32, u32); // (block number, position in block)
-    type TransactionHash = H256;
-    type BlockHash = H256;
-    type UnsignedTransaction = AssetHubUnsignedTransaction;
-    type SignedTransaction = AssetHubSignedTransaction;
     type AccountId = AssetHubAccountId;
+    type AssetId = u32;
+    type BlockHash = H256;
+    type SignedTransaction = AssetHubSignedTransaction;
+    // (block number, position in block)
+    type TransactionHash = H256;
+    type TransactionId = (u32, u32);
+    type UnsignedTransaction = AssetHubUnsignedTransaction;
 }
 
 enum AnyTransferExtrinsic {
@@ -122,10 +147,13 @@ impl AssetHubClient {
     ) -> Result<Self, ClientError> {
         // TODO: get random endpoint
         // TODO: implement circuit breaker for endpoints
-        // (should be another wrapper structure with endpoints hidden behind sync primitives with error counters and usage timeouts)
-        let endpoint = config.endpoints.first()
+        // (should be another wrapper structure with endpoints hidden behind sync
+        // primitives with error counters and usage timeouts)
+        let endpoint = config
+            .endpoints
+            .first()
             .ok_or(ClientError::InvalidConfiguration {
-                field: "endpoints".to_string()
+                field: "endpoints".to_string(),
             })?;
 
         let client = if config.allow_insecure_endpoints {
@@ -160,18 +188,20 @@ impl AssetHubClient {
         let block_number = block.number();
 
         // Extract timestamp from storage
-        let timestamp = match block.storage().fetch(
-            &runtime::storage().timestamp().now()
-        ).await {
+        let timestamp = match block
+            .storage()
+            .fetch(&runtime::storage().timestamp().now())
+            .await
+        {
             Ok(Some(ts)) => ts,
             Ok(None) => {
                 tracing::warn!("Block {block_number} missing timestamp, using 0");
                 chrono::Utc::now().timestamp_millis() as u64
-            }
+            },
             Err(e) => {
                 tracing::warn!("Failed to fetch timestamp for block {block_number}: {e}");
                 chrono::Utc::now().timestamp_millis() as u64
-            }
+            },
         };
 
         // Get extrinsics
@@ -179,17 +209,23 @@ impl AssetHubClient {
             Ok(e) => e,
             Err(e) => {
                 tracing::error!("Failed to fetch extrinsics for block {block_number}: {e}");
-                return Err(SubscriptionError::BlockProcessingFailed { block_number });
-            }
+                return Err(
+                    SubscriptionError::BlockProcessingFailed {
+                        block_number,
+                    },
+                );
+            },
         };
 
         // Find transfer and transfer_all extrinsics
         // TODO: Handle errors in decoding extrinsics
-        let transfer_extrinsics = extrinsics.find::<TransferExtrinsic>()
+        let transfer_extrinsics = extrinsics
+            .find::<TransferExtrinsic>()
             .filter_map(Result::ok)
             .map(AnyTransferExtrinsic::Transfer);
 
-        let transfer_all_extrinsics = extrinsics.find::<TransferAllExtrinsic>()
+        let transfer_all_extrinsics = extrinsics
+            .find::<TransferAllExtrinsic>()
             .filter_map(Result::ok)
             .map(AnyTransferExtrinsic::TransferAll);
 
@@ -211,17 +247,19 @@ impl AssetHubClient {
         let transfers = events
             .into_iter()
             .flat_map(|(index, events)| {
-                events.find::<TransferredEvent>()
+                events
+                    .find::<TransferredEvent>()
                     .filter_map(Result::ok)
                     .filter_map(|event| {
-                        let Some(asset_info) = assets.get(&event.asset_id) else {
-                            return None
-                        };
+                        let asset_info = assets.get(&event.asset_id)?;
 
                         Some(ChainTransfer {
                             asset_id: event.asset_id,
                             // TODO: check event.amount? Cast is quite unsafe
-                            amount: Decimal::new(event.amount as i64, asset_info.decimals.into()),
+                            amount: Decimal::new(
+                                event.amount as i64,
+                                asset_info.decimals.into(),
+                            ),
                             sender: event.from,
                             recipient: event.to,
                             transaction_id: (block_number, index),
@@ -235,7 +273,11 @@ impl AssetHubClient {
         Ok(transfers)
     }
 
-    fn build_tx_config(&self, asset_id: &u32) -> <DefaultExtrinsicParams<SubxtAssetHubConfig> as ExtrinsicParams<SubxtAssetHubConfig>>::Params {
+    fn build_tx_config(
+        &self,
+        asset_id: &u32,
+    ) -> <DefaultExtrinsicParams<SubxtAssetHubConfig> as ExtrinsicParams<SubxtAssetHubConfig>>::Params
+    {
         let location = MultiLocation {
             parents: DEFAULT_MULTILOCATION_PARENTS,
             interior: Junctions::X2(
@@ -253,7 +295,8 @@ impl AssetHubClient {
 
 impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
     // TODO: need to add validation on startup.
-    // Iterate over all provided RPC URLs and ensure they all belongs to the configured chain
+    // Iterate over all provided RPC URLs and ensure they all belongs to the
+    // configured chain
     fn chain_name(&self) -> &'static str {
         "statemint"
     }
@@ -276,9 +319,14 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
     }
 
     #[instrument(skip(self))]
-    async fn fetch_asset_info(&self, asset_id: &u32) -> Result<AssetInfo<AssetHubChainConfig>, QueryError> {
+    async fn fetch_asset_info(
+        &self,
+        asset_id: &u32,
+    ) -> Result<AssetInfo<AssetHubChainConfig>, QueryError> {
         debug!(message = "Trying to fetch asset info...");
-        let request_data = runtime::storage().assets().metadata(*asset_id);
+        let request_data = runtime::storage()
+            .assets()
+            .metadata(*asset_id);
 
         self.client
             .storage()
@@ -307,30 +355,27 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
             })
             .map_err(|_e| QueryError::RpcRequestFailed)?
             .ok_or_else(|| QueryError::NotFound {
-                query_type: format!("asset metadata for asset {}", asset_id)
+                query_type: format!("asset metadata for asset {}", asset_id),
             })
-            .inspect_err(|_| warn!(
-                message = "Asset metadata wasn't found (None returned)"
-            ))
-            .map(|resp| {
-                AssetInfo {
-                    id: *asset_id,
-                    name: String::from_utf8(resp.symbol.0)
-                        .inspect_err(|e| {
-                            tracing::warn!(
-                                asset_id = %asset_id,
-                                error = ?e,
-                                "Asset symbol contains invalid UTF-8, using fallback"
-                            );
-                        })
-                        .unwrap_or_else(|_| format!("Asset_{}", asset_id)),
-                    decimals: resp.decimals,
-                }
+            .inspect_err(|_| warn!(message = "Asset metadata wasn't found (None returned)"))
+            .map(|resp| AssetInfo {
+                id: *asset_id,
+                name: String::from_utf8(resp.symbol.0)
+                    .inspect_err(|e| {
+                        tracing::warn!(
+                            asset_id = %asset_id,
+                            error = ?e,
+                            "Asset symbol contains invalid UTF-8, using fallback"
+                        );
+                    })
+                    .unwrap_or_else(|_| format!("Asset_{}", asset_id)),
+                decimals: resp.decimals,
             })
             .inspect(|val| debug!(message = "Asset info fetched successfully", asset_info = ?val))
     }
 
-    // TODO: probably will be better to return some `Balance` structure with asset id and account id
+    // TODO: probably will be better to return some `Balance` structure with asset
+    // id and account id
     #[instrument(skip(self))]
     async fn fetch_asset_balance(
         &self,
@@ -339,7 +384,8 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
     ) -> Result<Decimal, QueryError> {
         debug!("Trying to fetch asset balance...");
 
-        let decimals = self.asset_info_store
+        let decimals = self
+            .asset_info_store
             .get_asset_info(asset_id)
             .await
             .or_else(|| {
@@ -347,7 +393,7 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
                 None
             })
             .ok_or_else(|| QueryError::NotFound {
-                query_type: format!("asset info for asset {}", asset_id)
+                query_type: format!("asset info for asset {}", asset_id),
             })?
             .decimals;
 
@@ -355,7 +401,8 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
             .assets()
             .account(*asset_id, account_id.clone());
 
-        let amount = self.client
+        let amount = self
+            .client
             .storage()
             .at_latest()
             .await
@@ -384,7 +431,9 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
             })
             .map_err(|_e| QueryError::RpcRequestFailed)?
             // TODO: check acc.balance? Cast is quite unsafe
-            .map_or(Decimal::ZERO, |acc| Decimal::new(acc.balance as i64, decimals.into()));
+            .map_or(Decimal::ZERO, |acc| {
+                Decimal::new(acc.balance as i64, decimals.into())
+            });
 
         Ok(amount)
     }
@@ -393,21 +442,28 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
     async fn subscribe_transfers(
         &self,
         asset_ids: &[u32],
-    ) -> Result<impl stream::Stream<Item = Result<Vec<ChainTransfer<AssetHubChainConfig>>, SubscriptionError>>, SubscriptionError> {
+    ) -> Result<
+        impl stream::Stream<Item = Result<Vec<ChainTransfer<AssetHubChainConfig>>, SubscriptionError>>,
+        SubscriptionError,
+    > {
         let client = self.clone();
 
-        let assets = self.asset_info_store
+        let assets = self
+            .asset_info_store
             .get_assets_info(asset_ids)
             .await;
 
         for asset_id in asset_ids {
             if !assets.contains_key(asset_id) {
-                return Err(SubscriptionError::AssetNotFound { asset_id: *asset_id })
+                return Err(SubscriptionError::AssetNotFound {
+                    asset_id: *asset_id,
+                });
             }
         }
 
         // Subscribe to finalized blocks
-        let mut blocks = client.client
+        let mut blocks = client
+            .client
             .blocks()
             .subscribe_finalized()
             .await
@@ -456,17 +512,21 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
         recipient: &AssetHubAccountId,
         asset_id: &u32,
         amount: Decimal,
-    ) -> Result<UnsignedTransaction<AssetHubChainConfig>, TransactionError<AssetHubChainConfig>> {
-        let decimals = self.asset_info_store()
+    ) -> Result<UnsignedTransaction<AssetHubChainConfig>, TransactionError<AssetHubChainConfig>>
+    {
+        let decimals = self
+            .asset_info_store()
             .get_asset_info(asset_id)
             .await
-            .ok_or_else(|| {
-                TransactionError::BuildFailed {
-                    reason: format!("Asset ID {} not found in asset info store", asset_id)
-                }
+            .ok_or_else(|| TransactionError::BuildFailed {
+                reason: format!(
+                    "Asset ID {} not found in asset info store",
+                    asset_id
+                ),
             })?
             .decimals;
 
+        #[expect(clippy::arithmetic_side_effects)]
         let normalized_amount = amount / Decimal::new(1, decimals.into());
 
         let transaction_amount = normalized_amount
@@ -478,17 +538,23 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
                     "Amount exceeds u128::MAX after normalization"
                 );
                 TransactionError::BuildFailed {
-                    reason: format!("Amount {} exceeds u128::MAX after normalization", amount)
+                    reason: format!(
+                        "Amount {} exceeds u128::MAX after normalization",
+                        amount
+                    ),
                 }
             })?;
 
         let tx_config = self.build_tx_config(asset_id);
 
-        let call = runtime::tx()
-            .assets()
-            .transfer(*asset_id, recipient.clone().into(), transaction_amount);
+        let call = runtime::tx().assets().transfer(
+            *asset_id,
+            recipient.clone().into(),
+            transaction_amount,
+        );
 
-        let transaction = self.client
+        let transaction = self
+            .client
             .tx()
             .create_partial(&call, sender, tx_config)
             .await
@@ -503,10 +569,12 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
                 );
             })
             .map_err(|_e| TransactionError::BuildFailed {
-                reason: "Failed to create partial transaction".to_string()
+                reason: "Failed to create partial transaction".to_string(),
             })?;
 
-        Ok(UnsignedTransaction { transaction })
+        Ok(UnsignedTransaction {
+            transaction,
+        })
     }
 
     #[instrument(skip(self), fields(asset_id = %asset_id))]
@@ -515,14 +583,18 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
         sender: &AssetHubAccountId,
         recipient: &AssetHubAccountId,
         asset_id: &u32,
-    ) -> Result<UnsignedTransaction<AssetHubChainConfig>, TransactionError<AssetHubChainConfig>> {
+    ) -> Result<UnsignedTransaction<AssetHubChainConfig>, TransactionError<AssetHubChainConfig>>
+    {
         let tx_config = self.build_tx_config(asset_id);
 
-        let call = runtime::tx()
-            .assets()
-            .transfer_all(*asset_id, recipient.clone().into(), false);
+        let call = runtime::tx().assets().transfer_all(
+            *asset_id,
+            recipient.clone().into(),
+            false,
+        );
 
-        let transaction = self.client
+        let transaction = self
+            .client
             .tx()
             .create_partial(&call, sender, tx_config)
             .await
@@ -536,10 +608,12 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
                 );
             })
             .map_err(|_e| TransactionError::BuildFailed {
-                reason: "Failed to create partial transaction for transfer_all".to_string()
+                reason: "Failed to create partial transaction for transfer_all".to_string(),
             })?;
 
-        Ok(UnsignedTransaction { transaction })
+        Ok(UnsignedTransaction {
+            transaction,
+        })
     }
 
     #[instrument(skip(self, transaction, keyring_client))]
@@ -554,8 +628,12 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
             derivation_params,
         };
 
-        let transaction = keyring_client.sign_asset_hub_transaction(data).await?;
-        Ok(SignedTransaction { transaction })
+        let transaction = keyring_client
+            .sign_asset_hub_transaction(data)
+            .await?;
+        Ok(SignedTransaction {
+            transaction,
+        })
     }
 
     #[instrument(skip(self, transaction), fields(transaction_hash = %transaction.transaction.hash()))]
@@ -563,7 +641,9 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
         &self,
         transaction: SignedTransaction<AssetHubChainConfig>,
     ) -> Result<ChainTransfer<AssetHubChainConfig>, TransactionError<AssetHubChainConfig>> {
-        let SignedTransaction { transaction } = transaction;
+        let SignedTransaction {
+            transaction,
+        } = transaction;
 
         let tx_hash = transaction.hash();
 
@@ -582,7 +662,8 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
             })
             .map_err(|_| TransactionError::SubmissionStatusUnknown)?;
 
-        // Wait for tx finalization. We don't really know neither it's status or block info at this point
+        // Wait for tx finalization. We don't really know neither it's status or block
+        // info at this point
         let finalized_tx = tx_progress
             .wait_for_finalized()
             .await
@@ -600,8 +681,10 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
         // At this point we know that transaction was finalized and included in block
         let block_hash = finalized_tx.block_hash();
 
-        // We still need to fetch some additional block info like it's number and timestamp
-        let block = self.client
+        // We still need to fetch some additional block info like it's number and
+        // timestamp
+        let block = self
+            .client
             .blocks()
             .at(block_hash)
             .await
@@ -635,7 +718,8 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
             })
             .map_err(|_| TransactionError::SubmissionStatusUnknown)?;
 
-        // We finally have extrinsic index and it's events so we can find extrinsic status
+        // We finally have extrinsic index and it's events so we can find extrinsic
+        // status
         let extrinsic_index = events.extrinsic_index();
         let transaction_id = (block_number, extrinsic_index);
 
@@ -651,7 +735,9 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
                     extrinsic_index = %extrinsic_index,
                     "Failed to decode ExtrinsicFailed event"
                 );
-                TransactionError::TransactionInfoFetchFailed { transaction_id }
+                TransactionError::TransactionInfoFetchFailed {
+                    transaction_id,
+                }
             })?;
 
         // Check if transaction failed on-chain
@@ -686,7 +772,11 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
                     "Failed to decode Transferred event"
                 );
             })
-            .map_err(|_| TransactionError::TransactionInfoFetchFailed { transaction_id })?
+            .map_err(
+                |_| TransactionError::TransactionInfoFetchFailed {
+                    transaction_id,
+                },
+            )?
             .ok_or_else(|| {
                 tracing::debug!(
                     error.category = crate::utils::logging::category::CHAIN_CLIENT,
@@ -696,10 +786,13 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
                     extrinsic_index = %extrinsic_index,
                     "No Transferred event found for successful transaction"
                 );
-                TransactionError::TransactionInfoFetchFailed { transaction_id }
+                TransactionError::TransactionInfoFetchFailed {
+                    transaction_id,
+                }
             })?;
 
-        let asset_info = self.asset_info_store()
+        let asset_info = self
+            .asset_info_store()
             .get_asset_info(&event.asset_id)
             .await
             .ok_or_else(|| TransactionError::UnknownAsset {
@@ -708,7 +801,10 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
             })?;
 
         // TODO: check event.amount, cast is unsafe
-        let amount = Decimal::new(event.amount as i64, asset_info.decimals.into());
+        let amount = Decimal::new(
+            event.amount as i64,
+            asset_info.decimals.into(),
+        );
 
         Ok(ChainTransfer {
             amount,
@@ -716,7 +812,7 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
             sender: event.from,
             recipient: event.to,
             transaction_id: (block_number, extrinsic_index),
-            timestamp: chrono::Utc::now().timestamp_millis() as u64
+            timestamp: chrono::Utc::now().timestamp_millis() as u64,
         })
     }
 }
@@ -730,15 +826,26 @@ mod tests {
     #[tokio::test]
     async fn test_polkadot_client() {
         let client = AssetHubClient {
-            client: SubxtAssetHubClient::from_url("wss://asset-hub-polkadot-rpc.n.dwellir.com").await.unwrap(),
+            client: SubxtAssetHubClient::from_url("wss://asset-hub-polkadot-rpc.n.dwellir.com")
+                .await
+                .unwrap(),
             asset_info_store: AssetInfoStore::new(),
         };
 
         let assets = vec![1337, 1984];
 
-        let _ = client.init_asset_info(&assets).await.unwrap();
+        let _ = client
+            .init_asset_info(&assets)
+            .await
+            .unwrap();
 
-        let amount = client.fetch_asset_balance(&1337, &AssetHubAccountId::from_str("15dikXxF1QwijxxU7wZBFmHy7HeCotHXa1LxzVu44KVKXCRC").unwrap()).await;
+        let amount = client
+            .fetch_asset_balance(
+                &1337,
+                &AssetHubAccountId::from_str("15dikXxF1QwijxxU7wZBFmHy7HeCotHXa1LxzVu44KVKXCRC")
+                    .unwrap(),
+            )
+            .await;
 
         println!("Result: {:?}", amount);
 

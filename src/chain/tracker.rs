@@ -1,25 +1,54 @@
 //! A tracker that follows individual chain
 
-use crate::{
-    chain::{
-        definitions::{ChainTrackerRequest, Invoice},
-        payout::payout, utils::to_base58_string,
-    },
-    chain_client::ClientError,
-    configs::ChainConfig, error::ChainError, legacy_types::{CurrencyProperties, Health, RpcInfo, TokenKind, TxKind, TxStatus}, state::State, types::{OutgoingTransactionMeta, Transaction, TransactionOrigin}, utils::task_tracker::TaskTracker
-};
-use crate::chain_client::{AssetHubClient, BlockChainClient, KeyringClient};
 use std::collections::HashMap;
+
+use chrono::{
+    DateTime,
+    Utc,
+};
+use futures::{
+    StreamExt,
+    pin_mut,
+};
 use rust_decimal::Decimal;
-use chrono::{DateTime, Utc};
-use futures::{StreamExt, pin_mut};
 use subxt::utils::AccountId32;
-use tokio::{
-    sync::mpsc,
-    time::{Duration, timeout},
+use tokio::sync::mpsc;
+use tokio::time::{
+    Duration,
+    timeout,
 };
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
+
+use crate::chain::definitions::{
+    ChainTrackerRequest,
+    Invoice,
+};
+use crate::chain::payout::payout;
+use crate::chain::utils::to_base58_string;
+use crate::chain_client::{
+    AssetHubClient,
+    BlockChainClient,
+    ClientError,
+    KeyringClient,
+};
+use crate::configs::ChainConfig;
+use crate::error::ChainError;
+use crate::legacy_types::{
+    CurrencyProperties,
+    Health,
+    RpcInfo,
+    TokenKind,
+    TxKind,
+    TxStatus,
+};
+use crate::state::State;
+use crate::types::{
+    OutgoingTransactionMeta,
+    Transaction,
+    TransactionOrigin,
+};
+use crate::utils::task_tracker::TaskTracker;
 
 /// Convert `TxKind` to `TransactionType`
 fn tx_kind_to_transaction_type(kind: TxKind) -> crate::types::TransactionType {
@@ -54,7 +83,8 @@ fn build_transaction(
     tx_status: TxStatus,
 ) -> Transaction {
     let transaction_type = tx_kind_to_transaction_type(tx_kind);
-    let created_at = DateTime::from_timestamp_millis(timestamp as i64).unwrap_or_else(|| Utc::now());
+    let created_at =
+        DateTime::from_timestamp_millis(timestamp as i64).unwrap_or_else(|| Utc::now());
     let status = tx_status_to_transaction_status(tx_status);
     let sender = to_base58_string(sender.0, 42);
     let recipient = to_base58_string(recipient.0, 42);
@@ -362,24 +392,28 @@ impl ChainWatcher {
             });
         }
 
-        // TODO: in future we plan to use single asset, won't need to iterate over all of them.
-        // It can be optimized using futures::iter and request values concurrently.
-        // Also if we'll need to fetch many assets (or even all available on chain)
-        // it's gonna be easier to use `metadata_iter` storage method
+        // TODO: in future we plan to use single asset, won't need to iterate over all
+        // of them. It can be optimized using futures::iter and request values
+        // concurrently. Also if we'll need to fetch many assets (or even all
+        // available on chain) it's gonna be easier to use `metadata_iter`
+        // storage method
         let mut assets = HashMap::new();
 
-        // TODO: add check that there is at least one asset? Seems to be better have that check on config validation
+        // TODO: add check that there is at least one asset? Seems to be better have
+        // that check on config validation
         for asset in chain.assets {
             let response = client
                 .asset_info_store()
                 .get_asset_info(&asset.id)
                 .await
-                // unwrap is safe here cause we already initialized those assets right before this function call
+                // unwrap is safe here cause we already initialized those assets right before this
+                // function call
                 .unwrap();
 
             let properties = CurrencyProperties {
                 chain_name: chain.name.clone(),
-                kind: TokenKind::Asset, // TODO: this field can be removed in future as long as we work only with assets on Asset Hub
+                kind: TokenKind::Asset, /* TODO: this field can be removed in future as long as
+                                         * we work only with assets on Asset Hub */
                 decimals: response.decimals,
                 rpc_url: rpc_url.to_string(), // TODO: this property seems to be unused
                 asset_id: Some(asset.id),
@@ -390,24 +424,30 @@ impl ChainWatcher {
         }
         // this MUST assert that assets match exactly before reporting it
 
-        state.connect_chain(assets.clone()).await;
+        state
+            .connect_chain(assets.clone())
+            .await;
 
-        let chain_watcher = ChainWatcher { assets };
+        let chain_watcher = ChainWatcher {
+            assets,
+        };
 
         // check monitored accounts
         let mut id_remove_list = Vec::new();
         for (id, account) in watched_accounts.iter() {
-            let result = account.check(client, &chain_watcher).await;
+            let result = account
+                .check(client, &chain_watcher)
+                .await;
 
             match result {
                 Ok(true) => {
                     state.order_paid(id.clone()).await;
                     id_remove_list.push(id.to_owned());
-                }
+                },
                 Ok(false) => (),
                 Err(e) => {
                     tracing::warn!("account fetch error: {0}", e);
-                }
+                },
             }
         }
 

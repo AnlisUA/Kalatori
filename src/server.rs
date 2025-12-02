@@ -1,23 +1,39 @@
-use crate::{
-    configs::WebServerConfig,
-    error::{Error, ServerError},
-    handlers::{
-        health::{audit, health, status},
-        order::{force_withdrawal, investigate, order},
-    },
-    state::State,
+use std::borrow::Cow;
+use std::collections::HashMap;
+use std::future::Future;
+use std::net::SocketAddr;
+
+use axum::extract::rejection::RawPathParamsRejection;
+use axum::extract::{
+    self,
+    MatchedPath,
+    Query,
+    RawPathParams,
 };
+use axum::response::Response;
 use axum::{
     Router,
-    extract::{self, MatchedPath, Query, RawPathParams, rejection::RawPathParamsRejection},
-    response::Response,
     routing,
 };
-// use axum_macros::debug_handler;
-use std::{borrow::Cow, collections::HashMap, future::Future, net::SocketAddr};
-
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
+
+use crate::configs::WebServerConfig;
+use crate::error::{
+    Error,
+    ServerError,
+};
+use crate::handlers::health::{
+    audit,
+    health,
+    status,
+};
+use crate::handlers::order::{
+    force_withdrawal,
+    investigate,
+    order,
+};
+use crate::state::State;
 
 pub async fn new(
     shutdown_notification: CancellationToken,
@@ -35,7 +51,10 @@ pub async fn new(
         .route("/status", routing::get(status))
         .route("/health", routing::get(health))
         .route("/audit", routing::get(audit))
-        .route("/order/:order_id/investigate", routing::post(investigate));
+        .route(
+            "/order/:order_id/investigate",
+            routing::post(investigate),
+        );
     let app = Router::new()
         .route(
             "/public/v2/payment/:paymentAccount",

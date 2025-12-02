@@ -2,9 +2,18 @@
 
 use std::fmt;
 
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, Type};
+use chrono::{
+    DateTime,
+    Utc,
+};
+use serde::{
+    Deserialize,
+    Serialize,
+};
+use sqlx::{
+    FromRow,
+    Type,
+};
 use uuid::Uuid;
 
 use super::common::InitiatorType;
@@ -20,7 +29,10 @@ pub enum PayoutStatus {
 }
 
 impl fmt::Display for PayoutStatus {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
         match self {
             Self::Waiting => write!(f, "Waiting"),
             Self::InProgress => write!(f, "InProgress"),

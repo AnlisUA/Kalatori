@@ -1,10 +1,20 @@
 use bip39::Mnemonic;
 use subxt_signer::sr25519::Keypair;
-use subxt_signer::{DeriveJunction, ExposeSecret, SecretString};
-use tokio::sync::{mpsc, oneshot};
+use subxt_signer::{
+    DeriveJunction,
+    ExposeSecret,
+    SecretString,
+};
 use thiserror::Error;
+use tokio::sync::{
+    mpsc,
+    oneshot,
+};
 use tracing::instrument;
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use zeroize::{
+    Zeroize,
+    ZeroizeOnDrop,
+};
 
 use super::asset_hub::{
     AssetHubAccountId,
@@ -27,7 +37,9 @@ pub struct GenerateAddressData {
 
 impl From<DerivationParams> for GenerateAddressData {
     fn from(derivation_params: DerivationParams) -> Self {
-        Self { derivation_params }
+        Self {
+            derivation_params,
+        }
     }
 }
 
@@ -52,10 +64,17 @@ pub struct Keyring {
 impl Keyring {
     // TODO: receive secrets config
     pub fn new(seed: SecretString) -> Self {
-        Self { asset_hub_seed: seed }
+        Self {
+            asset_hub_seed: seed,
+        }
     }
 
-    pub async fn ignite(self) -> (tokio::task::JoinHandle<()>, KeyringClient) {
+    pub async fn ignite(
+        self
+    ) -> (
+        tokio::task::JoinHandle<()>,
+        KeyringClient,
+    ) {
         let (tx, mut rx) = mpsc::channel(KEYRING_CHANNEL_CAPACITY);
 
         let handle = tokio::spawn(async move {
@@ -66,41 +85,60 @@ impl Keyring {
             // TODO: add logs
         });
 
-        let client = KeyringClient { tx };
+        let client = KeyringClient {
+            tx,
+        };
 
         (handle, client)
     }
 
-    fn generate_asset_hub_derived_keypair(&self, params: DerivationParams) -> KeyringResult<Keypair> {
+    fn generate_asset_hub_derived_keypair(
+        &self,
+        params: DerivationParams,
+    ) -> KeyringResult<Keypair> {
         let mut mnemonic = Mnemonic::parse(self.asset_hub_seed.expose_secret())
             .map_err(|_| KeyringError::InvalidSeed)?;
 
-        let keypair = Keypair::from_phrase(&mnemonic, None)
-            .map_err(|_| KeyringError::InvalidSeed)?;
+        let keypair =
+            Keypair::from_phrase(&mnemonic, None).map_err(|_| KeyringError::InvalidSeed)?;
 
         mnemonic.zeroize();
 
         let derived_keypair = keypair.derive(
             params
                 .into_iter()
-                .map(|param| DeriveJunction::hard(param))
+                .map(|param| DeriveJunction::hard(param)),
         );
 
         Ok(derived_keypair)
     }
 
-    fn process_sign_asset_hub_transaction(&self, data: SignTransactionRequestData<AssetHubUnsignedTransaction>) -> KeyringResult<AssetHubSignedTransaction> {
-        let SignTransactionRequestData { mut transaction, derivation_params } = data;
+    fn process_sign_asset_hub_transaction(
+        &self,
+        data: SignTransactionRequestData<AssetHubUnsignedTransaction>,
+    ) -> KeyringResult<AssetHubSignedTransaction> {
+        let SignTransactionRequestData {
+            mut transaction,
+            derivation_params,
+        } = data;
         let derived_keypair = self.generate_asset_hub_derived_keypair(derivation_params)?;
         Ok(transaction.sign(&derived_keypair))
     }
 
-    fn process_generate_asset_hub_address(&self, data: GenerateAddressData) -> KeyringResult<AssetHubAccountId> {
+    fn process_generate_asset_hub_address(
+        &self,
+        data: GenerateAddressData,
+    ) -> KeyringResult<AssetHubAccountId> {
         let derived_keypair = self.generate_asset_hub_derived_keypair(data.derivation_params)?;
-        Ok(derived_keypair.public_key().to_account_id())
+        Ok(derived_keypair
+            .public_key()
+            .to_account_id())
     }
 
-    async fn process_message(&self, msg: KeyringMessage) {
+    async fn process_message(
+        &self,
+        msg: KeyringMessage,
+    ) {
         match msg {
             KeyringMessage::SignAssetHubTransaction(envelope) => {
                 let (req, resp) = envelope.unpack();
@@ -140,7 +178,10 @@ impl<T, R> Envelope<T, R> {
     }
 
     pub fn unpack(self) -> (T, oneshot::Sender<KeyringResult<R>>) {
-        let Envelope { request, responder } = self;
+        let Envelope {
+            request,
+            responder,
+        } = self;
         (request, responder)
     }
 }
@@ -168,29 +209,40 @@ impl<R> ResponseReceiver<R> {
 
 // adding new operations can be simplified using macros
 enum KeyringMessage {
-    SignAssetHubTransaction(Envelope<
-        SignTransactionRequestData<AssetHubUnsignedTransaction>,
-        AssetHubSignedTransaction
-    >),
-    GenerateAssetHubAddress(Envelope<
-        GenerateAddressData,
-        AssetHubAccountId,
-    >),
+    SignAssetHubTransaction(
+        Envelope<
+            SignTransactionRequestData<AssetHubUnsignedTransaction>,
+            AssetHubSignedTransaction,
+        >,
+    ),
+    GenerateAssetHubAddress(Envelope<GenerateAddressData, AssetHubAccountId>),
 }
 
 impl KeyringMessage {
     fn new_sign_asset_hub_transaction(
-        data: SignTransactionRequestData<AssetHubUnsignedTransaction>,
-    ) -> (Self, ResponseReceiver<AssetHubSignedTransaction>) {
+        data: SignTransactionRequestData<AssetHubUnsignedTransaction>
+    ) -> (
+        Self,
+        ResponseReceiver<AssetHubSignedTransaction>,
+    ) {
         let (envelope, response_receiver) = Envelope::new(data);
-        (Self::SignAssetHubTransaction(envelope), response_receiver)
+        (
+            Self::SignAssetHubTransaction(envelope),
+            response_receiver,
+        )
     }
 
     fn new_generate_asset_hub_address(
-        data: GenerateAddressData,
-    ) -> (Self, ResponseReceiver<AssetHubAccountId>) {
+        data: GenerateAddressData
+    ) -> (
+        Self,
+        ResponseReceiver<AssetHubAccountId>,
+    ) {
         let (envelope, response_receiver) = Envelope::new(data);
-        (Self::GenerateAssetHubAddress(envelope), response_receiver)
+        (
+            Self::GenerateAssetHubAddress(envelope),
+            response_receiver,
+        )
     }
 }
 
@@ -203,9 +255,10 @@ impl KeyringClient {
     async fn send_message_with_response<R>(
         &self,
         message: KeyringMessage,
-        response_receiver: ResponseReceiver<R>
+        response_receiver: ResponseReceiver<R>,
     ) -> KeyringResult<R> {
-        let _ = self.tx
+        let _ = self
+            .tx
             .send(message)
             .await
             .inspect_err(|e| {
@@ -227,7 +280,8 @@ impl KeyringClient {
         data: SignTransactionRequestData<AssetHubUnsignedTransaction>,
     ) -> KeyringResult<AssetHubSignedTransaction> {
         let params = KeyringMessage::new_sign_asset_hub_transaction(data);
-        self.send_message_with_response(params.0, params.1).await
+        self.send_message_with_response(params.0, params.1)
+            .await
     }
 
     #[instrument(skip(self, data))]
@@ -236,6 +290,7 @@ impl KeyringClient {
         data: GenerateAddressData,
     ) -> KeyringResult<AssetHubAccountId> {
         let params = KeyringMessage::new_generate_asset_hub_address(data);
-        self.send_message_with_response(params.0, params.1).await
+        self.send_message_with_response(params.0, params.1)
+            .await
     }
 }

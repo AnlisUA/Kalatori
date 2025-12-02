@@ -2,12 +2,22 @@
 
 use std::fmt;
 
-use chrono::{DateTime, Utc};
+use chrono::{
+    DateTime,
+    Utc,
+};
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
+use sqlx::types::{
+    Json,
+    Text,
+};
 use sqlx::{
-    FromRow, Type,
-    types::{Json, Text},
+    FromRow,
+    Type,
 };
 use uuid::Uuid;
 
@@ -19,7 +29,10 @@ pub enum TransactionType {
 }
 
 impl fmt::Display for TransactionType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
         match self {
             Self::Incoming => write!(f, "Incoming"),
             Self::Outgoing => write!(f, "Outgoing"),
@@ -49,7 +62,10 @@ pub enum TransactionStatus {
 }
 
 impl fmt::Display for TransactionStatus {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
         match self {
             Self::Waiting => write!(f, "Waiting"),
             Self::InProgress => write!(f, "InProgress"),
@@ -68,7 +84,9 @@ impl std::str::FromStr for TransactionStatus {
             "InProgress" => Ok(Self::InProgress),
             "Completed" => Ok(Self::Completed),
             "Failed" => Ok(Self::Failed),
-            _ => Err(format!("Unknown transaction status: {s}")),
+            _ => Err(format!(
+                "Unknown transaction status: {s}"
+            )),
         }
     }
 }
