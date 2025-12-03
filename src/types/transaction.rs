@@ -92,6 +92,7 @@ impl std::str::FromStr for TransactionStatus {
 }
 
 /// Origin field for transactions (what triggered this transaction)
+#[expect(clippy::struct_field_names)]
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TransactionOrigin {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -134,9 +135,11 @@ pub struct Transaction {
     pub tx_hash: Option<String>,
     pub origin: TransactionOrigin,
     pub status: TransactionStatus,
+    #[expect(clippy::struct_field_names)]
     pub transaction_type: TransactionType,
     pub outgoing_meta: OutgoingTransactionMeta,
     pub created_at: DateTime<Utc>,
+    #[expect(clippy::struct_field_names)]
     pub transaction_bytes: Option<String>, // Backward compat (hex-encoded extrinsic)
 }
 

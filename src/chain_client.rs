@@ -89,7 +89,7 @@ impl<T: ChainConfig> AssetInfoStore<T> {
         let assets = self.assets.read().await;
 
         assets_ids
-            .into_iter()
+            .iter()
             .filter_map(|id| {
                 assets
                     .get(id)

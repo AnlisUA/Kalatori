@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+use crate::utils::logging::category::CHAIN_CLIENT;
+
 use super::{
     ChainConfig,
     KeyringError,
@@ -94,16 +96,16 @@ pub enum TransactionError<T: ChainConfig> {
     /// Transaction was finalized but it's status unknown
     #[error("Transaction finalized but it's status unknown")]
     TransactionInfoFetchFailed {
-        /// Blockchain coordinates: (block_number, extrinsic_index)
+        /// Blockchain coordinates: (`block_number`, `extrinsic_index`)
         transaction_id: T::TransactionId,
     },
 
     /// Transaction finalized but execution failed on-chain
     #[error("Transaction execution failed on-chain: {error_code}")]
     ExecutionFailed {
-        /// Blockchain coordinates: (block_number, extrinsic_index)
+        /// Blockchain coordinates: (`block_number`, `extrinsic_index`)
         transaction_id: T::TransactionId,
-        /// Runtime error code (e.g., "Assets::BalanceLow")
+        /// Runtime error code (e.g., "`Assets::BalanceLow`")
         error_code: String,
     },
 
@@ -127,53 +129,20 @@ pub enum TransactionError<T: ChainConfig> {
 // Cross-Domain Conversions
 // ============================================================================
 
-/// Convert KeyringError to TransactionError
+/// Convert `KeyringError` to `TransactionError`
 ///
 /// Signing errors occur during transaction building phase
 impl<T: ChainConfig> From<KeyringError> for TransactionError<T> {
     fn from(e: KeyringError) -> Self {
         // Log conversion per Principle 2
         tracing::debug!(
-            error.category = "chain_client",
+            error.category = CHAIN_CLIENT,
             error.source = ?e,
             "Keyring error during transaction operations"
         );
 
         TransactionError::BuildFailed {
-            reason: format!("Signing failed: {}", e),
-        }
-    }
-}
-
-/// Convert QueryError to TransactionError
-///
-/// Query failures during transaction operations (e.g., balance checks)
-impl<T: ChainConfig> From<QueryError> for TransactionError<T> {
-    fn from(e: QueryError) -> Self {
-        // Log conversion per Principle 2
-        tracing::debug!(
-            error.category = "chain_client",
-            error.source = ?e,
-            "Query error during transaction operations"
-        );
-
-        match e {
-            QueryError::RpcRequestFailed => TransactionError::BuildFailed {
-                reason: "RPC request failed during transaction build".to_string(),
-            },
-            QueryError::NotFound {
-                query_type,
-            } => TransactionError::BuildFailed {
-                reason: format!(
-                    "Required data not found: {}",
-                    query_type
-                ),
-            },
-            QueryError::DecodeFailed {
-                data_type,
-            } => TransactionError::BuildFailed {
-                reason: format!("Data decoding failed: {}", data_type),
-            },
+            reason: format!("Signing failed: {e}"),
         }
     }
 }
@@ -182,17 +151,17 @@ impl<T: ChainConfig> From<QueryError> for TransactionError<T> {
 // Helper Functions
 // ============================================================================
 
-/// Check if a DispatchError indicates insufficient balance
+/// Check if a `DispatchError` indicates insufficient balance
 ///
 /// Examines error details to determine if failure was due to low balance.
-/// This enables converting generic ExecutionFailed to more specific
-/// InsufficientBalance.
+/// This enables converting generic `ExecutionFailed` to more specific
+/// `InsufficientBalance`.
 ///
 /// Note: Generic over any type that implements Debug to support different
 /// runtime error types
 pub fn is_insufficient_balance_error<T: std::fmt::Debug>(error: &T) -> bool {
     // Check if error contains balance-related error strings
-    let error_details = format!("{:?}", error);
+    let error_details = format!("{error:?}");
     error_details.contains("BalanceLow")
         || error_details.contains("InsufficientBalance")
         || error_details.contains("BalanceTooLow")

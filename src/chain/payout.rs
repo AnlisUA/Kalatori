@@ -34,6 +34,7 @@ use crate::types::{
 /// call anything else.
 ///
 /// TODO: make this an additional runner independent from chain monitors
+#[expect(clippy::too_many_lines)]
 pub async fn payout(
     client: AssetHubClient,
     order: Invoice,
@@ -59,15 +60,19 @@ pub async fn payout(
         .generate_asset_hub_address(derivation_params.clone().into())
         .await
         .unwrap();
+
     let amount = client
         .fetch_asset_balance(&asset_id, &sender)
         .await
         .unwrap();
+
     info!("Got balance for payout: {:?}", amount);
+
     let transaction = client
         .build_transfer_all(&sender, &order.recipient, &asset_id)
         .await
         .unwrap();
+
     let signed_transaction = client
         .sign_transaction(
             transaction,
@@ -144,8 +149,10 @@ pub async fn payout(
         tx_record.status = TransactionStatus::Completed;
         tx_record.block_number = Some(result.transaction_id.0);
         tx_record.position_in_block = Some(result.transaction_id.1);
+        // TODO: probably it's gonna be easier to just use UTC::DateTime everywhere - including timestamps in asset hub client
         tx_record.outgoing_meta.confirmed_at = Some(
-            DateTime::from_timestamp_millis(result.timestamp as i64).unwrap_or_else(|| Utc::now()),
+            #[expect(clippy::cast_possible_wrap)]
+            DateTime::from_timestamp_millis(result.timestamp as i64).unwrap_or_else(Utc::now),
         );
         // TODO: add another field `executed_amount` which can be a bit different from
         // the requested amount

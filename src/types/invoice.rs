@@ -48,7 +48,7 @@ pub enum InvoiceStatus {
 #[expect(dead_code)]
 impl InvoiceStatus {
     /// Check if invoice is in an active state (still being monitored)
-    pub const fn is_active(&self) -> bool {
+    pub const fn is_active(self) -> bool {
         matches!(
             self,
             Self::Waiting | Self::PartiallyPaid
@@ -56,7 +56,7 @@ impl InvoiceStatus {
     }
 
     /// Check if invoice is in a final state (completed)
-    pub const fn is_final(&self) -> bool {
+    pub const fn is_final(self) -> bool {
         matches!(
             self,
             Self::Paid | Self::OverPaid | Self::AdminApproved
@@ -64,7 +64,7 @@ impl InvoiceStatus {
     }
 
     /// Check if invoice is expired
-    pub const fn is_expired(&self) -> bool {
+    pub const fn is_expired(self) -> bool {
         matches!(
             self,
             Self::UnpaidExpired | Self::PartiallyPaidExpired
@@ -72,7 +72,7 @@ impl InvoiceStatus {
     }
 
     /// Check if invoice is canceled
-    pub const fn is_canceled(&self) -> bool {
+    pub const fn is_canceled(self) -> bool {
         matches!(
             self,
             Self::CustomerCanceled | Self::AdminCanceled

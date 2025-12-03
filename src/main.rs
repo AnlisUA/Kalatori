@@ -169,7 +169,7 @@ async fn perform_sled_to_sqlite_migration(
                 sled_path
             );
 
-            let currencies = build_currencies_from_config(&chain_config);
+            let currencies = build_currencies_from_config(chain_config);
 
             match sled_to_sqlite_migration::migrate_sled_to_sqlite(sled_path, dao, &currencies)
                 .await
@@ -264,7 +264,7 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
         .map_err(error::DaoError::Sqlx)?;
 
     let keyring = Keyring::new(seed_config.seed);
-    let (keyring_handle, keyring_client) = keyring.ignite().await;
+    let (keyring_handle, keyring_client) = keyring.ignite();
 
     let (cm_tx, cm_rx) = oneshot::channel();
 

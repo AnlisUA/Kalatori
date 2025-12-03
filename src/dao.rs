@@ -491,8 +491,7 @@ mod tests {
                 assert!(db_err.message().contains("UNIQUE"));
             },
             err => panic!(
-                "Expected database UNIQUE constraint error, got: {:?}",
-                err
+                "Expected database UNIQUE constraint error, got: {err:?}"
             ),
         }
     }
@@ -660,7 +659,7 @@ mod tests {
         assert!(result.is_err());
         match result.unwrap_err() {
             sqlx::Error::RowNotFound => { /* Expected */ },
-            err => panic!("Expected RowNotFound, got: {:?}", err),
+            err => panic!("Expected RowNotFound, got: {err:?}"),
         }
     }
 
@@ -752,7 +751,7 @@ mod tests {
         assert!(result.is_err());
         match result.unwrap_err() {
             sqlx::Error::RowNotFound => { /* Expected */ },
-            err => panic!("Expected RowNotFound, got: {:?}", err),
+            err => panic!("Expected RowNotFound, got: {err:?}"),
         }
 
         // Scenario B: Wrong status (not in Waiting state)
@@ -785,7 +784,7 @@ mod tests {
         assert!(result2.is_err());
         match result2.unwrap_err() {
             sqlx::Error::RowNotFound => { /* Expected */ },
-            err => panic!("Expected RowNotFound, got: {:?}", err),
+            err => panic!("Expected RowNotFound, got: {err:?}"),
         }
 
         // Scenario C: Non-existent invoice
@@ -798,7 +797,7 @@ mod tests {
         assert!(result3.is_err());
         match result3.unwrap_err() {
             sqlx::Error::RowNotFound => { /* Expected */ },
-            err => panic!("Expected RowNotFound, got: {:?}", err),
+            err => panic!("Expected RowNotFound, got: {err:?}"),
         }
     }
 
@@ -896,7 +895,7 @@ mod tests {
         assert!(result.is_err());
         match result.unwrap_err() {
             sqlx::Error::RowNotFound => { /* Expected */ },
-            err => panic!("Expected RowNotFound, got: {:?}", err),
+            err => panic!("Expected RowNotFound, got: {err:?}"),
         }
 
         // Verify withdrawal_status is still Completed (unchanged)
@@ -922,7 +921,7 @@ mod tests {
         assert!(result2.is_err());
         match result2.unwrap_err() {
             sqlx::Error::RowNotFound => { /* Expected */ },
-            err => panic!("Expected RowNotFound, got: {:?}", err),
+            err => panic!("Expected RowNotFound, got: {err:?}"),
         }
     }
 
@@ -1047,8 +1046,7 @@ mod tests {
                 assert!(db_err.message().contains("FOREIGN KEY"));
             },
             err => panic!(
-                "Expected FK constraint error, got: {:?}",
-                err
+                "Expected FK constraint error, got: {err:?}"
             ),
         }
     }
@@ -1250,7 +1248,7 @@ mod tests {
         assert!(result.is_err());
         match result.unwrap_err() {
             sqlx::Error::RowNotFound => { /* Expected */ },
-            err => panic!("Expected RowNotFound, got: {:?}", err),
+            err => panic!("Expected RowNotFound, got: {err:?}"),
         }
     }
 

@@ -178,6 +178,24 @@ impl AssetHubClient {
         })
     }
 
+    #[instrument(skip(self))]
+    async fn fetch_block_by_hash(&self, block_hash: H256) -> Result<Block<SubxtAssetHubConfig, SubxtAssetHubClient>, QueryError> {
+        self
+            .client
+            .blocks()
+            .at(block_hash)
+            .await
+            .inspect_err(|e| {
+                tracing::debug!(
+                    error.category = crate::utils::logging::category::CHAIN_CLIENT,
+                    error.source = ?e,
+                    block_hash = ?block_hash,
+                    "Failed to fetch finalized block information"
+                );
+            })
+            .map_err(|_| QueryError::RpcRequestFailed)
+    }
+
     #[instrument(skip(self, block, assets), fields(block_number = block.number()))]
     async fn process_block(
         &self,
@@ -194,10 +212,13 @@ impl AssetHubClient {
             .await
         {
             Ok(Some(ts)) => ts,
+            #[expect(clippy::cast_sign_loss)]
             Ok(None) => {
                 tracing::warn!("Block {block_number} missing timestamp, using 0");
+                // TODO: fix expects. Maybe just use `chrono::DateTime`?
                 chrono::Utc::now().timestamp_millis() as u64
             },
+            #[expect(clippy::cast_sign_loss)]
             Err(e) => {
                 tracing::warn!("Failed to fetch timestamp for block {block_number}: {e}");
                 chrono::Utc::now().timestamp_millis() as u64
@@ -256,6 +277,7 @@ impl AssetHubClient {
                         Some(ChainTransfer {
                             asset_id: event.asset_id,
                             // TODO: check event.amount? Cast is quite unsafe
+                            #[expect(clippy::cast_possible_truncation)]
                             amount: Decimal::new(
                                 event.amount as i64,
                                 asset_info.decimals.into(),
@@ -273,16 +295,17 @@ impl AssetHubClient {
         Ok(transfers)
     }
 
+    #[expect(clippy::unused_self)]
     fn build_tx_config(
         &self,
-        asset_id: &u32,
+        asset_id: u32,
     ) -> <DefaultExtrinsicParams<SubxtAssetHubConfig> as ExtrinsicParams<SubxtAssetHubConfig>>::Params
     {
         let location = MultiLocation {
             parents: DEFAULT_MULTILOCATION_PARENTS,
             interior: Junctions::X2(
                 Junction::PalletInstance(DEFAULT_PALLET_INSTANCE),
-                Junction::GeneralIndex(u128::from(*asset_id)),
+                Junction::GeneralIndex(u128::from(asset_id)),
             ),
         };
 
@@ -355,7 +378,7 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
             })
             .map_err(|_e| QueryError::RpcRequestFailed)?
             .ok_or_else(|| QueryError::NotFound {
-                query_type: format!("asset metadata for asset {}", asset_id),
+                query_type: format!("asset metadata for asset {asset_id}"),
             })
             .inspect_err(|_| warn!(message = "Asset metadata wasn't found (None returned)"))
             .map(|resp| AssetInfo {
@@ -368,7 +391,7 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
                             "Asset symbol contains invalid UTF-8, using fallback"
                         );
                     })
-                    .unwrap_or_else(|_| format!("Asset_{}", asset_id)),
+                    .unwrap_or_else(|_| format!("Asset_{asset_id}")),
                 decimals: resp.decimals,
             })
             .inspect(|val| debug!(message = "Asset info fetched successfully", asset_info = ?val))
@@ -393,7 +416,7 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
                 None
             })
             .ok_or_else(|| QueryError::NotFound {
-                query_type: format!("asset info for asset {}", asset_id),
+                query_type: format!("asset info for asset {asset_id}"),
             })?
             .decimals;
 
@@ -430,8 +453,9 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
                 );
             })
             .map_err(|_e| QueryError::RpcRequestFailed)?
-            // TODO: check acc.balance? Cast is quite unsafe
             .map_or(Decimal::ZERO, |acc| {
+                // TODO: check acc.balance? Cast is quite unsafe
+                #[expect(clippy::cast_possible_truncation)]
                 Decimal::new(acc.balance as i64, decimals.into())
             });
 
@@ -520,8 +544,7 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
             .await
             .ok_or_else(|| TransactionError::BuildFailed {
                 reason: format!(
-                    "Asset ID {} not found in asset info store",
-                    asset_id
+                    "Asset ID {asset_id} not found in asset info store"
                 ),
             })?
             .decimals;
@@ -539,13 +562,12 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
                 );
                 TransactionError::BuildFailed {
                     reason: format!(
-                        "Amount {} exceeds u128::MAX after normalization",
-                        amount
+                        "Amount {amount} exceeds u128::MAX after normalization"
                     ),
                 }
             })?;
 
-        let tx_config = self.build_tx_config(asset_id);
+        let tx_config = self.build_tx_config(*asset_id);
 
         let call = runtime::tx().assets().transfer(
             *asset_id,
@@ -585,7 +607,7 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
         asset_id: &u32,
     ) -> Result<UnsignedTransaction<AssetHubChainConfig>, TransactionError<AssetHubChainConfig>>
     {
-        let tx_config = self.build_tx_config(asset_id);
+        let tx_config = self.build_tx_config(*asset_id);
 
         let call = runtime::tx().assets().transfer_all(
             *asset_id,
@@ -636,6 +658,8 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
         })
     }
 
+    // TODO: inspect too_many_lines
+    #[expect(clippy::too_many_lines)]
     #[instrument(skip(self, transaction), fields(transaction_hash = %transaction.transaction.hash()))]
     async fn submit_and_watch_transaction(
         &self,
@@ -684,16 +708,13 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
         // We still need to fetch some additional block info like it's number and
         // timestamp
         let block = self
-            .client
-            .blocks()
-            .at(block_hash)
+            .fetch_block_by_hash(block_hash)
             .await
             .inspect_err(|e| {
                 tracing::debug!(
                     error.category = crate::utils::logging::category::CHAIN_CLIENT,
                     error.operation = crate::utils::logging::operation::WATCH_TRANSACTION,
                     error.source = ?e,
-                    transaction_hash = %tx_hash,
                     block_hash = ?block_hash,
                     "Failed to fetch finalized block information"
                 );
@@ -752,12 +773,12 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
             }
 
             // Generic execution failure
-            let error_code = format!("{:?}", dispatch_error);
+            let error_code = format!("{dispatch_error:?}");
             return Err(TransactionError::ExecutionFailed {
                 transaction_id,
                 error_code,
             });
-        };
+        }
 
         let event = events
             .find_first::<TransferredEvent>()
@@ -795,12 +816,13 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
             .asset_info_store()
             .get_asset_info(&event.asset_id)
             .await
-            .ok_or_else(|| TransactionError::UnknownAsset {
+            .ok_or(TransactionError::UnknownAsset {
                 transaction_id: (block_number, extrinsic_index),
                 asset_id: event.asset_id,
             })?;
 
         // TODO: check event.amount, cast is unsafe
+        #[expect(clippy::cast_possible_truncation)]
         let amount = Decimal::new(
             event.amount as i64,
             asset_info.decimals.into(),
@@ -812,6 +834,8 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
             sender: event.from,
             recipient: event.to,
             transaction_id: (block_number, extrinsic_index),
+            // TODO: fetch block's timestamp
+            #[expect(clippy::cast_sign_loss)]
             timestamp: chrono::Utc::now().timestamp_millis() as u64,
         })
     }
@@ -834,7 +858,7 @@ mod tests {
 
         let assets = vec![1337, 1984];
 
-        let _ = client
+        let () = client
             .init_asset_info(&assets)
             .await
             .unwrap();
@@ -847,7 +871,7 @@ mod tests {
             )
             .await;
 
-        println!("Result: {:?}", amount);
+        println!("Result: {amount:?}");
 
         // let transfer_stream = client.subscribe_transfers(assets).await;
         // pin_mut!(transfer_stream);

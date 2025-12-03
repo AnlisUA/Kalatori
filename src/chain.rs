@@ -117,7 +117,7 @@ impl ChainManager {
                                         } else {
                                             let _unused = request
                                                 .res
-                                                .send(Err(ChainError::InvalidChain(chain.to_string())));
+                                                .send(Err(ChainError::InvalidChain(chain.clone())));
                                         }
                                     } else {
                                         let _unused = request
@@ -133,7 +133,7 @@ impl ChainManager {
                                         } else {
                                             let _unused = request
                                                 .res
-                                                .send(Err(ChainError::InvalidChain(chain.to_string())));
+                                                .send(Err(ChainError::InvalidChain(chain.clone())));
                                         }
                                     } else {
                                         let _unused = request

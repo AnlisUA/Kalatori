@@ -59,7 +59,7 @@ fn tx_kind_to_transaction_type(kind: TxKind) -> crate::types::TransactionType {
 }
 
 /// Convert `TxStatus` to `TransactionStatus`
-fn tx_status_to_transaction_status(status: TxStatus) -> crate::types::TransactionStatus {
+fn tx_status_to_transaction_status(status: &TxStatus) -> crate::types::TransactionStatus {
     match status {
         TxStatus::Pending => crate::types::TransactionStatus::Waiting,
         TxStatus::Finalized => crate::types::TransactionStatus::Completed,
@@ -74,17 +74,18 @@ fn build_transaction(
     asset_id: u32,
     chain: String,
     amount: Decimal,
-    sender: AccountId32,
-    recipient: AccountId32,
+    sender: &AccountId32,
+    recipient: &AccountId32,
     block_number: u32,
     position_in_block: u32,
     timestamp: u64,
     tx_kind: TxKind,
-    tx_status: TxStatus,
+    tx_status: &TxStatus,
 ) -> Transaction {
     let transaction_type = tx_kind_to_transaction_type(tx_kind);
+    #[expect(clippy::cast_possible_wrap)]
     let created_at =
-        DateTime::from_timestamp_millis(timestamp as i64).unwrap_or_else(|| Utc::now());
+        DateTime::from_timestamp_millis(timestamp as i64).unwrap_or_else(Utc::now);
     let status = tx_status_to_transaction_status(tx_status);
     let sender = to_base58_string(sender.0, 42);
     let recipient = to_base58_string(recipient.0, 42);
@@ -228,12 +229,10 @@ pub fn start_chain_watch(
                         tokio::select! {
                             transfer = transfers_sub.next() => {
                                 transfer
-                                    .map(|result| result
+                                    .and_then(|result| result
                                         .inspect_err(|e| tracing::warn!("Got error in tranfsers subscription: {:?}", e))
                                         .ok()
-                                        .map(ChainTrackerRequest::Transfers)
-                                    )
-                                    .flatten()
+                                        .map(ChainTrackerRequest::Transfers))
                             },
                             req = chain_rx.recv() => {
                                 req
@@ -254,26 +253,27 @@ pub fn start_chain_watch(
                                             transfer.asset_id,
                                             invoice.currency.chain_name.clone(),
                                             transfer.amount,
-                                            transfer.sender.clone(),
-                                            transfer.recipient.clone(),
+                                            &transfer.sender,
+                                            &transfer.recipient,
                                             transfer.transaction_id.0,
                                             transfer.transaction_id.1,
                                             transfer.timestamp,
                                             TxKind::Payment,
-                                            TxStatus::Finalized,
+                                            &TxStatus::Finalized,
                                         );
 
                                         state.record_transaction_v2(*id, transaction).await?;
                                     }
                                 }
                             }
-
+                            // TODO: fix expects. Maybe just use `chrono::DateTime`?
+                            #[expect(clippy::cast_sign_loss)]
                             let now = Utc::now().timestamp_millis() as u64;
 
                             for (id, invoice) in &watched_accounts {
                                 match invoice.check(&asset_hub_client, &watcher).await {
                                     Ok(true) => {
-                                        state.order_paid(id.clone()).await;
+                                        state.order_paid(*id).await;
                                     },
                                     Err(e) => {
                                         tracing::warn!("account fetch error: {0:?}", e);
@@ -282,13 +282,13 @@ pub fn start_chain_watch(
                                 }
 
                                 if invoice.death.0 <= now {
-                                    match state.is_order_paid(id.clone()).await {
+                                    match state.is_order_paid(*id).await {
                                         Ok(paid_db) => {
                                             if !paid_db {
                                                 match invoice.check(&asset_hub_client, &watcher).await {
                                                     Ok(paid) => {
                                                         if paid {
-                                                            state.order_paid(id.clone()).await;
+                                                            state.order_paid(*id).await;
                                                         }
                                                     }
                                                     Err(e) => {
@@ -312,10 +312,10 @@ pub fn start_chain_watch(
                             };
                         }
                         ChainTrackerRequest::WatchAccount(request) => {
-                            watched_accounts.insert(request.id.clone(), Invoice::from_request(request));
+                            watched_accounts.insert(request.id, Invoice::from_request(request));
                         }
                         ChainTrackerRequest::Reap(request) => {
-                            let id = request.id.clone();
+                            let id = request.id;
                             let reap_state_handle = state.interface();
                             let watcher_for_reaper = watcher.clone();
                             let keyring_client_cloned = keyring_client.clone();
@@ -334,7 +334,7 @@ pub fn start_chain_watch(
                             });
                         }
                         ChainTrackerRequest::ForceReap(request) => {
-                            let id = request.id.clone();
+                            let id = request.id;
                             let reap_state_handle = state.interface();
                             let watcher_for_reaper = watcher.clone();
                             let keyring_client_cloned = keyring_client.clone();
@@ -374,7 +374,6 @@ pub struct ChainWatcher {
 }
 
 impl ChainWatcher {
-    #[expect(clippy::too_many_arguments)]
     pub async fn prepare_chain(
         client: &AssetHubClient,
         chain: ChainConfig,
@@ -441,7 +440,7 @@ impl ChainWatcher {
 
             match result {
                 Ok(true) => {
-                    state.order_paid(id.clone()).await;
+                    state.order_paid(*id).await;
                     id_remove_list.push(id.to_owned());
                 },
                 Ok(false) => (),

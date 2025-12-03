@@ -691,21 +691,18 @@ fn estimate_created_at(
     death: Timestamp,
     stats: &mut MigrationStats,
 ) -> DateTime<Utc> {
-    match timestamp_to_datetime(death) {
-        Ok(valid_till) => {
-            // Subtract 24 hours (default account lifetime)
-            #[expect(clippy::arithmetic_side_effects)]
-            let estimated = valid_till - Duration::hours(24);
-            estimated
-        },
-        _ => {
-            let warning = format!(
-                "Failed to parse death timestamp {}, using current time for created_at",
-                death.0
-            );
-            stats.warnings.push(warning);
-            Utc::now()
-        },
+    if let Ok(valid_till) = timestamp_to_datetime(death) {
+        // Subtract 24 hours (default account lifetime)
+        #[expect(clippy::arithmetic_side_effects)]
+        let estimated = valid_till - Duration::hours(24);
+        estimated
+    } else {
+        let warning = format!(
+            "Failed to parse death timestamp {}, using current time for created_at",
+            death.0
+        );
+        stats.warnings.push(warning);
+        Utc::now()
     }
 }
 

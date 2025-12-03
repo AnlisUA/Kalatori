@@ -69,7 +69,7 @@ impl Keyring {
         }
     }
 
-    pub async fn ignite(
+    pub fn ignite(
         self
     ) -> (
         tokio::task::JoinHandle<()>,
@@ -79,7 +79,7 @@ impl Keyring {
 
         let handle = tokio::spawn(async move {
             while let Some(msg) = rx.recv().await {
-                self.process_message(msg).await;
+                self.process_message(msg);
             }
 
             // TODO: add logs
@@ -107,7 +107,7 @@ impl Keyring {
         let derived_keypair = keypair.derive(
             params
                 .into_iter()
-                .map(|param| DeriveJunction::hard(param)),
+                .map(DeriveJunction::hard),
         );
 
         Ok(derived_keypair)
@@ -135,7 +135,7 @@ impl Keyring {
             .to_account_id())
     }
 
-    async fn process_message(
+    fn process_message(
         &self,
         msg: KeyringMessage,
     ) {
@@ -257,7 +257,7 @@ impl KeyringClient {
         message: KeyringMessage,
         response_receiver: ResponseReceiver<R>,
     ) -> KeyringResult<R> {
-        let _ = self
+        let () = self
             .tx
             .send(message)
             .await
