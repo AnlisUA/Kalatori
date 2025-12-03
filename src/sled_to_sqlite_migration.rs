@@ -1,8 +1,9 @@
 //! `Sled` to `SQLite` Migration Module
 //!
-//! This module provides functionality to migrate data from the legacy `sled` embedded database
-//! to the new `SQLite` database schema. It handles the conversion of old types to new types
-//! and preserves all data integrity during the migration process.
+//! This module provides functionality to migrate data from the legacy `sled`
+//! embedded database to the new `SQLite` database schema. It handles the
+//! conversion of old types to new types and preserves all data integrity during
+//! the migration process.
 //!
 //! # Idempotency
 //!
@@ -15,8 +16,10 @@
 //! # Migration Process
 //!
 //! 1. **Server Info**: Migrate singleton server information
-//! 2. **Orders → Invoices**: Convert orders to invoices with `UUID` generation and mapping
-//! 3. **Finalized Transactions**: Migrate completed transactions with deduplication
+//! 2. **Orders → Invoices**: Convert orders to invoices with `UUID` generation
+//!    and mapping
+//! 3. **Finalized Transactions**: Migrate completed transactions with
+//!    deduplication
 //! 4. **Pending Transactions**: Migrate pending transactions with deduplication
 //!
 //! # Usage
@@ -38,23 +41,46 @@
 //! # }
 //! ```
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{
+    HashMap,
+    HashSet,
+};
 use std::path::PathBuf;
 
-use chrono::{DateTime, Duration, Utc};
+use chrono::{
+    DateTime,
+    Duration,
+    Utc,
+};
 use codec::Decode;
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
 use crate::dao::DAO;
 use crate::legacy_types::{
-    Amount, BlockNumber, CurrencyInfo, CurrencyProperties, ExtrinsicIndex, OrderInfo,
-    PaymentStatus, ServerInfo, Timestamp, TransactionInfoDb, TransactionInfoDbInner, TxKind,
+    Amount,
+    BlockNumber,
+    CurrencyInfo,
+    CurrencyProperties,
+    ExtrinsicIndex,
+    OrderInfo,
+    PaymentStatus,
+    ServerInfo,
+    Timestamp,
+    TransactionInfoDb,
+    TransactionInfoDbInner,
+    TxKind,
     TxStatus,
 };
 use crate::types::{
-    Invoice, InvoiceCart, InvoiceStatus, OutgoingTransactionMeta, Transaction, TransactionOrigin,
-    TransactionStatus, TransactionType,
+    Invoice,
+    InvoiceCart,
+    InvoiceStatus,
+    OutgoingTransactionMeta,
+    Transaction,
+    TransactionOrigin,
+    TransactionStatus,
+    TransactionType,
 };
 
 // Sled table names
@@ -117,9 +143,16 @@ pub struct MigrationStats {
 }
 
 impl std::fmt::Display for MigrationStats {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
         writeln!(f, "Migration Statistics:")?;
-        writeln!(f, "  Invoices migrated: {}", self.invoices_migrated)?;
+        writeln!(
+            f,
+            "  Invoices migrated: {}",
+            self.invoices_migrated
+        )?;
         writeln!(
             f,
             "  Invoices skipped (already exist): {}",
@@ -140,9 +173,17 @@ impl std::fmt::Display for MigrationStats {
             "  Transactions skipped (duplicates): {}",
             self.transactions_skipped_duplicates
         )?;
-        writeln!(f, "  Server info migrated: {}", self.server_info_migrated)?;
+        writeln!(
+            f,
+            "  Server info migrated: {}",
+            self.server_info_migrated
+        )?;
         if !self.warnings.is_empty() {
-            writeln!(f, "  Warnings ({}):", self.warnings.len())?;
+            writeln!(
+                f,
+                "  Warnings ({}):",
+                self.warnings.len()
+            )?;
             for warning in &self.warnings {
                 writeln!(f, "    - {warning}")?;
             }
@@ -157,7 +198,8 @@ impl std::fmt::Display for MigrationStats {
 ///
 /// * `sled_path` - Path to the sled database directory
 /// * `dao` - Reference to the `SQLite` `DAO` instance
-/// * `currencies` - Map of currency configurations for validation and conversion
+/// * `currencies` - Map of currency configurations for validation and
+///   conversion
 ///
 /// # Returns
 ///
@@ -192,12 +234,12 @@ pub async fn migrate_sled_to_sqlite(
                     "skipped (not found)"
                 }
             );
-        }
+        },
         Err(e) => {
             let warning = format!("Server info migration failed: {e}");
             tracing::warn!("{warning}");
             stats.warnings.push(warning);
-        }
+        },
     }
 
     // Step 2: Migrate orders → invoices
@@ -246,7 +288,10 @@ pub async fn migrate_sled_to_sqlite(
 }
 
 /// Migrate `server_info` singleton record
-async fn migrate_server_info(sled_db: &sled::Db, dao: &DAO) -> MigrationResult<bool> {
+async fn migrate_server_info(
+    sled_db: &sled::Db,
+    dao: &DAO,
+) -> MigrationResult<bool> {
     let server_info_tree = sled_db.open_tree(SERVER_INFO_TABLE)?;
 
     let Some(server_info_data) = server_info_tree.get(SERVER_INFO_ID)? else {
@@ -263,7 +308,8 @@ async fn migrate_server_info(sled_db: &sled::Db, dao: &DAO) -> MigrationResult<b
     );
 
     // Upsert into SQLite (idempotent)
-    dao.upsert_server_info(&server_info).await?;
+    dao.upsert_server_info(&server_info)
+        .await?;
 
     Ok(true)
 }
@@ -289,25 +335,35 @@ async fn migrate_orders(
         validate_currency_exists(currencies, &order_info.currency)?;
 
         // Check if invoice already exists (idempotency)
-        let invoice_id =
-            if let Some(existing_invoice) = dao.get_invoice_by_order_id(&order_id).await? {
-                tracing::debug!("Invoice for order_id '{order_id}' already exists, skipping");
-                stats.invoices_skipped_existing = stats.invoices_skipped_existing.saturating_add(1);
-                existing_invoice.id
-            } else {
-                // Generate new UUID for this invoice
-                let invoice_id = Uuid::new_v4();
+        let invoice_id = if let Some(existing_invoice) = dao
+            .get_invoice_by_order_id(&order_id)
+            .await?
+        {
+            tracing::debug!("Invoice for order_id '{order_id}' already exists, skipping");
+            stats.invoices_skipped_existing = stats
+                .invoices_skipped_existing
+                .saturating_add(1);
+            existing_invoice.id
+        } else {
+            // Generate new UUID for this invoice
+            let invoice_id = Uuid::new_v4();
 
-                // Convert OrderInfo to Invoice
-                let invoice =
-                    convert_order_to_invoice(order_id.clone(), invoice_id, order_info, stats)?;
+            // Convert OrderInfo to Invoice
+            let invoice = convert_order_to_invoice(
+                order_id.clone(),
+                invoice_id,
+                order_info,
+                stats,
+            )?;
 
-                // Insert into SQLite
-                dao.create_invoice(invoice).await?;
-                stats.invoices_migrated = stats.invoices_migrated.saturating_add(1);
+            // Insert into SQLite
+            dao.create_invoice(invoice).await?;
+            stats.invoices_migrated = stats
+                .invoices_migrated
+                .saturating_add(1);
 
-                invoice_id
-            };
+            invoice_id
+        };
 
         // Store mapping (whether new or existing)
         invoice_mapping.insert(order_id, invoice_id);
@@ -318,7 +374,8 @@ async fn migrate_orders(
 
 /// Migrate finalized transactions
 ///
-/// **Idempotent**: Checks if transaction already exists by `transaction_bytes` before inserting.
+/// **Idempotent**: Checks if transaction already exists by `transaction_bytes`
+/// before inserting.
 async fn migrate_finalized_transactions(
     sled_db: &sled::Db,
     dao: &DAO,
@@ -340,8 +397,9 @@ async fn migrate_finalized_transactions(
 
         // Deduplication check (in-memory for current run)
         if migrated_tx_bytes.contains(&tx_db.transaction_bytes) {
-            stats.transactions_skipped_duplicates =
-                stats.transactions_skipped_duplicates.saturating_add(1);
+            stats.transactions_skipped_duplicates = stats
+                .transactions_skipped_duplicates
+                .saturating_add(1);
             continue;
         }
 
@@ -354,8 +412,9 @@ async fn migrate_finalized_transactions(
                 "Transaction with bytes '{}' already exists, skipping",
                 &tx_db.transaction_bytes[..20.min(tx_db.transaction_bytes.len())]
             );
-            stats.transactions_skipped_duplicates =
-                stats.transactions_skipped_duplicates.saturating_add(1);
+            stats.transactions_skipped_duplicates = stats
+                .transactions_skipped_duplicates
+                .saturating_add(1);
             migrated_tx_bytes.insert(tx_db.transaction_bytes);
             continue;
         }
@@ -378,12 +437,14 @@ async fn migrate_finalized_transactions(
         )?;
 
         // Insert into SQLite
-        dao.create_transaction(transaction).await?;
+        dao.create_transaction(transaction)
+            .await?;
 
         // Mark as migrated
         migrated_tx_bytes.insert(tx_bytes);
-        stats.finalized_transactions_migrated =
-            stats.finalized_transactions_migrated.saturating_add(1);
+        stats.finalized_transactions_migrated = stats
+            .finalized_transactions_migrated
+            .saturating_add(1);
     }
 
     Ok(())
@@ -391,7 +452,8 @@ async fn migrate_finalized_transactions(
 
 /// Migrate pending transactions
 ///
-/// **Idempotent**: Checks if transaction already exists by `transaction_bytes` before inserting.
+/// **Idempotent**: Checks if transaction already exists by `transaction_bytes`
+/// before inserting.
 async fn migrate_pending_transactions(
     sled_db: &sled::Db,
     dao: &DAO,
@@ -409,19 +471,24 @@ async fn migrate_pending_transactions(
 
         // Deduplication check (in-memory - already migrated in finalized or this run)
         if migrated_tx_bytes.contains(&transaction_bytes) {
-            stats.transactions_skipped_duplicates =
-                stats.transactions_skipped_duplicates.saturating_add(1);
+            stats.transactions_skipped_duplicates = stats
+                .transactions_skipped_duplicates
+                .saturating_add(1);
             continue;
         }
 
         // Idempotency check (database check for previous runs)
-        if dao.transaction_exists_by_bytes(&transaction_bytes).await? {
+        if dao
+            .transaction_exists_by_bytes(&transaction_bytes)
+            .await?
+        {
             tracing::debug!(
                 "Transaction with bytes '{}' already exists, skipping",
                 &transaction_bytes[..20.min(transaction_bytes.len())]
             );
-            stats.transactions_skipped_duplicates =
-                stats.transactions_skipped_duplicates.saturating_add(1);
+            stats.transactions_skipped_duplicates = stats
+                .transactions_skipped_duplicates
+                .saturating_add(1);
             continue;
         }
 
@@ -434,13 +501,20 @@ async fn migrate_pending_transactions(
             .ok_or_else(|| MigrationError::OrderIdNotFound(order_id.clone()))?;
 
         // Convert to new Transaction type
-        let transaction =
-            convert_pending_transaction_to_new(*invoice_id, transaction_bytes, tx_inner, stats)?;
+        let transaction = convert_pending_transaction_to_new(
+            *invoice_id,
+            transaction_bytes,
+            tx_inner,
+            stats,
+        )?;
 
         // Insert into SQLite
-        dao.create_transaction(transaction).await?;
+        dao.create_transaction(transaction)
+            .await?;
 
-        stats.pending_transactions_migrated = stats.pending_transactions_migrated.saturating_add(1);
+        stats.pending_transactions_migrated = stats
+            .pending_transactions_migrated
+            .saturating_add(1);
     }
 
     Ok(())
@@ -490,16 +564,25 @@ fn convert_finalized_transaction_to_new(
 ) -> MigrationResult<Transaction> {
     let amount_decimal = amount_enum_to_decimal(&tx_db.inner.amount, stats)?;
     let tx_hash = extract_tx_hash(&tx_db.transaction_bytes)?;
-    let created_at = parse_timestamp_or_now(tx_db.inner.finalized_tx_timestamp.as_deref());
+    let created_at = parse_timestamp_or_now(
+        tx_db
+            .inner
+            .finalized_tx_timestamp
+            .as_deref(),
+    );
     let tx_status = tx_status_to_transaction_status(&tx_db.inner.status);
     let tx_type = tx_kind_to_transaction_type(tx_db.inner.kind);
 
-    let asset_id = tx_db.inner.currency.asset_id.unwrap_or_else(|| {
-        stats.warnings.push(format!(
-            "Transaction for invoice {invoice_id} has no asset_id, using 0"
-        ));
-        0
-    });
+    let asset_id = tx_db
+        .inner
+        .currency
+        .asset_id
+        .unwrap_or_else(|| {
+            stats.warnings.push(format!(
+                "Transaction for invoice {invoice_id} has no asset_id, using 0"
+            ));
+            0
+        });
 
     Ok(Transaction {
         id: Uuid::new_v4(),
@@ -532,12 +615,15 @@ fn convert_pending_transaction_to_new(
     let tx_status = TransactionStatus::Waiting;
     let tx_type = tx_kind_to_transaction_type(tx_inner.kind);
 
-    let asset_id = tx_inner.currency.asset_id.unwrap_or_else(|| {
-        stats.warnings.push(format!(
-            "Pending transaction for invoice {invoice_id} has no asset_id, using 0"
-        ));
-        0
-    });
+    let asset_id = tx_inner
+        .currency
+        .asset_id
+        .unwrap_or_else(|| {
+            stats.warnings.push(format!(
+                "Pending transaction for invoice {invoice_id} has no asset_id, using 0"
+            ));
+            0
+        });
 
     Ok(Transaction {
         id: Uuid::new_v4(),
@@ -573,7 +659,10 @@ fn f64_to_decimal(amount: f64) -> MigrationResult<Decimal> {
 }
 
 /// Convert Amount enum (All | Exact) to Decimal
-fn amount_enum_to_decimal(amount: &Amount, stats: &mut MigrationStats) -> MigrationResult<Decimal> {
+fn amount_enum_to_decimal(
+    amount: &Amount,
+    stats: &mut MigrationStats,
+) -> MigrationResult<Decimal> {
     match amount {
         Amount::Exact(val) => f64_to_decimal(*val),
         Amount::All => {
@@ -581,7 +670,7 @@ fn amount_enum_to_decimal(amount: &Amount, stats: &mut MigrationStats) -> Migrat
             tracing::warn!("{warning}");
             stats.warnings.push(warning);
             Ok(Decimal::ZERO)
-        }
+        },
     }
 }
 
@@ -590,13 +679,18 @@ fn timestamp_to_datetime(timestamp: Timestamp) -> MigrationResult<DateTime<Utc>>
     #[expect(clippy::cast_possible_wrap)]
     let millis = timestamp.0 as i64;
     DateTime::from_timestamp_millis(millis).ok_or_else(|| {
-        MigrationError::InvalidTimestamp(format!("Invalid timestamp milliseconds: {millis}"))
+        MigrationError::InvalidTimestamp(format!(
+            "Invalid timestamp milliseconds: {millis}"
+        ))
     })
 }
 
 /// Estimate `created_at` timestamp from `valid_till` (`death`) timestamp
 /// Assumes 24 hour account lifetime as default
-fn estimate_created_at(death: Timestamp, stats: &mut MigrationStats) -> DateTime<Utc> {
+fn estimate_created_at(
+    death: Timestamp,
+    stats: &mut MigrationStats,
+) -> DateTime<Utc> {
     if let Ok(valid_till) = timestamp_to_datetime(death) {
         // Subtract 24 hours (default account lifetime)
         #[expect(clippy::arithmetic_side_effects)]
@@ -631,11 +725,16 @@ fn extract_tx_hash(transaction_bytes: &str) -> MigrationResult<String> {
         ))
     })?;
 
-    let mut hasher = blake2b_simd::Params::new().hash_length(32).to_state();
+    let mut hasher = blake2b_simd::Params::new()
+        .hash_length(32)
+        .to_state();
     hasher.update(&bytes);
     let hash = hasher.finalize();
 
-    Ok(format!("0x{}", const_hex::encode(hash.as_bytes())))
+    Ok(format!(
+        "0x{}",
+        const_hex::encode(hash.as_bytes())
+    ))
 }
 
 /// Convert old `TxStatus` to new `TransactionStatus`
@@ -687,8 +786,15 @@ mod tests {
     use super::*;
     use crate::configs::DatabaseConfig;
     use crate::legacy_types::{
-        Amount, FinalizedTxDb, PaymentStatus, TokenKind, TransactionInfoDb, TransactionInfoDbInner,
-        TxKind, TxStatus, WithdrawalStatus,
+        Amount,
+        FinalizedTxDb,
+        PaymentStatus,
+        TokenKind,
+        TransactionInfoDb,
+        TransactionInfoDbInner,
+        TxKind,
+        TxStatus,
+        WithdrawalStatus,
     };
     use codec::Encode;
     use std::collections::HashMap;
@@ -705,11 +811,16 @@ mod tests {
             dir: String::new(),
             temporary: true,
         };
-        DAO::new(config).await.expect("Failed to create test DAO")
+        DAO::new(config)
+            .await
+            .expect("Failed to create test DAO")
     }
 
     /// Create test currency info
-    fn create_test_currency(name: &str, asset_id: Option<u32>) -> CurrencyInfo {
+    fn create_test_currency(
+        name: &str,
+        asset_id: Option<u32>,
+    ) -> CurrencyInfo {
         CurrencyInfo {
             currency: name.to_string(),
             chain_name: "AssetHub".to_string(),
@@ -754,8 +865,13 @@ mod tests {
     }
 
     /// Create test `OrderInfo`
-    fn create_test_order(order_id: &str, amount: f64, currency: &CurrencyInfo) -> OrderInfo {
+    fn create_test_order(
+        order_id: &str,
+        amount: f64,
+        currency: &CurrencyInfo,
+    ) -> OrderInfo {
         OrderInfo {
+            order_id: order_id.to_string(),
             withdrawal_status: WithdrawalStatus::Waiting,
             payment_status: PaymentStatus::Pending,
             amount,
@@ -779,7 +895,11 @@ mod tests {
         for i in 0..count {
             let order_id = format!("order_{i}");
             #[expect(clippy::cast_possible_truncation)]
-            let order_info = create_test_order(&order_id, 100.0 + f64::from(i as u32), currency);
+            let order_info = create_test_order(
+                &order_id,
+                100.0 + f64::from(i as u32),
+                currency,
+            );
             orders_tree.insert(order_id.encode(), order_info.encode())?;
             order_ids.push(order_id);
         }
@@ -811,7 +931,10 @@ mod tests {
     fn test_timestamp_to_datetime() {
         let timestamp = Timestamp(1_700_000_000_000); // 2023-11-14
         let datetime = timestamp_to_datetime(timestamp).unwrap();
-        assert_eq!(datetime.timestamp_millis(), 1_700_000_000_000);
+        assert_eq!(
+            datetime.timestamp_millis(),
+            1_700_000_000_000
+        );
     }
 
     #[test]
@@ -860,10 +983,20 @@ mod tests {
 
     #[test]
     fn test_f64_to_decimal_valid() {
-        assert_eq!(f64_to_decimal(123.456).unwrap().to_string(), "123.456");
-        assert_eq!(f64_to_decimal(0.0).unwrap().to_string(), "0");
         assert_eq!(
-            f64_to_decimal(999_999.999_999).unwrap().to_string(),
+            f64_to_decimal(123.456)
+                .unwrap()
+                .to_string(),
+            "123.456"
+        );
+        assert_eq!(
+            f64_to_decimal(0.0).unwrap().to_string(),
+            "0"
+        );
+        assert_eq!(
+            f64_to_decimal(999_999.999_999)
+                .unwrap()
+                .to_string(),
             "999999.999999"
         );
     }
@@ -897,7 +1030,10 @@ mod tests {
 
         // Should be 24 hours before death
         let expected = timestamp_to_datetime(death).unwrap() - Duration::hours(24);
-        assert_eq!(created_at.timestamp_millis(), expected.timestamp_millis());
+        assert_eq!(
+            created_at.timestamp_millis(),
+            expected.timestamp_millis()
+        );
     }
 
     #[test]
@@ -964,7 +1100,10 @@ mod tests {
         assert_eq!(stats.invoices_skipped_existing, 0);
 
         // Verify invoice exists in database
-        let invoice_option = dao.get_invoice_by_order_id("order_0").await.unwrap();
+        let invoice_option = dao
+            .get_invoice_by_order_id("order_0")
+            .await
+            .unwrap();
         assert!(invoice_option.is_some());
         let invoice = invoice_option.unwrap();
         assert_eq!(invoice.order_id, "order_0");
@@ -993,8 +1132,14 @@ mod tests {
 
         // Verify all invoices exist
         for order_id in &order_ids {
-            let invoice = dao.get_invoice_by_order_id(order_id).await.unwrap();
-            assert!(invoice.is_some(), "Invoice for {order_id} should exist");
+            let invoice = dao
+                .get_invoice_by_order_id(order_id)
+                .await
+                .unwrap();
+            assert!(
+                invoice.is_some(),
+                "Invoice for {order_id} should exist"
+            );
         }
     }
 
@@ -1135,7 +1280,9 @@ mod tests {
         // Create server_info in sled
         {
             let sled_db = sled::open(&sled_path).unwrap();
-            let server_info_tree = sled_db.open_tree(SERVER_INFO_TABLE).unwrap();
+            let server_info_tree = sled_db
+                .open_tree(SERVER_INFO_TABLE)
+                .unwrap();
 
             let server_info = ServerInfo {
                 instance_id: "test-instance-123".to_string(),
@@ -1171,7 +1318,9 @@ mod tests {
         // Create server_info in sled
         {
             let sled_db = sled::open(&sled_path).unwrap();
-            let server_info_tree = sled_db.open_tree(SERVER_INFO_TABLE).unwrap();
+            let server_info_tree = sled_db
+                .open_tree(SERVER_INFO_TABLE)
+                .unwrap();
 
             let server_info = ServerInfo {
                 instance_id: "test-instance-456".to_string(),
@@ -1233,7 +1382,10 @@ mod tests {
         position_in_block: ExtrinsicIndex,
         amount: f64,
         currency: &CurrencyInfo,
-    ) -> ((String, BlockNumber, ExtrinsicIndex), TransactionInfoDb) {
+    ) -> (
+        (String, BlockNumber, ExtrinsicIndex),
+        TransactionInfoDb,
+    ) {
         let tx_bytes = format!(
             "0x{}",
             const_hex::encode(format!("tx_{order_id}_{block_number}").as_bytes())
@@ -1256,7 +1408,11 @@ mod tests {
             },
         };
 
-        let key = (order_id.to_string(), block_number, position_in_block);
+        let key = (
+            order_id.to_string(),
+            block_number,
+            position_in_block,
+        );
         (key, tx_db)
     }
 
@@ -1302,10 +1458,14 @@ mod tests {
             populate_sled_with_orders(&sled_db, 1, &currency).unwrap();
 
             // Create finalized transaction
-            let tx_tree = sled_db.open_tree(TRANSACTIONS_TABLE).unwrap();
+            let tx_tree = sled_db
+                .open_tree(TRANSACTIONS_TABLE)
+                .unwrap();
             let (key, tx_db) =
                 create_test_finalized_transaction("order_0", 1000, 5, 100.0, &currency);
-            tx_tree.insert(key.encode(), tx_db.encode()).unwrap();
+            tx_tree
+                .insert(key.encode(), tx_db.encode())
+                .unwrap();
         } // sled_db is dropped here
 
         let dao = create_test_dao().await;
@@ -1321,7 +1481,8 @@ mod tests {
         assert_eq!(stats.pending_transactions_migrated, 0);
 
         // Verify transaction exists in database
-        // Note: We'd need a getter in DAO to fully verify, but we can check it doesn't error
+        // Note: We'd need a getter in DAO to fully verify, but we can check it
+        // doesn't error
     }
 
     #[tokio::test]
@@ -1339,7 +1500,9 @@ mod tests {
             populate_sled_with_orders(&sled_db, 1, &currency).unwrap();
 
             // Create pending transaction
-            let pending_tree = sled_db.open_tree(PENDING_TRANSACTIONS_TABLE).unwrap();
+            let pending_tree = sled_db
+                .open_tree(PENDING_TRANSACTIONS_TABLE)
+                .unwrap();
             let (key, tx_inner) = create_test_pending_transaction("order_0", 1, 50.0, &currency);
             pending_tree
                 .insert(key.encode(), tx_inner.encode())
@@ -1374,28 +1537,40 @@ mod tests {
             populate_sled_with_orders(&sled_db, 2, &currency).unwrap();
 
             // Create finalized transactions
-            let tx_tree = sled_db.open_tree(TRANSACTIONS_TABLE).unwrap();
+            let tx_tree = sled_db
+                .open_tree(TRANSACTIONS_TABLE)
+                .unwrap();
 
             // Order 0: 2 finalized transactions
             let (key1, tx1) =
                 create_test_finalized_transaction("order_0", 1000, 1, 50.0, &currency);
-            tx_tree.insert(key1.encode(), tx1.encode()).unwrap();
+            tx_tree
+                .insert(key1.encode(), tx1.encode())
+                .unwrap();
 
             let (key2, tx2) =
                 create_test_finalized_transaction("order_0", 1001, 2, 50.0, &currency);
-            tx_tree.insert(key2.encode(), tx2.encode()).unwrap();
+            tx_tree
+                .insert(key2.encode(), tx2.encode())
+                .unwrap();
 
             // Order 1: 1 finalized transaction
             let (key3, tx3) =
                 create_test_finalized_transaction("order_1", 1002, 1, 100.0, &currency);
-            tx_tree.insert(key3.encode(), tx3.encode()).unwrap();
+            tx_tree
+                .insert(key3.encode(), tx3.encode())
+                .unwrap();
 
             // Create pending transactions
-            let pending_tree = sled_db.open_tree(PENDING_TRANSACTIONS_TABLE).unwrap();
+            let pending_tree = sled_db
+                .open_tree(PENDING_TRANSACTIONS_TABLE)
+                .unwrap();
 
             // Order 0: 1 pending transaction
             let (key4, tx4) = create_test_pending_transaction("order_0", 1, 25.0, &currency);
-            pending_tree.insert(key4.encode(), tx4.encode()).unwrap();
+            pending_tree
+                .insert(key4.encode(), tx4.encode())
+                .unwrap();
         } // sled_db is dropped here
 
         let dao = create_test_dao().await;
@@ -1427,13 +1602,19 @@ mod tests {
             populate_sled_with_orders(&sled_db, 1, &currency).unwrap();
 
             // Create finalized transaction
-            let tx_tree = sled_db.open_tree(TRANSACTIONS_TABLE).unwrap();
+            let tx_tree = sled_db
+                .open_tree(TRANSACTIONS_TABLE)
+                .unwrap();
             let (key, tx_db) =
                 create_test_finalized_transaction("order_0", 1000, 5, 100.0, &currency);
-            tx_tree.insert(key.encode(), tx_db.encode()).unwrap();
+            tx_tree
+                .insert(key.encode(), tx_db.encode())
+                .unwrap();
 
             // Create pending transaction
-            let pending_tree = sled_db.open_tree(PENDING_TRANSACTIONS_TABLE).unwrap();
+            let pending_tree = sled_db
+                .open_tree(PENDING_TRANSACTIONS_TABLE)
+                .unwrap();
             let (key2, tx_inner) = create_test_pending_transaction("order_0", 1, 50.0, &currency);
             pending_tree
                 .insert(key2.encode(), tx_inner.encode())
@@ -1447,15 +1628,24 @@ mod tests {
         let stats1 = migrate_sled_to_sqlite(sled_path.clone(), &dao, &currencies)
             .await
             .unwrap();
-        assert_eq!(stats1.finalized_transactions_migrated, 1);
+        assert_eq!(
+            stats1.finalized_transactions_migrated,
+            1
+        );
         assert_eq!(stats1.pending_transactions_migrated, 1);
-        assert_eq!(stats1.transactions_skipped_duplicates, 0);
+        assert_eq!(
+            stats1.transactions_skipped_duplicates,
+            0
+        );
 
         // Second migration (should skip all transactions)
         let stats2 = migrate_sled_to_sqlite(sled_path, &dao, &currencies)
             .await
             .unwrap();
-        assert_eq!(stats2.finalized_transactions_migrated, 0);
+        assert_eq!(
+            stats2.finalized_transactions_migrated,
+            0
+        );
         assert_eq!(stats2.pending_transactions_migrated, 0);
         assert_eq!(
             stats2.transactions_skipped_duplicates, 2,
@@ -1481,7 +1671,9 @@ mod tests {
             let tx_bytes = "0xdeadbeef";
 
             // Create finalized transaction
-            let tx_tree = sled_db.open_tree(TRANSACTIONS_TABLE).unwrap();
+            let tx_tree = sled_db
+                .open_tree(TRANSACTIONS_TABLE)
+                .unwrap();
             let tx_db = TransactionInfoDb {
                 transaction_bytes: tx_bytes.to_string(),
                 inner: TransactionInfoDbInner {
@@ -1499,10 +1691,14 @@ mod tests {
                 },
             };
             let key = ("order_0".to_string(), 1000u32, 5u32);
-            tx_tree.insert(key.encode(), tx_db.encode()).unwrap();
+            tx_tree
+                .insert(key.encode(), tx_db.encode())
+                .unwrap();
 
             // Create pending transaction with SAME transaction_bytes
-            let pending_tree = sled_db.open_tree(PENDING_TRANSACTIONS_TABLE).unwrap();
+            let pending_tree = sled_db
+                .open_tree(PENDING_TRANSACTIONS_TABLE)
+                .unwrap();
             let tx_inner = TransactionInfoDbInner {
                 finalized_tx: None,
                 finalized_tx_timestamp: None,
@@ -1513,7 +1709,10 @@ mod tests {
                 status: TxStatus::Pending,
                 kind: TxKind::Payment,
             };
-            let key2 = ("order_0".to_string(), tx_bytes.to_string());
+            let key2 = (
+                "order_0".to_string(),
+                tx_bytes.to_string(),
+            );
             pending_tree
                 .insert(key2.encode(), tx_inner.encode())
                 .unwrap();
@@ -1547,10 +1746,19 @@ mod tests {
             let sled_db = sled::open(&sled_path).unwrap();
 
             // DON'T create order, but create transaction
-            let tx_tree = sled_db.open_tree(TRANSACTIONS_TABLE).unwrap();
-            let (key, tx_db) =
-                create_test_finalized_transaction("nonexistent_order", 1000, 5, 100.0, &currency);
-            tx_tree.insert(key.encode(), tx_db.encode()).unwrap();
+            let tx_tree = sled_db
+                .open_tree(TRANSACTIONS_TABLE)
+                .unwrap();
+            let (key, tx_db) = create_test_finalized_transaction(
+                "nonexistent_order",
+                1000,
+                5,
+                100.0,
+                &currency,
+            );
+            tx_tree
+                .insert(key.encode(), tx_db.encode())
+                .unwrap();
         } // sled_db is dropped here
 
         let dao = create_test_dao().await;
@@ -1582,7 +1790,9 @@ mod tests {
             populate_sled_with_orders(&sled_db, 1, &currency).unwrap();
 
             // Create transaction with Amount::All
-            let tx_tree = sled_db.open_tree(TRANSACTIONS_TABLE).unwrap();
+            let tx_tree = sled_db
+                .open_tree(TRANSACTIONS_TABLE)
+                .unwrap();
             let tx_db = TransactionInfoDb {
                 transaction_bytes: "0xcafebabe".to_string(),
                 inner: TransactionInfoDbInner {
@@ -1600,7 +1810,9 @@ mod tests {
                 },
             };
             let key = ("order_0".to_string(), 1000u32, 5u32);
-            tx_tree.insert(key.encode(), tx_db.encode()).unwrap();
+            tx_tree
+                .insert(key.encode(), tx_db.encode())
+                .unwrap();
         } // sled_db is dropped here
 
         let dao = create_test_dao().await;
@@ -1616,7 +1828,12 @@ mod tests {
             !stats.warnings.is_empty(),
             "Should have warning about Amount::All"
         );
-        assert!(stats.warnings.iter().any(|w| w.contains("Amount::All")));
+        assert!(
+            stats
+                .warnings
+                .iter()
+                .any(|w| w.contains("Amount::All"))
+        );
     }
 
     // ============================================================================

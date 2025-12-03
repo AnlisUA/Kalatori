@@ -1,13 +1,32 @@
 use std::fmt;
 
-use chrono::{DateTime, Duration, Utc};
+use chrono::{
+    DateTime,
+    Duration,
+    Utc,
+};
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
-use sqlx::types::{Json, Text};
-use sqlx::{FromRow, Type};
+use serde::{
+    Deserialize,
+    Serialize,
+};
+use sqlx::types::{
+    Json,
+    Text,
+};
+use sqlx::{
+    FromRow,
+    Type,
+};
 use uuid::Uuid;
 
-use crate::legacy_types::{CurrencyInfo, OrderQuery, PaymentStatus, Timestamp, WithdrawalStatus};
+use crate::legacy_types::{
+    CurrencyInfo,
+    OrderQuery,
+    PaymentStatus,
+    Timestamp,
+    WithdrawalStatus,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub enum InvoiceStatus {
@@ -26,25 +45,38 @@ pub enum InvoiceStatus {
     AdminCanceled,
 }
 
+#[expect(dead_code)]
 impl InvoiceStatus {
     /// Check if invoice is in an active state (still being monitored)
-    pub const fn is_active(&self) -> bool {
-        matches!(self, Self::Waiting | Self::PartiallyPaid)
+    pub const fn is_active(self) -> bool {
+        matches!(
+            self,
+            Self::Waiting | Self::PartiallyPaid
+        )
     }
 
     /// Check if invoice is in a final state (completed)
-    pub const fn is_final(&self) -> bool {
-        matches!(self, Self::Paid | Self::OverPaid | Self::AdminApproved)
+    pub const fn is_final(self) -> bool {
+        matches!(
+            self,
+            Self::Paid | Self::OverPaid | Self::AdminApproved
+        )
     }
 
     /// Check if invoice is expired
-    pub const fn is_expired(&self) -> bool {
-        matches!(self, Self::UnpaidExpired | Self::PartiallyPaidExpired)
+    pub const fn is_expired(self) -> bool {
+        matches!(
+            self,
+            Self::UnpaidExpired | Self::PartiallyPaidExpired
+        )
     }
 
     /// Check if invoice is canceled
-    pub const fn is_canceled(&self) -> bool {
-        matches!(self, Self::CustomerCanceled | Self::AdminCanceled)
+    pub const fn is_canceled(self) -> bool {
+        matches!(
+            self,
+            Self::CustomerCanceled | Self::AdminCanceled
+        )
     }
 }
 
@@ -54,7 +86,7 @@ impl From<InvoiceStatus> for PaymentStatus {
         match status {
             InvoiceStatus::Paid | InvoiceStatus::OverPaid | InvoiceStatus::AdminApproved => {
                 Self::Paid
-            }
+            },
             _ => Self::Pending,
         }
     }
@@ -71,7 +103,10 @@ impl From<PaymentStatus> for InvoiceStatus {
 }
 
 impl fmt::Display for InvoiceStatus {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
         match self {
             Self::Waiting => write!(f, "Waiting"),
             Self::PartiallyPaid => write!(f, "PartiallyPaid"),
@@ -121,7 +156,9 @@ pub struct InvoiceCart {
 impl InvoiceCart {
     // Prefer to create an empty cart explicitly over using Default trait
     pub fn empty() -> Self {
-        Self { items: vec![] }
+        Self {
+            items: vec![],
+        }
     }
 }
 
@@ -182,6 +219,7 @@ impl From<InvoiceRow> for Invoice {
     }
 }
 
+#[expect(dead_code)]
 #[derive(Debug)]
 pub struct CreateInvoiceData {
     pub order_id: String,

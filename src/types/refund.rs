@@ -1,9 +1,18 @@
 use std::fmt;
 
-use chrono::{DateTime, Utc};
+use chrono::{
+    DateTime,
+    Utc,
+};
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, Type};
+use serde::{
+    Deserialize,
+    Serialize,
+};
+use sqlx::{
+    FromRow,
+    Type,
+};
 use uuid::Uuid;
 
 use super::common::InitiatorType;
@@ -17,7 +26,10 @@ pub enum RefundStatus {
 }
 
 impl fmt::Display for RefundStatus {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
         match self {
             Self::Waiting => write!(f, "Waiting"),
             Self::InProgress => write!(f, "InProgress"),
@@ -41,6 +53,7 @@ impl std::str::FromStr for RefundStatus {
     }
 }
 
+#[expect(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, FromRow)]
 pub struct Refund {
     pub id: Uuid,

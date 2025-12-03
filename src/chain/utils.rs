@@ -17,9 +17,14 @@ pub fn ss58hash(data: &[u8]) -> [u8; HASH_512_LEN] {
         .expect("static length, always fits")
 }
 
-// Same as `to_ss58check_with_version()` method for `Ss58Codec` from `sp_core`, comments from `sp_core`.
-pub fn to_base58_string(bytes: [u8; 32], base58prefix: u16) -> String {
-    // We mask out the upper two bits of the ident - SS58 Prefix currently only supports 14-bits
+// Same as `to_ss58check_with_version()` method for `Ss58Codec` from `sp_core`,
+// comments from `sp_core`.
+pub fn to_base58_string(
+    bytes: [u8; 32],
+    base58prefix: u16,
+) -> String {
+    // We mask out the upper two bits of the ident - SS58 Prefix currently only
+    // supports 14-bits
     let ident: u16 = base58prefix & 0b0011_1111_1111_1111;
     let mut v = match ident {
         #[expect(clippy::cast_possible_truncation)]
@@ -31,7 +36,7 @@ pub fn to_base58_string(bytes: [u8; 32], base58prefix: u16) -> String {
             // lower bits of the upper byte in the low pos
             let second = ((ident >> 8) as u8) | ((ident & 0b0000_0000_0000_0011) as u8) << 6;
             vec![first | 0b0100_0000, second]
-        }
+        },
         _ => unreachable!("masked out the upper two bits; qed"),
     };
     v.extend(bytes);

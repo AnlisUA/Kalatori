@@ -27,8 +27,8 @@ download-node-metadata: # Download metadata of configured Asset Hub node. Requir
 	PATH="${PWD}/bin:${PATH}" subxt metadata -f bytes --url ws://localhost:9000 > metadata.scale
 
 # TODO: read alternative value from env
-download-node-metadata-ci: # Download metadata of Asset Hub node. Required for subxt compilation. By default use wss://statemint-rpc.dwellir.com url.
-	PATH="${PWD}/bin:${PATH}" subxt metadata -f bytes --url wss://statemint-rpc.dwellir.com > metadata.scale
+download-node-metadata-ci: # Download metadata of Asset Hub node. Required for subxt compilation. By default use wss://polkadot-asset-hub-rpc.polkadot.io url.
+	PATH="${PWD}/bin:${PATH}" subxt metadata -f bytes --url wss://polkadot-asset-hub-rpc.polkadot.io > metadata.scale
 
 copy-configs: # Copy .example configs to actual configs
 	cd configs; \

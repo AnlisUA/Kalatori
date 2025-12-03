@@ -2,7 +2,10 @@
 
 use std::fmt;
 
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 use sqlx::Type;
 
 /// Initiator type for payouts and refunds
@@ -13,7 +16,10 @@ pub enum InitiatorType {
 }
 
 impl fmt::Display for InitiatorType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
         match self {
             Self::System => write!(f, "System"),
             Self::Admin => write!(f, "Admin"),
