@@ -1,3 +1,14 @@
-use_try_shorthand = true
+edition = "2024"
+
+combine_control_expr = false
+fn_params_layout = "Vertical"
+imports_layout = "Vertical"
+match_block_trailing_comma = true
+imports_granularity = "Module"
+reorder_impl_items = true
+struct_lit_single_line = false
+trailing_semicolon = false
 use_field_init_shorthand = true
-newline_style = "Unix"
+wrap_comments = true
+chain_width = 40
+fn_call_width = 40

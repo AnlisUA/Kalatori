@@ -1,29 +1,40 @@
-//! Everything related to actual interaction with blockchain
-
-use std::collections::HashMap;
-use subxt::utils::AccountId32;
-use tokio::{
-    sync::{mpsc, oneshot},
-    time::{Duration, timeout},
-};
-use tokio_util::sync::CancellationToken;
-
-use crate::chain_client::KeyringClient;
-use crate::configs::ChainConfig;
-use crate::{
-    error::{ChainError, Error},
-    legacy_types::OrderInfo,
-    state::State,
-    utils::task_tracker::TaskTracker,
-};
-
 pub mod definitions;
 pub mod payout;
 pub mod tracker;
 pub mod utils;
 
-use crate::legacy_types::{Health, RpcInfo};
-use definitions::{ChainRequest, ChainTrackerRequest, WatchAccount};
+use std::collections::HashMap;
+
+use subxt::utils::AccountId32;
+use tokio::sync::{
+    mpsc,
+    oneshot,
+};
+use tokio::time::{
+    Duration,
+    timeout,
+};
+use tokio_util::sync::CancellationToken;
+
+use crate::chain_client::KeyringClient;
+use crate::configs::ChainConfig;
+use crate::error::{
+    ChainError,
+    Error,
+};
+use crate::legacy_types::{
+    Health,
+    OrderInfo,
+    RpcInfo,
+};
+use crate::state::State;
+use crate::utils::task_tracker::TaskTracker;
+
+use definitions::{
+    ChainRequest,
+    ChainTrackerRequest,
+    WatchAccount,
+};
 use tracker::start_chain_watch;
 
 /// Wait this long before forgetting about stuck chain watcher
@@ -36,7 +47,8 @@ pub struct ChainManager {
 }
 
 impl ChainManager {
-    /// Run once to start all chain connections; this should be very robust, if manager fails
+    /// Run once to start all chain connections; this should be very robust, if
+    /// manager fails
     /// - all modules should be restarted, probably.
     #[expect(clippy::too_many_lines)]
     pub fn ignite(
@@ -61,7 +73,10 @@ impl ChainManager {
             return Err(Error::EmptyEndpoints(chain_info.name));
         }
         let (chain_tx, chain_rx) = mpsc::channel(1024);
-        watch_chain.insert(chain_info.name.clone(), chain_tx.clone());
+        watch_chain.insert(
+            chain_info.name.clone(),
+            chain_tx.clone(),
+        );
 
         for a in &chain_info.assets {
             if currency_map
@@ -102,7 +117,7 @@ impl ChainManager {
                                         } else {
                                             let _unused = request
                                                 .res
-                                                .send(Err(ChainError::InvalidChain(chain.to_string())));
+                                                .send(Err(ChainError::InvalidChain(chain.clone())));
                                         }
                                     } else {
                                         let _unused = request
@@ -118,7 +133,7 @@ impl ChainManager {
                                         } else {
                                             let _unused = request
                                                 .res
-                                                .send(Err(ChainError::InvalidChain(chain.to_string())));
+                                                .send(Err(ChainError::InvalidChain(chain.clone())));
                                         }
                                     } else {
                                         let _unused = request
@@ -165,7 +180,9 @@ impl ChainManager {
                 Ok("Chain manager is shutting down")
             });
 
-        Ok(Self { tx })
+        Ok(Self {
+            tx,
+        })
     }
 
     pub async fn add_invoice(
@@ -176,12 +193,13 @@ impl ChainManager {
     ) -> Result<(), ChainError> {
         let (res, rx) = oneshot::channel();
         self.tx
-            .send(ChainRequest::WatchAccount(WatchAccount::new(
-                invoice_id, order, recipient, res,
-            )?))
+            .send(ChainRequest::WatchAccount(
+                WatchAccount::new(invoice_id, order, recipient, res)?,
+            ))
             .await
             .map_err(|_| ChainError::MessageDropped)?;
-        rx.await.map_err(|_| ChainError::MessageDropped)?
+        rx.await
+            .map_err(|_| ChainError::MessageDropped)?
     }
 
     pub async fn get_connected_rpcs(&self) -> Result<Vec<RpcInfo>, Error> {
@@ -206,12 +224,16 @@ impl ChainManager {
             )?))
             .await
             .map_err(|_| ChainError::MessageDropped)?;
-        rx.await.map_err(|_| ChainError::MessageDropped)?
+        rx.await
+            .map_err(|_| ChainError::MessageDropped)?
     }
 
     pub async fn shutdown(&self) -> () {
         let (tx, rx) = oneshot::channel();
-        let _unused = self.tx.send(ChainRequest::Shutdown(tx)).await;
+        let _unused = self
+            .tx
+            .send(ChainRequest::Shutdown(tx))
+            .await;
         let _ = rx.await;
     }
 }

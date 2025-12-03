@@ -1,4 +1,7 @@
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::{
+    IpAddr,
+    Ipv4Addr,
+};
 
 use config::Config;
 use serde::Deserialize;
@@ -7,7 +10,10 @@ use subxt_signer::SecretString;
 
 const DEFAULT_CONFIG_DIR_PATH: &str = "configs";
 
-fn format_prefix(prefix: &str, config_prefix: &str) -> String {
+fn format_prefix(
+    prefix: &str,
+    config_prefix: &str,
+) -> String {
     if prefix.is_empty() {
         config_prefix.to_string()
     } else {
@@ -15,7 +21,10 @@ fn format_prefix(prefix: &str, config_prefix: &str) -> String {
     }
 }
 
-fn format_config_path(config_dir_path: &str, config_name: &str) -> String {
+fn format_config_path(
+    config_dir_path: &str,
+    config_name: &str,
+) -> String {
     if config_dir_path.is_empty() {
         format!("{DEFAULT_CONFIG_DIR_PATH}/{config_name}")
     } else if config_dir_path.ends_with('/') {
@@ -25,15 +34,18 @@ fn format_config_path(config_dir_path: &str, config_name: &str) -> String {
     }
 }
 
-fn config_from_file_or_env<T: DeserializeOwned>(filename: &str, env_prefix: &str) -> T {
+fn config_from_file_or_env<T: DeserializeOwned>(
+    filename: &str,
+    env_prefix: &str,
+) -> T {
     let config = Config::builder()
         .add_source(config::File::with_name(filename).required(false))
         .add_source(
             config::Environment::with_prefix(env_prefix)
-            .try_parsing(true)
-            // allow set ChainConfig.endpoints over env vars
-            .with_list_parse_key("endpoints")
-            .list_separator(","),
+                .try_parsing(true)
+                // allow set ChainConfig.endpoints over env vars
+                .with_list_parse_key("endpoints")
+                .list_separator(","),
         )
         .build()
         .unwrap_or_else(|err| panic!("Failed to read config file: {filename}. Error: {err}"));
@@ -131,7 +143,8 @@ pub struct DatabaseConfig {
     /// `kalatori.db` by default
     #[serde(default = "default_database_path")]
     pub path: String,
-    /// Directory where the database file should be stored, defaults to current directory
+    /// Directory where the database file should be stored, defaults to current
+    /// directory
     #[serde(default = "default_database_dir")]
     pub dir: String,
     #[serde(default)]
@@ -140,14 +153,19 @@ pub struct DatabaseConfig {
 
 // TODO: add logger config
 
-pub fn seed_config_with_prefix(config_dir_path: &str, prefix: &str) -> SeedConfig {
+pub fn seed_config_with_prefix(
+    config_dir_path: &str,
+    prefix: &str,
+) -> SeedConfig {
     let config_path = format_config_path(config_dir_path, "seed.json");
     let env_prefix = format_prefix(prefix, "SEED");
     let config = config_from_file_or_env::<RawSeedConfig>(&config_path, &env_prefix);
 
-    // Function is unsafe because of potential race conditions in multithreaded environment. We call it at very start
-    // of the program before spawn any futures which might cause this error therefore can consider it safe. If you know
-    // some better way to handle it (except of forbid to provide seed throgh env var) please let us know.
+    // Function is unsafe because of potential race conditions in multithreaded
+    // environment. We call it at very start of the program before spawn any
+    // futures which might cause this error therefore can consider it safe. If you
+    // know some better way to handle it (except of forbid to provide seed
+    // throgh env var) please let us know.
     unsafe {
         std::env::remove_var(format!("{env_prefix}_SEED"));
     }
@@ -155,25 +173,37 @@ pub fn seed_config_with_prefix(config_dir_path: &str, prefix: &str) -> SeedConfi
     config.into()
 }
 
-pub fn chain_config_with_prefix(config_dir_path: &str, prefix: &str) -> ChainConfig {
+pub fn chain_config_with_prefix(
+    config_dir_path: &str,
+    prefix: &str,
+) -> ChainConfig {
     let config_path = format_config_path(config_dir_path, "chain.json");
     let env_prefix = format_prefix(prefix, "CHAIN");
     config_from_file_or_env(&config_path, &env_prefix)
 }
 
-pub fn payments_config_with_prefix(config_dir_path: &str, prefix: &str) -> PaymentsConfig {
+pub fn payments_config_with_prefix(
+    config_dir_path: &str,
+    prefix: &str,
+) -> PaymentsConfig {
     let config_path = format_config_path(config_dir_path, "payments.json");
     let env_prefix = format_prefix(prefix, "PAYMENTS");
     config_from_file_or_env(&config_path, &env_prefix)
 }
 
-pub fn web_server_config_with_prefix(config_dir_path: &str, prefix: &str) -> WebServerConfig {
+pub fn web_server_config_with_prefix(
+    config_dir_path: &str,
+    prefix: &str,
+) -> WebServerConfig {
     let config_path = format_config_path(config_dir_path, "web_server.json");
     let env_prefix = format_prefix(prefix, "WEB_SERVER");
     config_from_file_or_env(&config_path, &env_prefix)
 }
 
-pub fn database_config_with_prefix(config_dir_path: &str, prefix: &str) -> DatabaseConfig {
+pub fn database_config_with_prefix(
+    config_dir_path: &str,
+    prefix: &str,
+) -> DatabaseConfig {
     let config_path = format_config_path(config_dir_path, "database.json");
     let env_prefix = format_prefix(prefix, "DATABASE");
     config_from_file_or_env(&config_path, &env_prefix)
@@ -186,7 +216,8 @@ mod tests {
     use serial_test::serial;
     use subxt_signer::ExposeSecret;
 
-    // TODO: those tests suppose that `make copy-configs` was executed. Need somehow ensure that it happend
+    // TODO: those tests suppose that `make copy-configs` was executed. Need somehow
+    // ensure that it happend
 
     #[test]
     #[serial]
@@ -200,7 +231,8 @@ mod tests {
             );
         }
 
-        // override seed with env var and ensure this env var was removed after config load
+        // override seed with env var and ensure this env var was removed after config
+        // load
         {
             let value = "test seed";
             unsafe {
@@ -210,20 +242,30 @@ mod tests {
             assert_eq!(config.seed.expose_secret(), value);
 
             let env_var = std::env::var("SEED_SEED");
-            assert!(matches!(env_var, Err(std::env::VarError::NotPresent)));
+            assert!(matches!(
+                env_var,
+                Err(std::env::VarError::NotPresent)
+            ));
         }
 
-        // same as previous + override env var prefix. Also set some different dir which shouldn't affect anything in this case
+        // same as previous + override env var prefix. Also set some different dir which
+        // shouldn't affect anything in this case
         {
             let value = "test seed 2";
             unsafe {
                 std::env::set_var("KALATORI_SUPER_PREFIX_SEED_SEED", value);
             }
-            let config = seed_config_with_prefix("somewhere-nowhere", "KALATORI_SUPER_PREFIX");
+            let config = seed_config_with_prefix(
+                "somewhere-nowhere",
+                "KALATORI_SUPER_PREFIX",
+            );
             assert_eq!(config.seed.expose_secret(), value);
 
             let env_var = std::env::var("KALATORI_SUPER_PREFIX_SEED_SEED");
-            assert!(matches!(env_var, Err(std::env::VarError::NotPresent)));
+            assert!(matches!(
+                env_var,
+                Err(std::env::VarError::NotPresent)
+            ));
         }
     }
 
@@ -267,7 +309,10 @@ mod tests {
         // override config env prefix
         {
             unsafe {
-                std::env::set_var("KALATORI_PAYMENTS_ACCOUNT_LIFETIME_MILLIS", "123");
+                std::env::set_var(
+                    "KALATORI_PAYMENTS_ACCOUNT_LIFETIME_MILLIS",
+                    "123",
+                );
             }
 
             let config = payments_config_with_prefix("", "KALATORI");
@@ -311,7 +356,10 @@ mod tests {
         // override endpoints with env vars
         {
             unsafe {
-                std::env::set_var("CHAIN_ENDPOINTS", "ws://localhost:9000,ws://localhost:9500");
+                std::env::set_var(
+                    "CHAIN_ENDPOINTS",
+                    "ws://localhost:9000,ws://localhost:9500",
+                );
             }
 
             expected_endpoints.push("ws://localhost:9500".to_string());
@@ -350,14 +398,21 @@ mod tests {
         // load config from default config dir without any overrides
         {
             let config = web_server_config_with_prefix("", "");
-            assert_eq!(config.host, IpAddr::V4(Ipv4Addr::UNSPECIFIED));
+            assert_eq!(
+                config.host,
+                IpAddr::V4(Ipv4Addr::UNSPECIFIED)
+            );
             assert_eq!(config.port, 16726);
         }
 
-        // override config dir to unexisting one but as long as all config fields are optional it should work
+        // override config dir to unexisting one but as long as all config fields are
+        // optional it should work
         {
             let config = web_server_config_with_prefix("somewhere-nowhere", "");
-            assert_eq!(config.host, IpAddr::V4(Ipv4Addr::UNSPECIFIED));
+            assert_eq!(
+                config.host,
+                IpAddr::V4(Ipv4Addr::UNSPECIFIED)
+            );
             assert_eq!(config.port, 16726);
         }
 
@@ -368,7 +423,10 @@ mod tests {
             }
 
             let config = web_server_config_with_prefix("", "");
-            assert_eq!(config.host, IpAddr::V4(Ipv4Addr::UNSPECIFIED));
+            assert_eq!(
+                config.host,
+                IpAddr::V4(Ipv4Addr::UNSPECIFIED)
+            );
             assert_eq!(config.port, 12345);
         }
 
@@ -382,7 +440,10 @@ mod tests {
             }
 
             let config = web_server_config_with_prefix("", "SUPER_KALATORI");
-            assert_eq!(config.host, IpAddr::V4(Ipv4Addr::LOCALHOST));
+            assert_eq!(
+                config.host,
+                IpAddr::V4(Ipv4Addr::LOCALHOST)
+            );
             assert_eq!(config.port, 16726);
         }
     }
@@ -397,7 +458,8 @@ mod tests {
             assert!(!config.temporary);
         }
 
-        // override configs dir to unexisting one but as long as all config fields are optional it should work
+        // override configs dir to unexisting one but as long as all config fields are
+        // optional it should work
         {
             let config = database_config_with_prefix("somewhere-nowhere", "");
             assert_eq!(config.path, "kalatori.db".to_string());
@@ -418,7 +480,10 @@ mod tests {
         // override some parameter with env var with customized prefix
         {
             unsafe {
-                std::env::set_var("MEGA_KALATORI_DATABASE_PATH", "mega_kalatori.db");
+                std::env::set_var(
+                    "MEGA_KALATORI_DATABASE_PATH",
+                    "mega_kalatori.db",
+                );
             }
 
             let config = database_config_with_prefix("", "MEGA_KALATORI");

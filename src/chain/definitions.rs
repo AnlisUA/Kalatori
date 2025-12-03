@@ -2,13 +2,26 @@
 
 use std::str::FromStr;
 
-use crate::{
-    chain::tracker::ChainWatcher, chain_client::{BlockChainClient, AssetHubClient}, definitions::Balance, error::ChainError, legacy_types::{CurrencyInfo, OrderInfo, RpcInfo, Timestamp}
+use crate::chain::tracker::ChainWatcher;
+use crate::chain_client::{
+    AssetHubClient,
+    BlockChainClient,
+};
+use crate::definitions::Balance;
+use crate::error::ChainError;
+use crate::legacy_types::{
+    CurrencyInfo,
+    OrderInfo,
+    RpcInfo,
+    Timestamp,
+};
+use rust_decimal::prelude::{
+    Decimal,
+    ToPrimitive,
 };
 use subxt::utils::AccountId32;
 use tokio::sync::oneshot;
 use uuid::Uuid;
-use rust_decimal::prelude::{Decimal, ToPrimitive};
 
 pub enum ChainRequest {
     WatchAccount(WatchAccount),
@@ -96,11 +109,20 @@ impl Invoice {
 
         // TODO: asset_id shouldn't be optional, will change in future
         let Some(asset_id) = currency.asset_id else {
-            return Err(ChainError::InvalidCurrency(self.currency.currency.clone()));
+            return Err(ChainError::InvalidCurrency(
+                self.currency.currency.clone(),
+            ));
         };
 
-        let amount = client.fetch_asset_balance(&asset_id, &self.address).await.map_err(|_| ChainError::StorageQuery)?;
-        let balance = (amount / Decimal::new(1, 6)).to_u128().unwrap();
+        let amount = client
+            .fetch_asset_balance(&asset_id, &self.address)
+            .await
+            .map_err(|_| ChainError::StorageQuery)?;
+
+        #[expect(clippy::arithmetic_side_effects)]
+        let balance = (amount / Decimal::new(1, 6))
+            .to_u128()
+            .unwrap();
 
         Ok(Balance(balance))
     }
@@ -110,8 +132,11 @@ impl Invoice {
         client: &AssetHubClient,
         chain_watcher: &ChainWatcher,
     ) -> Result<bool, ChainError> {
-        // TODO: what if we receive significantly more money then expect? Perhaps need to check in some range?
-        Ok(self.balance(client, chain_watcher).await?
+        // TODO: what if we receive significantly more money then expect? Perhaps need
+        // to check in some range?
+        Ok(self
+            .balance(client, chain_watcher)
+            .await?
             >= Balance::parse(self.amount, self.currency.decimals))
     }
 }

@@ -433,7 +433,7 @@ describe('Order Endpoint Blackbox Tests', () => {
     expect(forcedOrderDetails.payment_status).toBe('pending');
     expect(forcedOrderDetails.withdrawal_status).toBe('forced');
 
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    await new Promise(resolve => setTimeout(resolve, 15000));
 
     const paymentAccountUsdtBalance = await getAssetBalance(orderDetails.currency.rpc_url, paymentAccount, orderDetails.currency.asset_id);
     expect(reverseDecimals(paymentAccountUsdtBalance, 6)).toBeLessThan(0.1);

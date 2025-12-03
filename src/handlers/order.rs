@@ -1,17 +1,30 @@
-use crate::{
-    error::{ForceWithdrawalError, OrderError},
-    legacy_types::{AMOUNT, CURRENCY, InvalidParameter, OrderQuery, OrderResponse},
-    state::State,
+use axum::Json;
+use axum::extract::{
+    Path,
+    State as ExtractState,
 };
-use axum::{
-    Json,
-    extract::{Path, State as ExtractState},
-    http::StatusCode,
-    response::{IntoResponse, Response},
+use axum::http::StatusCode;
+use axum::response::{
+    IntoResponse,
+    Response,
 };
 use serde::Deserialize;
 
+use crate::error::{
+    ForceWithdrawalError,
+    OrderError,
+};
+use crate::legacy_types::{
+    AMOUNT,
+    CURRENCY,
+    InvalidParameter,
+    OrderQuery,
+    OrderResponse,
+};
+use crate::state::State;
+
 const EXISTENTIAL_DEPOSIT: f64 = 0.07;
+
 #[derive(Debug, Deserialize)]
 pub struct OrderPayload {
     pub amount: Option<f64>,
@@ -27,16 +40,22 @@ pub async fn process_order(
     if let Some(payload) = order_payload {
         // AMOUNT validation
         let Some(amount) = payload.amount else {
-            return Err(OrderError::MissingParameter(AMOUNT.to_string()));
+            return Err(OrderError::MissingParameter(
+                AMOUNT.to_string(),
+            ));
         };
 
         if amount < EXISTENTIAL_DEPOSIT {
-            return Err(OrderError::LessThanExistentialDeposit(EXISTENTIAL_DEPOSIT));
+            return Err(OrderError::LessThanExistentialDeposit(
+                EXISTENTIAL_DEPOSIT,
+            ));
         }
 
         // CURRENCY validation
         let Some(currency) = payload.currency else {
-            return Err(OrderError::MissingParameter(CURRENCY.to_string()));
+            return Err(OrderError::MissingParameter(
+                CURRENCY.to_string(),
+            ));
         };
 
         if !state
@@ -134,11 +153,11 @@ pub async fn force_withdrawal(
     match process_force_withdrawal(state, order_id).await {
         Ok(OrderResponse::FoundOrder(order_status)) => {
             (StatusCode::CREATED, Json(order_status)).into_response()
-        }
+        },
         Ok(OrderResponse::NotFound) => (StatusCode::NOT_FOUND, "Order not found").into_response(),
         Err(ForceWithdrawalError::WithdrawalError(a)) => {
             (StatusCode::BAD_REQUEST, Json(a)).into_response()
-        }
+        },
         Err(ForceWithdrawalError::MissingParameter(parameter)) => (
             StatusCode::BAD_REQUEST,
             Json([InvalidParameter {

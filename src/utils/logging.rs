@@ -1,15 +1,18 @@
 //! Logging constants for structured logging across the application.
 //!
-//! These constants are used in tracing fields to enable consistent log categorization
-//! and filtering in production.
+//! These constants are used in tracing fields to enable consistent log
+//! categorization and filtering in production.
 
+#[expect(dead_code)]
 /// Log category constants for identifying the source subsystem
 pub mod category {
     pub const CHAIN_CLIENT: &str = "chain_client";
     pub const DATABASE: &str = "database";
 }
 
-/// Log operation constants for identifying specific operations within subsystems
+#[expect(dead_code)]
+/// Log operation constants for identifying specific operations within
+/// subsystems
 pub mod operation {
     // Chain client operations
     pub const CONNECT_CLIENT: &str = "connect_client";

@@ -1,12 +1,17 @@
-use crate::utils::task_tracker::TaskName;
+use std::io::Error as IoError;
+use std::net::SocketAddr;
+
 use codec::Error as ScaleError;
-use serde_json::Error as JsonError;
-use serde_json::Value;
+use serde_json::{
+    Error as JsonError,
+    Value,
+};
 use sled::Error as DatabaseError;
-use std::{io::Error as IoError, net::SocketAddr};
 use thiserror::Error;
 use tokio::task::JoinError;
 use tracing_subscriber::filter::ParseError;
+
+use crate::utils::task_tracker::TaskName;
 
 pub use pretty_cause::PrettyCause;
 
@@ -74,7 +79,9 @@ pub enum Error {
     ChainSubscription(#[from] crate::chain_client::SubscriptionError),
 
     #[error("transaction failed")]
-    ChainTransaction(#[from] crate::chain_client::TransactionError<crate::chain_client::AssetHubChainConfig>),
+    ChainTransaction(
+        #[from] crate::chain_client::TransactionError<crate::chain_client::AssetHubChainConfig>,
+    ),
 
     #[error("sled to SQLite migration failed")]
     MigrationFailed(#[from] crate::sled_to_sqlite_migration::MigrationError),
@@ -82,7 +89,9 @@ pub enum Error {
 
 impl From<Error> for ChainError {
     fn from(_err: Error) -> Self {
-        ChainError::Util(UtilError::NotHex(NotHexError::BlockHash))
+        ChainError::Util(UtilError::NotHex(
+            NotHexError::BlockHash,
+        ))
     }
 }
 
@@ -415,9 +424,11 @@ pub enum NotHexError {
 }
 
 mod pretty_cause {
-    use std::{
-        error::Error,
-        fmt::{Display, Formatter, Result},
+    use std::error::Error;
+    use std::fmt::{
+        Display,
+        Formatter,
+        Result,
     };
 
     const OVERLOAD: u16 = 9999;
@@ -435,7 +446,10 @@ mod pretty_cause {
     }
 
     impl<T: Error> Display for Wrapper<'_, T> {
-        fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        fn fmt(
+            &self,
+            f: &mut Formatter<'_>,
+        ) -> Result {
             f.write_str("\n    ")?;
 
             Display::fmt(&self.0, f)?;
@@ -482,7 +496,11 @@ mod pretty_cause {
             }
 
             loop {
-                print_cause(f, another_cause, shadow_rs::formatcp!(">{OVERLOAD}"))?;
+                print_cause(
+                    f,
+                    another_cause,
+                    shadow_rs::formatcp!(">{OVERLOAD}"),
+                )?;
 
                 if let Some(one_more_cause) = another_cause.source() {
                     another_cause = one_more_cause;
@@ -511,16 +529,25 @@ mod pretty_cause {
 
     #[cfg(test)]
     mod tests {
-        use super::{OVERLOAD, PrettyCause};
-        use std::{
-            error::Error,
-            fmt::{Debug, Display, Formatter, Result, Write},
+        use super::{
+            OVERLOAD,
+            PrettyCause,
+        };
+        use std::error::Error;
+        use std::fmt::{
+            Debug,
+            Display,
+            Formatter,
+            Result,
+            Write,
         };
 
         #[test]
         fn no_cause() {
             assert_eq!(
-                TestError::no_source().pretty_cause().to_string(),
+                TestError::no_source()
+                    .pretty_cause()
+                    .to_string(),
                 "\n    TestError(0)."
             );
         }
@@ -534,7 +561,12 @@ mod pretty_cause {
                 Caused by: TestError(0)."
             };
 
-            assert_eq!(TestError::nested(1).pretty_cause().to_string(), MESSAGE);
+            assert_eq!(
+                TestError::nested(1)
+                    .pretty_cause()
+                    .to_string(),
+                MESSAGE
+            );
         }
 
         #[test]
@@ -549,7 +581,12 @@ mod pretty_cause {
                     2: TestError(0)."
             };
 
-            assert_eq!(TestError::nested(3).pretty_cause().to_string(), MESSAGE);
+            assert_eq!(
+                TestError::nested(3)
+                    .pretty_cause()
+                    .to_string(),
+                MESSAGE
+            );
         }
 
         #[test]
@@ -618,7 +655,10 @@ mod pretty_cause {
         }
 
         impl Display for TestError {
-            fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+            fn fmt(
+                &self,
+                f: &mut Formatter<'_>,
+            ) -> Result {
                 f.debug_tuple(stringify!(TestError))
                     .field(&self.number)
                     .finish()

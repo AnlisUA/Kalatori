@@ -15,7 +15,7 @@ documentation = "https://docs.rs/Kalatori"
 readme = "README.md"
 keywords = ["substrate", "blockchain", "finance", "service", "middleware"]
 categories = ["finance"]
-exclude = [".github", "cliff.toml", "Dockerfile", "chopsticks/", "configs", "is_version_greater.sh", "shoot.sh", "start.sh", "/tests"]
+exclude = [".github", "cliff.toml", "Dockerfile", "chopsticks/", "configs", "is_version_greater.sh", "/tests"]
 rust-version = "1.85"
 
 [dependencies]
@@ -87,16 +87,15 @@ future_incompatible = "warn"
 let_underscore = "warn"
 rust_2018_idioms = "warn"
 unused = "warn"
-# TODO: https://github.com/rust-lang/cargo/issues/12918
-rust-2024-compatibility = { level = "warn", priority = -1 }
 
 [lints.clippy]
-allow_attributes = "warn"
-shadow_reuse = "warn"
-shadow_same = "warn"
-shadow_unrelated = "warn"
+allow_attributes = "deny"
 cargo_common_metadata = "warn"
-arithmetic_side_effects = "warn"
+arithmetic_side_effects = "deny"
+cast_possible_truncation = "deny"
+needless_borrow = "deny"
+ignored_unit_patterns = "deny"
+let_unit_value = "deny"
 # Having multiple module layout styles in a project can be confusing. Moreover, `mod.rs` files don't
 # really harmonize with Git as they can be renamed back to self-named modules and Git fundamentally
 # prone to poorly handle the file renaming that can result in their history erasure.

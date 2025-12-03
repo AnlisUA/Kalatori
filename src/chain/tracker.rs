@@ -1,44 +1,54 @@
 //! A tracker that follows individual chain
 
-use crate::{
-    chain::{
-        definitions::{ChainTrackerRequest, Invoice},
-        payout::payout, utils::to_base58_string,
-    },
-    chain_client::ClientError,
-    configs::ChainConfig, error::ChainError, legacy_types::{CurrencyProperties, Health, RpcInfo, TokenKind, TxKind, TxStatus}, state::State, types::{OutgoingTransactionMeta, Transaction, TransactionOrigin}, utils::task_tracker::TaskTracker
-};
-use crate::chain_client::{AssetHubClient, BlockChainClient, KeyringClient};
 use std::collections::HashMap;
+
+use chrono::{
+    DateTime,
+    Utc,
+};
+use futures::{
+    StreamExt,
+    pin_mut,
+};
 use rust_decimal::Decimal;
-use chrono::{DateTime, Utc};
-use futures::{StreamExt, pin_mut};
 use subxt::utils::AccountId32;
-use tokio::{
-    sync::mpsc,
-    time::{Duration, timeout},
+use tokio::sync::mpsc;
+use tokio::time::{
+    Duration,
+    timeout,
 };
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-/// Extract transaction hash from hex-encoded extrinsic bytes
-fn extract_tx_hash(transaction_bytes: &str) -> Option<String> {
-    // Remove 0x prefix if present
-    let bytes_str = transaction_bytes
-        .strip_prefix("0x")
-        .unwrap_or(transaction_bytes);
-
-    // Decode hex to bytes
-    let bytes = const_hex::decode(bytes_str).ok()?;
-
-    // Calculate blake2 256-bit hash (standard for Substrate tx hashes)
-    let mut hasher = blake2b_simd::Params::new().hash_length(32).to_state();
-    hasher.update(&bytes);
-    let hash = hasher.finalize();
-
-    // Return as 0x-prefixed hex string
-    Some(format!("0x{}", const_hex::encode(hash.as_bytes())))
-}
+use crate::chain::definitions::{
+    ChainTrackerRequest,
+    Invoice,
+};
+use crate::chain::payout::payout;
+use crate::chain::utils::to_base58_string;
+use crate::chain_client::{
+    AssetHubClient,
+    BlockChainClient,
+    ClientError,
+    KeyringClient,
+};
+use crate::configs::ChainConfig;
+use crate::error::ChainError;
+use crate::legacy_types::{
+    CurrencyProperties,
+    Health,
+    RpcInfo,
+    TokenKind,
+    TxKind,
+    TxStatus,
+};
+use crate::state::State;
+use crate::types::{
+    OutgoingTransactionMeta,
+    Transaction,
+    TransactionOrigin,
+};
+use crate::utils::task_tracker::TaskTracker;
 
 /// Convert `TxKind` to `TransactionType`
 fn tx_kind_to_transaction_type(kind: TxKind) -> crate::types::TransactionType {
@@ -49,31 +59,12 @@ fn tx_kind_to_transaction_type(kind: TxKind) -> crate::types::TransactionType {
 }
 
 /// Convert `TxStatus` to `TransactionStatus`
-fn tx_status_to_transaction_status(status: TxStatus) -> crate::types::TransactionStatus {
+fn tx_status_to_transaction_status(status: &TxStatus) -> crate::types::TransactionStatus {
     match status {
         TxStatus::Pending => crate::types::TransactionStatus::Waiting,
         TxStatus::Finalized => crate::types::TransactionStatus::Completed,
         TxStatus::Failed => crate::types::TransactionStatus::Failed,
     }
-}
-
-/// Convert `f64` amount to `Decimal`
-fn amount_to_decimal(amount: f64) -> rust_decimal::Decimal {
-    // This should not fail for normal f64 values
-    Decimal::try_from(amount).unwrap_or_else(|e| {
-        tracing::error!("Failed to convert amount {amount} to Decimal: {e}");
-        Decimal::ZERO
-    })
-}
-
-/// Parse RFC3339 timestamp string to `DateTime<Utc>`
-fn parse_timestamp(timestamp_str: &str) -> DateTime<Utc> {
-    DateTime::parse_from_rfc3339(timestamp_str)
-        .map(|dt| dt.with_timezone(&Utc))
-        .unwrap_or_else(|e| {
-            tracing::error!("Failed to parse timestamp {timestamp_str}: {e}");
-            Utc::now()
-        })
 }
 
 /// Build a Transaction object from the available data
@@ -83,18 +74,17 @@ fn build_transaction(
     asset_id: u32,
     chain: String,
     amount: Decimal,
-    sender: AccountId32,
-    recipient: AccountId32,
+    sender: &AccountId32,
+    recipient: &AccountId32,
     block_number: u32,
     position_in_block: u32,
-    transaction_bytes: String,
     timestamp: u64,
     tx_kind: TxKind,
-    tx_status: TxStatus,
+    tx_status: &TxStatus,
 ) -> Transaction {
-    let tx_hash = extract_tx_hash(&transaction_bytes);
     let transaction_type = tx_kind_to_transaction_type(tx_kind);
-    let created_at = DateTime::from_timestamp_millis(timestamp as i64).unwrap_or_else(|| Utc::now());
+    #[expect(clippy::cast_possible_wrap)]
+    let created_at = DateTime::from_timestamp_millis(timestamp as i64).unwrap_or_else(Utc::now);
     let status = tx_status_to_transaction_status(tx_status);
     let sender = to_base58_string(sender.0, 42);
     let recipient = to_base58_string(recipient.0, 42);
@@ -109,13 +99,13 @@ fn build_transaction(
         recipient,
         block_number: Some(block_number),
         position_in_block: Some(position_in_block),
-        tx_hash,
+        tx_hash: None,
         origin: TransactionOrigin::default(), // No origin for detected payments
         status,
         transaction_type,
+        transaction_bytes: None,
         outgoing_meta: OutgoingTransactionMeta::default(),
         created_at,
-        transaction_bytes: Some(transaction_bytes),
     }
 }
 
@@ -123,7 +113,7 @@ fn build_transaction(
 pub fn start_chain_watch(
     keyring_client: KeyringClient,
     chain: ChainConfig,
-    chain_tx: mpsc::Sender<ChainTrackerRequest>,
+    _chain_tx: mpsc::Sender<ChainTrackerRequest>,
     mut chain_rx: mpsc::Receiver<ChainTrackerRequest>,
     state: State,
     task_tracker: TaskTracker,
@@ -238,12 +228,10 @@ pub fn start_chain_watch(
                         tokio::select! {
                             transfer = transfers_sub.next() => {
                                 transfer
-                                    .map(|result| result
+                                    .and_then(|result| result
                                         .inspect_err(|e| tracing::warn!("Got error in tranfsers subscription: {:?}", e))
                                         .ok()
-                                        .map(ChainTrackerRequest::Transfers)
-                                    )
-                                    .flatten()
+                                        .map(ChainTrackerRequest::Transfers))
                             },
                             req = chain_rx.recv() => {
                                 req
@@ -264,27 +252,27 @@ pub fn start_chain_watch(
                                             transfer.asset_id,
                                             invoice.currency.chain_name.clone(),
                                             transfer.amount,
-                                            transfer.sender.clone(),
-                                            transfer.recipient.clone(),
+                                            &transfer.sender,
+                                            &transfer.recipient,
                                             transfer.transaction_id.0,
                                             transfer.transaction_id.1,
-                                            String::new(),
                                             transfer.timestamp,
                                             TxKind::Payment,
-                                            TxStatus::Finalized,
+                                            &TxStatus::Finalized,
                                         );
 
                                         state.record_transaction_v2(*id, transaction).await?;
                                     }
                                 }
                             }
-
+                            // TODO: fix expects. Maybe just use `chrono::DateTime`?
+                            #[expect(clippy::cast_sign_loss)]
                             let now = Utc::now().timestamp_millis() as u64;
 
                             for (id, invoice) in &watched_accounts {
                                 match invoice.check(&asset_hub_client, &watcher).await {
                                     Ok(true) => {
-                                        state.order_paid(id.clone()).await;
+                                        state.order_paid(*id).await;
                                     },
                                     Err(e) => {
                                         tracing::warn!("account fetch error: {0:?}", e);
@@ -293,13 +281,13 @@ pub fn start_chain_watch(
                                 }
 
                                 if invoice.death.0 <= now {
-                                    match state.is_order_paid(id.clone()).await {
+                                    match state.is_order_paid(*id).await {
                                         Ok(paid_db) => {
                                             if !paid_db {
                                                 match invoice.check(&asset_hub_client, &watcher).await {
                                                     Ok(paid) => {
                                                         if paid {
-                                                            state.order_paid(id.clone()).await;
+                                                            state.order_paid(*id).await;
                                                         }
                                                     }
                                                     Err(e) => {
@@ -323,10 +311,10 @@ pub fn start_chain_watch(
                             };
                         }
                         ChainTrackerRequest::WatchAccount(request) => {
-                            watched_accounts.insert(request.id.clone(), Invoice::from_request(request));
+                            watched_accounts.insert(request.id, Invoice::from_request(request));
                         }
                         ChainTrackerRequest::Reap(request) => {
-                            let id = request.id.clone();
+                            let id = request.id;
                             let reap_state_handle = state.interface();
                             let watcher_for_reaper = watcher.clone();
                             let keyring_client_cloned = keyring_client.clone();
@@ -345,7 +333,7 @@ pub fn start_chain_watch(
                             });
                         }
                         ChainTrackerRequest::ForceReap(request) => {
-                            let id = request.id.clone();
+                            let id = request.id;
                             let reap_state_handle = state.interface();
                             let watcher_for_reaper = watcher.clone();
                             let keyring_client_cloned = keyring_client.clone();
@@ -385,7 +373,6 @@ pub struct ChainWatcher {
 }
 
 impl ChainWatcher {
-    #[expect(clippy::too_many_arguments)]
     pub async fn prepare_chain(
         client: &AssetHubClient,
         chain: ChainConfig,
@@ -403,24 +390,28 @@ impl ChainWatcher {
             });
         }
 
-        // TODO: in future we plan to use single asset, won't need to iterate over all of them.
-        // It can be optimized using futures::iter and request values concurrently.
-        // Also if we'll need to fetch many assets (or even all available on chain)
-        // it's gonna be easier to use `metadata_iter` storage method
+        // TODO: in future we plan to use single asset, won't need to iterate over all
+        // of them. It can be optimized using futures::iter and request values
+        // concurrently. Also if we'll need to fetch many assets (or even all
+        // available on chain) it's gonna be easier to use `metadata_iter`
+        // storage method
         let mut assets = HashMap::new();
 
-        // TODO: add check that there is at least one asset? Seems to be better have that check on config validation
+        // TODO: add check that there is at least one asset? Seems to be better have
+        // that check on config validation
         for asset in chain.assets {
             let response = client
                 .asset_info_store()
                 .get_asset_info(&asset.id)
                 .await
-                // unwrap is safe here cause we already initialized those assets right before this function call
+                // unwrap is safe here cause we already initialized those assets right before this
+                // function call
                 .unwrap();
 
             let properties = CurrencyProperties {
                 chain_name: chain.name.clone(),
-                kind: TokenKind::Asset, // TODO: this field can be removed in future as long as we work only with assets on Asset Hub
+                kind: TokenKind::Asset, /* TODO: this field can be removed in future as long as
+                                         * we work only with assets on Asset Hub */
                 decimals: response.decimals,
                 rpc_url: rpc_url.to_string(), // TODO: this property seems to be unused
                 asset_id: Some(asset.id),
@@ -431,24 +422,30 @@ impl ChainWatcher {
         }
         // this MUST assert that assets match exactly before reporting it
 
-        state.connect_chain(assets.clone()).await;
+        state
+            .connect_chain(assets.clone())
+            .await;
 
-        let chain_watcher = ChainWatcher { assets };
+        let chain_watcher = ChainWatcher {
+            assets,
+        };
 
         // check monitored accounts
         let mut id_remove_list = Vec::new();
         for (id, account) in watched_accounts.iter() {
-            let result = account.check(client, &chain_watcher).await;
+            let result = account
+                .check(client, &chain_watcher)
+                .await;
 
             match result {
                 Ok(true) => {
-                    state.order_paid(id.clone()).await;
+                    state.order_paid(*id).await;
                     id_remove_list.push(id.to_owned());
-                }
+                },
                 Ok(false) => (),
                 Err(e) => {
                     tracing::warn!("account fetch error: {0}", e);
-                }
+                },
             }
         }
 
