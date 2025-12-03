@@ -34,5 +34,11 @@ jobs:
           version: 0.9
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2.7.5
+      - name: Install subxt-cli
+        run: make install-subxt-cli
+      - name: Download chain metadata
+        run: make download-node-metadata-ci
+      - name: Copy configs
+        run: make copy-configs
       - name: cargo nextest
         run: cargo nextest run

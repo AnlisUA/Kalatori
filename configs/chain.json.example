@@ -1,0 +1,13 @@
+{
+    "name": "statemint",
+    "endpoints": [
+        "ws://localhost:9000"
+    ],
+    "assets": [{
+        "name": "USDC",
+        "id": 1337
+    }, {
+        "name": "USDt",
+        "id": 1984
+    }]
+}

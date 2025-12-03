@@ -1,13 +1,13 @@
 use crate::{
-    definitions::api_v2::{InvalidParameter, OrderQuery, OrderResponse, AMOUNT, CURRENCY},
+    definitions::api_v2::{AMOUNT, CURRENCY, InvalidParameter, OrderQuery, OrderResponse},
     error::{ForceWithdrawalError, OrderError},
     state::State,
 };
 use axum::{
+    Json,
     extract::{Path, State as ExtractState},
     http::StatusCode,
     response::{IntoResponse, Response},
-    Json,
 };
 use serde::Deserialize;
 

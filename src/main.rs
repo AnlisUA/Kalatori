@@ -1,6 +1,5 @@
-use clap::Parser;
-use std::process::ExitCode;
-use substrate_crypto_light::common::{AccountId32, AsBase58};
+use std::{process::ExitCode, str::FromStr};
+use subxt::utils::AccountId32;
 use tokio::{runtime::Runtime, sync::oneshot};
 use tokio_util::sync::CancellationToken;
 use tracing::Level;
@@ -10,8 +9,8 @@ use utils::{
     task_tracker::TaskTracker,
 };
 
-mod arguments;
 mod chain;
+mod configs;
 mod database;
 mod definitions;
 mod error;
@@ -21,12 +20,21 @@ mod signer;
 mod state;
 mod utils;
 
-use arguments::{CliArgs, Config, SeedEnvVars, DATABASE_DEFAULT};
 use chain::ChainManager;
 use database::ConfigWoChains;
 use error::{Error, PrettyCause};
 use signer::Signer;
 use state::State;
+
+use crate::{
+    configs::{
+        chain_config_with_prefix, database_config_with_prefix, payments_config_with_prefix,
+        seed_config_with_prefix, web_server_config_with_prefix,
+    },
+    definitions::api_v2::Timestamp,
+};
+
+const DEFAULT_ENV_PREFIX: &str = "KALATORI";
 
 fn main() -> ExitCode {
     let shutdown_notification = ShutdownNotification::new();
@@ -75,9 +83,7 @@ fn main() -> ExitCode {
 }
 
 fn try_main(shutdown_notification: ShutdownNotification) -> Result<(), Error> {
-    let cli_args = CliArgs::parse();
-
-    logger::initialize(cli_args.log)?;
+    logger::initialize(logger::default_filter())?;
     shutdown::set_panic_hook(
         |panic| tracing::error!("{panic}"),
         shutdown_notification.clone(),
@@ -85,50 +91,40 @@ fn try_main(shutdown_notification: ShutdownNotification) -> Result<(), Error> {
 
     tracing::info!("Kalatori {} is starting...", env!("CARGO_PKG_VERSION"));
 
-    let seed_env_vars = SeedEnvVars::parse()?;
-    let config = Config::parse(cli_args.config)?;
-
     Runtime::new()
         .map_err(Error::Runtime)?
-        .block_on(async_try_main(
-            shutdown_notification,
-            cli_args.recipient,
-            cli_args.remark,
-            config,
-            seed_env_vars,
-        ))
+        .block_on(async_try_main(shutdown_notification))
 }
 
-async fn async_try_main(
-    shutdown_notification: ShutdownNotification,
-    recipient_string: String,
-    remark: Option<String>,
-    config: Config,
-    seed_env_vars: SeedEnvVars,
-) -> Result<(), Error> {
-    let database_path = if config.in_memory_db {
-        if config.database.is_some() {
-            tracing::warn!(
-                "`database` is set in the config but ignored because `in_memory_db` is \"true\""
-            );
-        }
+async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(), Error> {
+    let env_prefix =
+        std::env::var("KALATORI_APP_ENV_PREFIX").unwrap_or_else(|_| DEFAULT_ENV_PREFIX.to_string());
+    let configs_path = std::env::var(format!("{env_prefix}_CONFIG_DIR_PATH")).unwrap_or_default();
 
-        None
-    } else {
-        Some(config.database.unwrap_or_else(|| DATABASE_DEFAULT.into()))
-    };
+    let seed_config = seed_config_with_prefix(&configs_path, &env_prefix);
+
+    let chain_config = chain_config_with_prefix(&configs_path, &env_prefix);
+    let payments_config = payments_config_with_prefix(&configs_path, &env_prefix);
+    let web_server_config = web_server_config_with_prefix(&configs_path, &env_prefix);
+    let database_config = database_config_with_prefix(&configs_path, &env_prefix);
 
     // Start services
 
     let (task_tracker, error_rx) = TaskTracker::new();
 
-    let recipient = AccountId32::from_base58_string(&recipient_string)
-        .map_err(|e| Error::RecipientAccount(e.to_string()))?
-        .0;
+    // TODO: replace with expect?
+    let recipient = AccountId32::from_str(&payments_config.recipient).unwrap();
 
-    let signer = Signer::init(recipient, &task_tracker, seed_env_vars.seed);
+    // TODO: quite dirty hack to make it work right now. Should be refactored ASAP.
+    // Spawn separate task for handling payouts. This task should replace Signer and store seed phrase
+    let signer = Signer::init(recipient.clone(), &task_tracker, seed_config.seed.clone());
+    let seed_secret = seed_config.seed;
 
-    let db = database::Database::init(database_path, &task_tracker, config.account_lifetime)?;
+    let db = database::Database::init(
+        database_config,
+        &task_tracker,
+        Timestamp(payments_config.account_lifetime_millis),
+    )?;
 
     let instance_id = db.initialize_server_info().await?;
 
@@ -138,9 +134,7 @@ async fn async_try_main(
         signer.interface(),
         ConfigWoChains {
             recipient,
-            debug: config.debug,
-            remark,
-            //depth: config.depth,
+            remark: payments_config.remark,
         },
         db,
         cm_rx,
@@ -151,9 +145,9 @@ async fn async_try_main(
 
     cm_tx
         .send(ChainManager::ignite(
-            config.chain,
+            seed_secret,
+            chain_config,
             &state,
-            &signer,
             &task_tracker,
             &shutdown_notification.token,
         )?)
@@ -161,7 +155,7 @@ async fn async_try_main(
 
     let server = server::new(
         shutdown_notification.token.clone(),
-        config.host,
+        web_server_config,
         state.interface(),
     )
     .await?;

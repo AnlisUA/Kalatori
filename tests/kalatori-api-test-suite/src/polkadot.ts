@@ -1,9 +1,6 @@
 import { ApiPromise, WsProvider, Keyring } from '@polkadot/api';
-import { cryptoWaitReady, decodeAddress, encodeAddress } from '@polkadot/util-crypto';
+import { cryptoWaitReady, decodeAddress } from '@polkadot/util-crypto';
 import { u32 } from '@polkadot/types';
-import type { AccountInfo } from '@polkadot/types/interfaces/system';
-import type { AssetBalance } from '@polkadot/types/interfaces/assets';
-import { BN } from '@polkadot/util';
 
 export async function connectPolkadot(rpcUrl: string): Promise<ApiPromise> {
   const provider = new WsProvider(rpcUrl);
@@ -15,18 +12,6 @@ export async function connectPolkadot(rpcUrl: string): Promise<ApiPromise> {
 export const reverseDecimals = (amount: number, decimals: number): number => {
   return amount / Math.pow(10, decimals);
 };
-
-export async function getDotBalance(rpcUrl: string, paymentAccount: string): Promise<number> {
-  const provider = new WsProvider(rpcUrl);
-  const api = await ApiPromise.create({ provider });
-
-  const accountInfo = await api.query.system.account(paymentAccount);
-
-  // @ts-ignore
-  const freeBalance = accountInfo.data.free.toBigInt();
-
-  return Number(freeBalance);
-}
 
 export async function getAssetBalance(rpcUrl: string, paymentAccount: string, assetId: number): Promise<number> {
   const provider = new WsProvider(rpcUrl);
@@ -44,7 +29,7 @@ export async function getAssetBalance(rpcUrl: string, paymentAccount: string, as
   }
 }
 
-export async function transferFunds(rpcUrl: string, paymentAccount: string, amount: number, assetId?: number) {
+export async function transferFunds(rpcUrl: string, paymentAccount: string, amount: number, assetId: number) {
   const provider = new WsProvider(rpcUrl);
   const api = await ApiPromise.create({ provider });
   const keyring = new Keyring({ type: 'sr25519' });
@@ -54,19 +39,13 @@ export async function transferFunds(rpcUrl: string, paymentAccount: string, amou
 
   await cryptoWaitReady();
 
-  if (assetId) {
-    const adjustedAmount = amount * Math.pow(10, 6);
+  const adjustedAmount = amount * Math.pow(10, 6);
 
-    transfer = api.tx.assets.transfer(assetId, paymentAccount, adjustedAmount);
-    signerOptions = {
-      tip: 0,
-      assetId: { parents: 0, interior: { X2: [{ palletInstance: 50 }, { generalIndex: assetId }] } }
-    };
-  } else {
-    const adjustedAmount = amount * Math.pow(10, 10);
-
-    transfer = api.tx.balances.transferKeepAlive(paymentAccount, adjustedAmount);
-  }
+  transfer = api.tx.assets.transfer(assetId, paymentAccount, adjustedAmount);
+  signerOptions = {
+    tip: 0,
+    assetId: { parents: 0, interior: { X2: [{ palletInstance: 50 }, { generalIndex: assetId }] } }
+  };
 
   const unsub = await transfer.signAndSend(sender, signerOptions, async ({ status }) => {
     if (status.isInBlock || status.isFinalized) {

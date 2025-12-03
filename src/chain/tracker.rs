@@ -2,46 +2,96 @@
 
 use crate::{
     chain::{
-        definitions::{BlockHash, ChainTrackerRequest, Invoice},
+        AssetHubConfig, AssetHubOnlineClient,
+        definitions::{ChainTrackerRequest, Invoice},
         payout::payout,
-        rpc::{
-            assets_set_at_block, block_hash, genesis_hash, metadata, next_block, next_block_number,
-            runtime_version_identifier, specs, subscribe_blocks, transfer_events,
-        },
-        utils::parse_transfer_event,
+        utils::to_base58_string,
     },
+    configs::ChainConfig,
     database::{FinalizedTxDb, TransactionInfoDb, TransactionInfoDbInner, TxKind},
     definitions::{
+        Balance,
         api_v2::{Amount, CurrencyProperties, Health, RpcInfo, TokenKind, TxStatus},
-        Chain,
     },
-    error::{ChainError, Error},
-    signer::Signer,
+    error::ChainError,
     state::State,
     utils::task_tracker::TaskTracker,
 };
-use frame_metadata::v15::RuntimeMetadataV15;
-use jsonrpsee::ws_client::{WsClient, WsClientBuilder};
-use serde_json::Value;
 use std::{collections::HashMap, time::SystemTime};
-use substrate_crypto_light::common::AsBase58;
-use substrate_parser::{AsMetadata, ShortSpecs};
-use time::{format_description::well_known::Rfc3339, OffsetDateTime};
+use subxt::blocks::Block;
+use subxt::blocks::{ExtrinsicDetails, FoundExtrinsic};
+use subxt::utils::AccountId32;
+use subxt_signer::SecretString;
+use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tokio::{
     sync::mpsc,
-    time::{timeout, Duration},
+    time::{Duration, timeout},
 };
 use tokio_util::sync::CancellationToken;
+use zeroize::Zeroize;
 
-// TODO: check if it's DEFINITELY won't break something
-#[expect(tail_expr_drop_order)]
+type Extrinsics = subxt::blocks::Extrinsics<AssetHubConfig, AssetHubOnlineClient>;
+type TransferExtrinsic = crate::chain::runtime::assets::calls::types::Transfer;
+type TransferAllExtrinsic = crate::chain::runtime::assets::calls::types::TransferAll;
+type TransferredEvent = crate::chain::runtime::assets::events::Transferred;
+
+enum AnyTransferExtrinsic {
+    Transfer(FoundExtrinsic<AssetHubConfig, AssetHubOnlineClient, TransferExtrinsic>),
+    TransferAll(FoundExtrinsic<AssetHubConfig, AssetHubOnlineClient, TransferAllExtrinsic>),
+}
+
+impl AnyTransferExtrinsic {
+    pub fn details(&self) -> &ExtrinsicDetails<AssetHubConfig, AssetHubOnlineClient> {
+        match self {
+            AnyTransferExtrinsic::Transfer(e) => &e.details,
+            AnyTransferExtrinsic::TransferAll(e) => &e.details,
+        }
+    }
+}
+
+async fn transfer_events(
+    block: &Block<AssetHubConfig, AssetHubOnlineClient>,
+) -> Result<(u64, Extrinsics), subxt::Error> {
+    let timestamp_address = crate::chain::runtime::storage().timestamp().now();
+
+    let timestamp = block
+        .storage()
+        .fetch(&timestamp_address)
+        .await?
+        .ok_or_else(|| subxt::Error::Other("Timestamp is empty".into()))?;
+
+    let extrinsics = block.extrinsics().await?;
+
+    Ok((timestamp, extrinsics))
+}
+
+async fn parse_transfer_event(
+    account_id: &AccountId32,
+    extrinsic: &AnyTransferExtrinsic,
+) -> Option<(TxKind, AccountId32, Balance)> {
+    let acc_id = subxt::utils::AccountId32::from(account_id.0);
+    let events = extrinsic.details().events().await.ok()?;
+
+    let mut found_events = events.find::<TransferredEvent>().filter_map(Result::ok);
+
+    found_events.find_map(|event| {
+        if event.from == acc_id {
+            Some((TxKind::Withdrawal, event.to, Balance(event.amount)))
+        } else if event.to == acc_id {
+            Some((TxKind::Payment, event.from, Balance(event.amount)))
+        } else {
+            None
+        }
+    })
+}
+
 #[expect(clippy::too_many_lines, clippy::too_many_arguments)]
 pub fn start_chain_watch(
-    chain: Chain,
+    mut seed_secret: SecretString,
+    chain: ChainConfig,
     chain_tx: mpsc::Sender<ChainTrackerRequest>,
     mut chain_rx: mpsc::Receiver<ChainTrackerRequest>,
     state: State,
-    signer: Signer,
     task_tracker: TaskTracker,
     cancellation_token: CancellationToken,
     rpc_update_tx: mpsc::Sender<RpcInfo>,
@@ -52,8 +102,12 @@ pub fn start_chain_watch(
             let watchdog = 120_000;
             let mut watched_accounts = HashMap::new();
             let mut shutdown = false;
-            // TODO: random pick instead
-            for endpoint in chain.endpoints.clone().iter().cycle() {
+
+            if chain.allow_insecure_endpoints {
+                tracing::warn!("Connection to insecure endpoints allowed! It's strongly unrecommended to use this option in production environment.");
+            }
+
+            for endpoint in chain.endpoints.iter().cycle() {
                 // not restarting chain if shutdown is in progress
                 if shutdown || cancellation_token.is_cancelled() {
                     tracing::info!("Received {} signal, shut down ChainWatch", if shutdown { "shutdown" } else { "task cancellation" });
@@ -68,274 +122,297 @@ pub fn start_chain_watch(
                 }).await);
 
                 tracing::info!("Trying to establish connection to endpoint {:?}...", endpoint);
-                let client_result = WsClientBuilder::default().build(endpoint).await;
 
-                // TODO: rewrite to match. SKip for now to avoid large diff in git because of spacing
-                if let Ok(client) = client_result {
-                    tracing::info!("Connection to endpoint {:?} established, start watching", endpoint);
-                    // TODO: handle error?
-                    drop(rpc_update_tx.send(RpcInfo {
-                        chain_name: chain.name.clone(),
-                        rpc_url: endpoint.clone(),
-                        status: Health::Ok,
-                    }).await);
+                let subxt_client_initializer = if chain.allow_insecure_endpoints {
+                    AssetHubOnlineClient::from_insecure_url(endpoint).await
+                } else {
+                    AssetHubOnlineClient::from_url(endpoint).await
+                };
 
-                    // prepare chain
-                    let watcher = match ChainWatcher::prepare_chain(
-                        &client,
-                        chain.clone(),
-                        &mut watched_accounts,
-                        endpoint,
-                        chain_tx.clone(),
-                        state.interface(),
-                        task_tracker.clone(),
-                    )
-                        .await
-                    {
-                        Ok(a) => a,
-                        Err(e) => {
-                            tracing::warn!(
-                                "Failed to connect to chain {}, due to {} switching RPC server...",
-                                chain.name,
-                                e
-                            );
-                            continue;
-                        }
-                    };
+                let subxt_client = match subxt_client_initializer {
+                    Ok(client) => client,
+                    Err(error) => {
+                        tracing::error!("Error while initialize subxt WS client for endpoint {:?}: {:?}", endpoint, error);
 
-                    // fulfill requests
-                    while let Ok(Some(req)) =
-                        timeout(Duration::from_millis(watchdog), chain_rx.recv()).await
-                    {
-                        match req {
-                            ChainTrackerRequest::NewBlock(block_number) => {
-                                // TODO: hide this under rpc module
-                                let block = match block_hash(&client, Some(block_number)).await {
-                                    Ok(a) => a,
-                                    Err(e) => {
-                                        tracing::info!(
-                                            "Failed to receive block in chain {}, due to {}; Switching RPC server...",
-                                            chain.name,
-                                            e
-                                        );
-                                        break;
+                        drop(rpc_update_tx.send(RpcInfo {
+                            chain_name: chain.name.clone(),
+                            rpc_url: endpoint.clone(),
+                            status: Health::Critical,
+                        }).await);
+
+                        continue
+                    }
+                };
+
+                tracing::info!("Connection to endpoint {:?} established, start watching", endpoint);
+                // TODO: handle error?
+                drop(rpc_update_tx.send(RpcInfo {
+                    chain_name: chain.name.clone(),
+                    rpc_url: endpoint.clone(),
+                    status: Health::Ok,
+                }).await);
+
+                // prepare chain
+                let watcher = match ChainWatcher::prepare_chain(
+                    &subxt_client,
+                    chain.clone(),
+                    &mut watched_accounts,
+                    endpoint,
+                    chain_tx.clone(),
+                    state.interface(),
+                    task_tracker.clone(),
+                    cancellation_token.clone(),
+                )
+                    .await
+                {
+                    Ok(a) => a,
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to connect to chain {}, due to {} switching RPC server...",
+                            chain.name,
+                            e
+                        );
+                        continue;
+                    }
+                };
+
+                tracing::info!("Start monitoring on {} rpc", endpoint);
+
+                // fulfill requests
+                while let Ok(Some(req)) =
+                    timeout(Duration::from_millis(watchdog), chain_rx.recv()).await
+                {
+                    match req {
+                        ChainTrackerRequest::NewBlock(block) => {
+                            let block_hash = block.hash();
+                            tracing::debug!("Block hash {} from {}", block_hash, chain.name);
+                            tracing::debug!("Watched accounts: {watched_accounts:?}");
+
+                            #[expect(clippy::cast_possible_truncation)]
+                            let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis() as u64;
+
+                            let mut id_remove_list = Vec::new();
+
+                            match transfer_events(&block).await {
+                                Ok((timestamp, extrinsics)) => {
+                                    tracing::debug!("Got a block with timestamp {timestamp:?} & {} extrinsics", extrinsics.len());
+
+                                    // TODO: handle Err results? Log them at least?
+                                    let transfer_extrinsics = extrinsics.find::<TransferExtrinsic>()
+                                        .filter_map(Result::ok)
+                                        .map(AnyTransferExtrinsic::Transfer);
+
+                                    let transfer_all_extrinsics = extrinsics.find::<TransferAllExtrinsic>()
+                                        .filter_map(Result::ok)
+                                        .map(AnyTransferExtrinsic::TransferAll);
+
+                                    let all_transfer_extrinsics: Vec<_> = transfer_extrinsics.chain(transfer_all_extrinsics).collect();
+
+                                    // TODO: Current implementation is quite unoptimized for work with subxt, need to be refactored
+                                    for (id, invoice) in &watched_accounts {
+                                        for extrinsic in &all_transfer_extrinsics {
+                                            if let Some((tx_kind, another_account, transfer_amount)) = parse_transfer_event(&invoice.address, extrinsic).await {
+                                                tracing::debug!("Found {tx_kind:?} from/to {another_account:?} with {transfer_amount:?} token(s).");
+                                                let position_in_block = extrinsic.details().index();
+                                                let raw_extrinsic = extrinsic.details().bytes();
+
+                                                #[expect(clippy::arithmetic_side_effects)]
+                                                let finalized_tx_timestamp = (OffsetDateTime::UNIX_EPOCH + Duration::from_millis(timestamp))
+                                                    .format(&Rfc3339).unwrap().into();
+
+                                                let finalized_tx = FinalizedTxDb {
+                                                    block_number: block.number(),
+                                                    position_in_block,
+                                                }.into();
+
+                                                let amount = Amount::Exact(transfer_amount.format(invoice.currency.decimals));
+                                                let status = TxStatus::Finalized;
+                                                let currency = invoice.currency.clone();
+                                                let transaction_bytes = const_hex::encode_prefixed(raw_extrinsic);
+
+                                                match tx_kind {
+                                                    kind @ TxKind::Payment => {
+                                                        state.record_transaction(
+                                                            TransactionInfoDb {
+                                                                transaction_bytes,
+                                                                inner: TransactionInfoDbInner {
+                                                                    finalized_tx,
+                                                                    finalized_tx_timestamp,
+                                                                    sender: to_base58_string(another_account.0, 42),
+                                                                    recipient: to_base58_string(invoice.address.0, 42),
+                                                                    amount,
+                                                                    currency,
+                                                                    status,
+                                                                    kind,
+                                                                } },
+                                                                id.clone()).await?;
+                                                    }
+                                                    kind @ TxKind::Withdrawal => {
+                                                        state.record_transaction(
+                                                            TransactionInfoDb {
+                                                                transaction_bytes,
+                                                                inner: TransactionInfoDbInner {
+                                                                    finalized_tx,
+                                                                    finalized_tx_timestamp,
+                                                                    sender: to_base58_string(invoice.address.0, 42),
+                                                                    recipient: to_base58_string(another_account.0, 42),
+                                                                    amount,
+                                                                    currency,
+                                                                    status,
+                                                                    kind,
+                                                                } },
+                                                                id.clone()).await?;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::warn!("events fetch error: {0:?}", e);
+                                }
+                            }
+
+                            // Important! There used to be a significant oprimisation that
+                            // watched events and checked only accounts that have tranfers into
+                            // them in given block; this was found to be unreliable: there are
+                            // ways to transfer funds without emitting a transfer event (one
+                            // notable example is through asset exchange procedure directed
+                            // straight into invoice account), and probably even without any
+                            // reliably expected event (through XCM). Thus we just scan all
+                            // accounts, every time. Please submit a PR or an issue if you
+                            // figure out a reliable optimization for this.
+                            for (id, invoice) in &watched_accounts {
+                                match invoice.check(&subxt_client, &watcher).await {
+                                    Ok(true) => {
+                                        state.order_paid(id.clone()).await;
                                     },
-                                };
-
-                                tracing::debug!("Block hash {} from {}", block.to_string(), chain.name);
-
-                                if watcher.version != runtime_version_identifier(&client, &block).await? {
-                                    tracing::info!("Different runtime version reported! Restarting connection...");
-                                    break;
-                                }
-
-                                tracing::debug!("Watched accounts: {watched_accounts:?}");
-
-                                #[expect(clippy::cast_possible_truncation)]
-                                let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis() as u64;
-
-                                let mut id_remove_list = Vec::new();
-
-                                match transfer_events(
-                                    &client,
-                                    &block,
-                                    &watcher.metadata,
-                                )
-                                    .await {
-                                        Ok((timestamp, events)) => {
-                                        tracing::debug!("Got a block with timestamp {timestamp:?} & events: {events:?}");
-
-                                        for (id, invoice) in &watched_accounts {
-                                            for (extrinsic_option, event) in &events {
-                                                if let Some((tx_kind, another_account, transfer_amount)) = parse_transfer_event(&invoice.address, &event.0.fields) {
-                                                    tracing::debug!("Found {tx_kind:?} from/to {another_account:?} with {transfer_amount:?} token(s).");
-
-                                                    let Some((position_in_block, extrinsic)) = extrinsic_option else {
-                                                        return Err(Error::from(ChainError::TransferEventNoExtrinsic));
-                                                    };
-
-                                                    #[expect(clippy::arithmetic_side_effects)]
-                                                    let finalized_tx_timestamp = (OffsetDateTime::UNIX_EPOCH + Duration::from_millis(timestamp.0))
-                                                        .format(&Rfc3339).unwrap().into();
-                                                    let finalized_tx = FinalizedTxDb {
-                                                            block_number,
-                                                            position_in_block: *position_in_block
-                                                        }.into();
-                                                    let amount = Amount::Exact(transfer_amount.format(invoice.currency.decimals));
-                                                    let status = TxStatus::Finalized;
-                                                    let currency = invoice.currency.clone();
-                                                    let transaction_bytes = const_hex::encode_prefixed(extrinsic);
-
-                                                    match tx_kind {
-                                                        kind @ TxKind::Payment => {
-                                                            state.record_transaction(
-                                                                TransactionInfoDb {
-                                                                    transaction_bytes,
-                                                                    inner: TransactionInfoDbInner {
-                                                                        finalized_tx,
-                                                                        finalized_tx_timestamp,
-                                                                        sender: another_account.to_base58_string(42),
-                                                                        recipient: invoice.address.to_base58_string(42),
-                                                                        amount,
-                                                                        currency,
-                                                                        status,
-                                                                        kind,
-                                                                    } },
-                                                                    id.clone()).await?;
-                                                        }
-                                                        kind @ TxKind::Withdrawal => {
-                                                            state.record_transaction(
-                                                                TransactionInfoDb {
-                                                                    transaction_bytes,
-                                                                    inner: TransactionInfoDbInner {
-                                                                        finalized_tx,
-                                                                        finalized_tx_timestamp,
-                                                                        sender: invoice.address.to_base58_string(42),
-                                                                        recipient: another_account.to_base58_string(42),
-                                                                        amount,
-                                                                        currency,
-                                                                        status,
-                                                                        kind,
-                                                                    } },
-                                                                    id.clone()).await?;
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
                                     Err(e) => {
-                                        tracing::warn!("events fetch error: {0:?}", e);
+                                        tracing::warn!("account fetch error: {0:?}", e);
                                     }
+                                    _ => {}
                                 }
 
-                                // Important! There used to be a significant oprimisation that
-                                // watched events and checked only accounts that have tranfers into
-                                // them in given block; this was found to be unreliable: there are
-                                // ways to transfer funds without emitting a transfer event (one
-                                // notable example is through asset exchange procedure directed
-                                // straight into invoice account), and probably even without any
-                                // reliably expected event (through XCM). Thus we just scan all
-                                // accounts, every time. Please submit a PR or an issue if you
-                                // figure out a reliable optimization for this.
-                                for (id, invoice) in &watched_accounts {
-                                    match invoice.check(&client, &watcher, &block).await {
-                                        Ok(true) => {
-                                            state.order_paid(id.clone()).await;
-                                        },
-                                        Err(e) => {
-                                            tracing::warn!("account fetch error: {0:?}", e);
-                                        }
-                                        _ => {}
-                                    }
-
-                                    if invoice.death.0 <= now {
-                                        match state.is_order_paid(id.clone()).await {
-                                            Ok(paid_db) => {
-                                                if !paid_db {
-                                                    match invoice.check(&client, &watcher, &block).await {
-                                                        Ok(paid) => {
-                                                            if paid {
-                                                                state.order_paid(id.clone()).await;
-                                                            }
-                                                        }
-                                                        Err(e) => {
-                                                            tracing::warn!("account fetch error: {0:?}", e);
+                                if invoice.death.0 <= now {
+                                    match state.is_order_paid(id.clone()).await {
+                                        Ok(paid_db) => {
+                                            if !paid_db {
+                                                match invoice.check(&subxt_client, &watcher).await {
+                                                    Ok(paid) => {
+                                                        if paid {
+                                                            state.order_paid(id.clone()).await;
                                                         }
                                                     }
+                                                    Err(e) => {
+                                                        tracing::warn!("account fetch error: {0:?}", e);
+                                                    }
                                                 }
+                                            }
 
-                                                tracing::debug!("Removing an account {id:?} due to passing its death timestamp");
-                                                id_remove_list.push(id.to_owned());
-                                            }
-                                            Err(e) => {
-                                                tracing::warn!("account read error: {e:?}");
-                                            }
+                                            tracing::debug!("Removing an account {id:?} due to passing its death timestamp");
+                                            id_remove_list.push(id.to_owned());
+                                        }
+                                        Err(e) => {
+                                            tracing::warn!("account read error: {e:?}");
                                         }
                                     }
                                 }
+                            }
 
-                                for id in id_remove_list {
-                                    watched_accounts.remove(&id);
-                                };
+                            for id in id_remove_list {
+                                watched_accounts.remove(&id);
+                            };
 
-                                tracing::debug!("Block {} from {} processed successfully", block.to_string(), chain.name);
-                            }
-                            ChainTrackerRequest::WatchAccount(request) => {
-                                watched_accounts.insert(request.id.clone(), Invoice::from_request(request));
-                            }
-                            ChainTrackerRequest::Reap(request) => {
-                                let id = request.id.clone();
-                                let rpc = endpoint.clone();
-                                let reap_state_handle = state.interface();
-                                let watcher_for_reaper = watcher.clone();
-                                let signer_for_reaper = signer.interface();
+                            tracing::debug!("Block {} from {} processed successfully", block_hash, chain.name);
+                        }
+                        ChainTrackerRequest::WatchAccount(request) => {
+                            watched_accounts.insert(request.id.clone(), Invoice::from_request(request));
+                        }
+                        ChainTrackerRequest::Reap(request) => {
+                            let id = request.id.clone();
+                            let reap_state_handle = state.interface();
+                            let watcher_for_reaper = watcher.clone();
+                            let seed = seed_secret.clone();
+                            let client_cloned = subxt_client.clone();
 
-                                task_tracker.clone().spawn(format!("Initiate payout for order {}", id.clone()), async move {
-                                    drop(payout(rpc, Invoice::from_request(request), reap_state_handle, watcher_for_reaper, signer_for_reaper).await);
-                                    Ok(format!("Payout attempt for order {id} terminated"))
-                                });
-                            }
-                            ChainTrackerRequest::ForceReap(request) => {
-                                let id = request.id.clone();
-                                let rpc = endpoint.clone();
-                                let reap_state_handle = state.interface();
-                                let watcher_for_reaper = watcher.clone();
-                                let signer_for_reaper = signer.interface();
-                                task_tracker.clone().spawn(format!("Initiate forced payout for order {}", id.clone()), async move {
-                                    drop(payout(rpc, Invoice::from_request(request), reap_state_handle, watcher_for_reaper, signer_for_reaper).await);
-                                    Ok(format!("Forced payout attempt for order {id} terminated"))
-                                });
-                            }
-                            ChainTrackerRequest::Shutdown(res) => {
-                                shutdown = true;
-                                let _ = res.send(());
-                                break;
-                            }
+                            task_tracker.clone().spawn(format!("Initiate payout for order {}", id.clone()), async move {
+                                let () = payout(
+                                    client_cloned,
+                                    Invoice::from_request(request),
+                                    reap_state_handle,
+                                    watcher_for_reaper,
+                                    seed,
+                                ).await?;
+
+                                Ok(format!("Payout attempt for order {id} terminated"))
+                            });
+                        }
+                        ChainTrackerRequest::ForceReap(request) => {
+                            let id = request.id.clone();
+                            let reap_state_handle = state.interface();
+                            let watcher_for_reaper = watcher.clone();
+                            let client_cloned = subxt_client.clone();
+                            let seed = seed_secret.clone();
+
+                            task_tracker.clone().spawn(format!("Initiate forced payout for order {}", id.clone()), async move {
+                                let () = payout(
+                                    client_cloned,
+                                    Invoice::from_request(request),
+                                    reap_state_handle,
+                                    watcher_for_reaper,
+                                    seed,
+                                ).await?;
+
+                                Ok(format!("Forced payout attempt for order {id} terminated"))
+                            });
+                        }
+                        ChainTrackerRequest::Shutdown(res) => {
+                            shutdown = true;
+                            let _ = res.send(());
+                            break;
                         }
                     }
-                } else {
-                    let error = client_result.unwrap_err();
-                    tracing::error!("Error while initialize WS client for endpoint {:?}: {:?}", endpoint, error);
-
-                    drop(rpc_update_tx.send(RpcInfo {
-                        chain_name: chain.name.clone(),
-                        rpc_url: endpoint.clone(),
-                        status: Health::Critical,
-                    }).await);
                 }
             }
+
+            seed_secret.zeroize();
+
             Ok(format!("Chain {} monitor shut down", chain.name))
         });
 }
 
 #[derive(Debug, Clone)]
 pub struct ChainWatcher {
-    pub genesis_hash: BlockHash,
-    pub metadata: RuntimeMetadataV15,
-    #[expect(dead_code)]
-    pub specs: ShortSpecs,
     pub assets: HashMap<String, CurrencyProperties>,
-    version: Value,
+    // TODO: version parameter removed. Earlier it was checked in each block.
+    // Subxt docs recommends use updater() for similiar purpose, need to implement
+    // https://docs.rs/subxt/latest/subxt/client/struct.OnlineClient.html#method.updater
 }
 
 impl ChainWatcher {
-    #[expect(clippy::too_many_lines)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn prepare_chain(
-        client: &WsClient,
-        chain: Chain,
+        client: &AssetHubOnlineClient,
+        chain: ChainConfig,
         watched_accounts: &mut HashMap<String, Invoice>,
         rpc_url: &str,
         chain_tx: mpsc::Sender<ChainTrackerRequest>,
         state: State,
         task_tracker: TaskTracker,
+        cancellation_token: CancellationToken,
     ) -> Result<Self, ChainError> {
-        let genesis_hash = genesis_hash(client).await?;
-        let mut blocks = subscribe_blocks(client).await?;
-        let block = next_block(client, &mut blocks).await?;
-        let version = runtime_version_identifier(client, &block).await?;
-        let metadata = metadata(client, &block).await?;
-        let name = <RuntimeMetadataV15 as AsMetadata<()>>::spec_name_version(&metadata)?.spec_name;
+        // Have to perform separate call to get spec name cause `client.runtime_version()` returns a struct
+        // which doesn't contain that info. Please watch out for a possible subxt update that may add it.
+        let version_call = crate::chain::runtime::apis().core().version();
+
+        let name = client
+            .runtime_api()
+            .at_latest()
+            .await?
+            .call(version_call)
+            .await?
+            .spec_name;
+
         if name != chain.name {
             return Err(ChainError::WrongNetwork {
                 expected: chain.name,
@@ -343,81 +420,52 @@ impl ChainWatcher {
                 rpc: rpc_url.to_string(),
             });
         }
-        let specs = specs(client, &metadata, &block).await?;
-        let mut assets =
-            assets_set_at_block(client, &block, &metadata, rpc_url, specs.clone()).await?;
 
-        // TODO: make this verbosity less annoying
-        tracing::info!(
-            "chain {} requires native token {:?} and {:?}",
-            &chain.name,
-            &chain.native_token,
-            &chain.asset
-        );
-        // Remove unwanted assets
-        assets = assets
-            .into_iter()
-            .filter_map(|(asset_name, properties)| {
-                tracing::info!(
-                    "chain {} has token {} with properties {:?}",
-                    &chain.name,
-                    &asset_name,
-                    &properties
-                );
+        // TODO: in future we plan to use single asset, won't need to iterate over all of them.
+        // It can be optimized using futures::iter and request values concurrently.
+        // Also if we'll need to fetch many assets (or even all available on chain)
+        // it's gonna be easier to use `metadata_iter` storage method
+        let mut assets = HashMap::new();
 
-                chain
-                    .asset
-                    .iter()
-                    .find(|a| Some(a.id) == properties.asset_id)
-                    .map(|a| (a.name.clone(), properties))
-            })
-            .collect();
+        // TODO: add check that there is at least one asset? Seems to be better have that check on config validation
+        for asset in chain.assets {
+            let request_data = crate::chain::runtime::storage().assets().metadata(asset.id);
 
-        if let Some(ref native_token) = chain.native_token {
-            if native_token.decimals == specs.decimals {
-                assets.insert(
-                    native_token.name.clone(),
-                    CurrencyProperties {
-                        chain_name: name.clone(),
-                        kind: TokenKind::Native,
-                        decimals: specs.decimals,
-                        rpc_url: rpc_url.to_owned(),
-                        asset_id: None,
-                        ss58: 0,
-                    },
-                );
-            }
-        }
+            let Some(response) = client
+                .storage()
+                .at_latest()
+                .await?
+                .fetch(&request_data)
+                .await?
+            else {
+                // TODO: panic or work without this asset? Need to notify user about error somehow
+                panic!(
+                    "Asset {} with id {} not found on chain {}",
+                    asset.name, asset.id, chain.name
+                )
+            };
 
-        // Deduplication is done on chain manager level;
-        // Check that we have same number of assets as requested (we've checked that we have only
-        // wanted ones and performed deduplication before)
-        //
-        // This is probably an optimisation, but I don't have time to analyse perfirmance right
-        // now, it's just simpler to implement
-        //
-        // TODO: maybe check if at least one endpoint responds with proper assets and if not, shut
-        // down
-        #[expect(clippy::arithmetic_side_effects)]
-        if assets.len() != chain.asset.len() + usize::from(chain.native_token.is_some()) {
-            return Err(ChainError::AssetsInvalid(chain.name));
+            let properties = CurrencyProperties {
+                chain_name: chain.name.clone(),
+                kind: TokenKind::Asset, // TODO: this field can be removed in future as long as we work only with assets on Asset Hub
+                decimals: response.decimals,
+                rpc_url: rpc_url.to_string(), // TODO: this property seems to be unused
+                asset_id: Some(asset.id),
+                ss58: 0, // TODO: this property seems to be unused
+            };
+
+            assets.insert(asset.name, properties);
         }
         // this MUST assert that assets match exactly before reporting it
 
         state.connect_chain(assets.clone()).await;
 
-        let chain_watcher = ChainWatcher {
-            genesis_hash,
-            metadata,
-            specs,
-            assets,
-            version,
-        };
+        let chain_watcher = ChainWatcher { assets };
 
         // check monitored accounts
         let mut id_remove_list = Vec::new();
         for (id, account) in watched_accounts.iter() {
-            let result = account.check(client, &chain_watcher, &block).await;
+            let result = account.check(client, &chain_watcher).await;
 
             match result {
                 Ok(true) => {
@@ -430,31 +478,50 @@ impl ChainWatcher {
                 }
             }
         }
+
         for id in id_remove_list {
             watched_accounts.remove(&id);
         }
 
         let rpc = rpc_url.to_string();
-        task_tracker.spawn(format!("watching blocks at {rpc}"), async move {
-            loop {
-                let next_block_number = next_block_number(&mut blocks).await;
-                match next_block_number {
-                    Ok(block_number) => {
-                        tracing::debug!("received block {block_number} from {rpc}");
-                        let result = chain_tx
-                            .send(ChainTrackerRequest::NewBlock(block_number))
-                            .await;
+        let mut blocks = client.blocks().subscribe_finalized().await?;
 
-                        if let Err(e) = result {
-                            tracing::warn!(
-                                "Block watch internal communication error: {e} at {rpc}"
-                            );
-                            break;
+        task_tracker.spawn(format!("watching blocks at {rpc}"), async move {
+            tracing::info!("Start watching blocks task for {:?}", rpc);
+
+            // TODO: task doesn't terminate cause not listen for the termination signal
+            loop {
+                tokio::select! {
+                    () = cancellation_token.cancelled() => {
+                        tracing::info!("Received task cancellation signal, shut down ChainWatch");
+                        break
+                    },
+                    received_block = blocks.next() => {
+                        let next_block = {
+                            received_block.ok_or_else(|| ChainError::BlockSubscriptionTerminated)?
+                        };
+
+                        match next_block {
+                            Ok(block) => {
+                                let block_number = block.number();
+                                tracing::debug!("received block {block_number} from {rpc}");
+
+                                let result = chain_tx
+                                    .send(ChainTrackerRequest::NewBlock(block))
+                                    .await;
+
+                                if let Err(e) = result {
+                                    tracing::warn!(
+                                        "Block watch internal communication error: {e} at {rpc}"
+                                    );
+                                    break;
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn! {"Block watch error: {e} at {rpc}"};
+                                break;
+                            }
                         }
-                    }
-                    Err(e) => {
-                        tracing::warn! {"Block watch error: {e} at {rpc}"};
-                        break;
                     }
                 }
             }

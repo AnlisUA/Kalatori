@@ -1,21 +1,11 @@
-use crate::{
-    arguments::{OLD_SEED, SEED},
-    utils::task_tracker::TaskName,
-};
+use crate::utils::task_tracker::TaskName;
 use codec::Error as ScaleError;
-use frame_metadata::v15::RuntimeMetadataV15;
-use jsonrpsee::core::ClientError;
-use mnemonic_external::error::ErrorMnemonic;
 use serde_json::Error as JsonError;
 use serde_json::Value;
 use sled::Error as DatabaseError;
-use std::{borrow::Cow, io::Error as IoError, net::SocketAddr};
-use substrate_constructor::error::{ErrorFixMe, StorageRegistryError};
-use substrate_crypto_light::error::Error as CryptoError;
-use substrate_parser::error::{MetaVersionErrorPallets, ParserError, RegistryError, StorageError};
+use std::{io::Error as IoError, net::SocketAddr};
 use thiserror::Error;
 use tokio::task::JoinError;
-use toml_edit::de::Error as TomlError;
 use tracing_subscriber::filter::ParseError;
 
 pub use pretty_cause::PrettyCause;
@@ -23,14 +13,8 @@ pub use pretty_cause::PrettyCause;
 #[derive(Debug, Error)]
 #[expect(dead_code)]
 pub enum Error {
-    #[error("failed to read a seed environment variable")]
-    SeedEnv(#[from] SeedEnvError),
-
     #[error("failed to read the config file at {0:?}")]
     ConfigFileRead(String, #[source] IoError),
-
-    #[error("failed to parse the config")]
-    ConfigFileParse(#[from] TomlError),
 
     #[error("failed to parse the config parameter `{0}`")]
     ConfigParse(&'static str),
@@ -75,38 +59,10 @@ pub enum Error {
     DuplicateCurrency(String),
 }
 
-impl From<CryptoError> for Error {
-    fn from(err: CryptoError) -> Self {
-        Error::RecipientAccount(err.to_string())
-    }
-}
-
-impl From<CryptoError> for ChainError {
-    fn from(err: CryptoError) -> Self {
-        ChainError::InvoiceAccount(err.to_string())
-    }
-}
-
-impl From<CryptoError> for SignerError {
-    fn from(err: CryptoError) -> Self {
-        SignerError::InvalidDerivation(err.to_string())
-    }
-}
-
 impl From<Error> for ChainError {
     fn from(_err: Error) -> Self {
         ChainError::Util(UtilError::NotHex(NotHexError::BlockHash))
     }
-}
-
-#[derive(Debug, Error)]
-pub enum SeedEnvError {
-    #[error("one of the `{OLD_SEED}*` variables has an invalid Unicode key")]
-    InvalidUnicodeOldSeedKey,
-    #[error("`{0}` variable contains an invalid Unicode text")]
-    InvalidUnicodeValue(Cow<'static, str>),
-    #[error("`{SEED}` isn't present")]
-    SeedNotPresent,
 }
 
 #[derive(Debug, Error)]
@@ -163,9 +119,6 @@ pub enum ChainError {
 
     #[error("unexpected block hash length")]
     BlockHashLength,
-
-    #[error("WS client error is occurred")]
-    Client(#[from] ClientError),
 
     #[error("threading error is occurred")]
     Tokio(#[from] JoinError),
@@ -236,17 +189,13 @@ pub enum ChainError {
     #[error("currency {0:?} isn't found")]
     InvalidCurrency(String),
 
-    #[error("chain manager dropped a message, probably due to a chain disconnect; maybe it should be sent again")]
+    #[error(
+        "chain manager dropped a message, probably due to a chain disconnect; maybe it should be sent again"
+    )]
     MessageDropped,
 
     #[error("block subscription is terminated")]
     BlockSubscriptionTerminated,
-
-    #[error("metadata error is occurred: {0}")]
-    MetaVersionErrorPallets(#[from] MetaVersionErrorPallets),
-
-    #[error("storage registry error is occurred")]
-    StorageRegistryError(#[from] StorageRegistryError),
 
     #[error("balance wasn't found")]
     BalanceNotFound,
@@ -259,18 +208,6 @@ pub enum ChainError {
 
     #[error("no events in this chain")]
     EventsNonexistant,
-
-    #[error("substrate parser error is occurred")]
-    ParserError(#[from] ParserError<()>),
-
-    #[error("storage entry decoding error is occurred")]
-    StorageDecodeError(#[from] StorageError<()>),
-
-    #[error("type registry error is occurred")]
-    RegistryError(#[from] RegistryError<()>),
-
-    #[error("substrate constructor error is occurred")]
-    SubstrateConstructor(#[from] ErrorFixMe<(), RuntimeMetadataV15>),
 
     #[error("transaction isn't ready to be signed: {0:?}")]
     TransactionNotSignable(String),
@@ -313,6 +250,16 @@ pub enum ChainError {
 
     #[error("transfer event has no matching extrinsic")]
     TransferEventNoExtrinsic,
+
+    // TODO: improve error details
+    #[error("subxt error")]
+    Subxt(Box<subxt::Error>),
+}
+
+impl From<subxt::Error> for ChainError {
+    fn from(err: subxt::Error) -> Self {
+        ChainError::Subxt(Box::new(err))
+    }
 }
 
 #[derive(Debug, Error)]
@@ -411,8 +358,11 @@ pub enum SignerError {
     #[error("signer is down")]
     SignerDown,
 
+    #[error("mnemonic phrase is invalid")]
+    InvalidMnemonic(#[from] subxt_signer::bip39::Error),
+
     #[error("seed phrase is invalid")]
-    InvalidSeed(#[from] ErrorMnemonic),
+    InvalidSeed(#[from] subxt_signer::sr25519::Error),
 
     #[error("derivation was failed")]
     InvalidDerivation(String),
@@ -422,18 +372,6 @@ pub enum SignerError {
 pub enum NotHexError {
     #[error("block hash string isn't a valid hexadecimal")]
     BlockHash,
-
-    #[error("encoded extrinsic string isn't a valid hexadecimal")]
-    Extrinsic,
-
-    #[error("encoded metadata string isn't a valid hexadecimal")]
-    Metadata,
-
-    #[error("encoded storage key string isn't a valid hexadecimal")]
-    StorageKey,
-
-    #[error("encoded storage value string isn't a valid hexadecimal")]
-    StorageValue,
 }
 
 mod pretty_cause {
@@ -533,7 +471,7 @@ mod pretty_cause {
 
     #[cfg(test)]
     mod tests {
-        use super::{PrettyCause, OVERLOAD};
+        use super::{OVERLOAD, PrettyCause};
         use std::{
             error::Error,
             fmt::{Debug, Display, Formatter, Result, Write},

@@ -1,4 +1,5 @@
 use crate::{
+    configs::WebServerConfig,
     error::{Error, ServerError},
     handlers::{
         health::{audit, health, status},
@@ -7,9 +8,10 @@ use crate::{
     state::State,
 };
 use axum::{
-    extract::{self, rejection::RawPathParamsRejection, MatchedPath, Query, RawPathParams},
+    Router,
+    extract::{self, MatchedPath, Query, RawPathParams, rejection::RawPathParamsRejection},
     response::Response,
-    routing, Router,
+    routing,
 };
 // use axum_macros::debug_handler;
 use std::{borrow::Cow, collections::HashMap, future::Future, net::SocketAddr};
@@ -21,9 +23,11 @@ pub const MODULE: &str = module_path!();
 
 pub async fn new(
     shutdown_notification: CancellationToken,
-    host: SocketAddr,
+    config: WebServerConfig,
     state: State,
 ) -> Result<impl Future<Output = Result<Cow<'static, str>, Error>>, ServerError> {
+    let host = SocketAddr::new(config.host, config.port);
+
     let v2: Router<State> = Router::new()
         .route("/order/:order_id", routing::post(order))
         .route(

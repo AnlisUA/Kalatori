@@ -1,24 +1,54 @@
 //! Everything related to actual interaction with blockchain
 
+use runtime::runtime_types::staging_xcm::v3::multilocation::MultiLocation;
 use std::collections::HashMap;
-use substrate_crypto_light::common::AccountId32;
+use subxt::config::{Config, DefaultExtrinsicParams, SubstrateConfig};
+use subxt::utils::AccountId32;
+use subxt_signer::SecretString;
 use tokio::{
     sync::{mpsc, oneshot},
-    time::{timeout, Duration},
+    time::{Duration, timeout},
 };
 use tokio_util::sync::CancellationToken;
 
+#[subxt::subxt(
+    runtime_metadata_path = "./metadata.scale",
+    generate_docs,
+    // derive_for_all_types = "Clone, PartialEq, Eq",
+    derive_for_type(
+        path = "staging_xcm::v3::multilocation::MultiLocation",
+        derive = "Clone, codec::Encode",
+        recursive
+    )
+)]
+pub mod runtime {}
+
+// We don't need to construct this at runtime, so an empty enum is appropriate.
+#[derive(Debug)]
+pub enum AssetHubConfig {}
+
+impl Config for AssetHubConfig {
+    type AccountId = <SubstrateConfig as Config>::AccountId;
+    type Address = <SubstrateConfig as Config>::Address;
+    type Signature = <SubstrateConfig as Config>::Signature;
+    type Hasher = <SubstrateConfig as Config>::Hasher;
+    type Header = <SubstrateConfig as Config>::Header;
+    type ExtrinsicParams = DefaultExtrinsicParams<AssetHubConfig>;
+    // Here we use the MultiLocation from the metadata as a part of the config:
+    // The `ChargeAssetTxPayment` signed extension that is part of the ExtrinsicParams above, now uses the type:
+    type AssetId = MultiLocation;
+}
+
+use crate::configs::ChainConfig;
 use crate::{
-    definitions::{api_v2::OrderInfo, Chain},
+    definitions::api_v2::OrderInfo,
     error::{ChainError, Error},
-    signer::Signer,
     state::State,
     utils::task_tracker::TaskTracker,
 };
 
 pub mod definitions;
 pub mod payout;
-pub mod rpc;
 pub mod tracker;
 pub mod utils;
 
@@ -33,6 +63,8 @@ pub const MODULE: &str = module_path!();
 /// Wait this long before forgetting about stuck chain watcher
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(120_000);
 
+pub type AssetHubOnlineClient = subxt::OnlineClient<AssetHubConfig>;
+
 /// RPC server handle
 #[derive(Clone, Debug)]
 pub struct ChainManager {
@@ -44,14 +76,15 @@ impl ChainManager {
     /// - all modules should be restarted, probably.
     #[expect(clippy::too_many_lines)]
     pub fn ignite(
-        chains: Vec<Chain>,
+        seed_secret: SecretString,
+        chain_info: ChainConfig,
         state: &State,
-        signer: &Signer,
         task_tracker: &TaskTracker,
         cancellation_token: &CancellationToken,
     ) -> Result<Self, Error> {
         let (tx, mut rx) = mpsc::channel(1024);
 
+        // TODO: get rid of this, unnecessery if we use single chain
         let mut watch_chain = HashMap::new();
 
         let mut currency_map = HashMap::new();
@@ -60,42 +93,31 @@ impl ChainManager {
         let (rpc_update_tx, mut rpc_update_rx) = mpsc::channel(1024);
 
         // start network monitors
-        for c in chains {
-            if c.endpoints.is_empty() {
-                return Err(Error::EmptyEndpoints(c.name));
-            }
-            let (chain_tx, chain_rx) = mpsc::channel(1024);
-            watch_chain.insert(c.name.clone(), chain_tx.clone());
-
-            // this MUST assert that there are no duplicates in requested assets
-            if let Some(ref a) = c.native_token {
-                if currency_map
-                    .insert(a.name.clone(), c.name.clone())
-                    .is_some()
-                {
-                    return Err(Error::DuplicateCurrency(a.name.clone()));
-                }
-            }
-            for a in &c.asset {
-                if currency_map
-                    .insert(a.name.clone(), c.name.clone())
-                    .is_some()
-                {
-                    return Err(Error::DuplicateCurrency(a.name.clone()));
-                }
-            }
-
-            start_chain_watch(
-                c,
-                chain_tx.clone(),
-                chain_rx,
-                state.interface(),
-                signer.interface(),
-                task_tracker.clone(),
-                cancellation_token.clone(),
-                rpc_update_tx.clone(),
-            );
+        if chain_info.endpoints.is_empty() {
+            return Err(Error::EmptyEndpoints(chain_info.name));
         }
+        let (chain_tx, chain_rx) = mpsc::channel(1024);
+        watch_chain.insert(chain_info.name.clone(), chain_tx.clone());
+
+        for a in &chain_info.assets {
+            if currency_map
+                .insert(a.name.clone(), chain_info.name.clone())
+                .is_some()
+            {
+                return Err(Error::DuplicateCurrency(a.name.clone()));
+            }
+        }
+
+        start_chain_watch(
+            seed_secret,
+            chain_info,
+            chain_tx.clone(),
+            chain_rx,
+            state.interface(),
+            task_tracker.clone(),
+            cancellation_token.clone(),
+            rpc_update_tx.clone(),
+        );
 
         task_tracker
             .clone()

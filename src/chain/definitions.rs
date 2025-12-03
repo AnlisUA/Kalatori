@@ -1,54 +1,18 @@
 //! Common objects for chain interaction system
 
-use std::fmt::Display;
+use std::str::FromStr;
 
 use crate::{
-    chain::{
-        rpc::{asset_balance_at_account, system_balance_at_account},
-        tracker::ChainWatcher,
-    },
+    chain::AssetHubOnlineClient,
+    chain::tracker::ChainWatcher,
     definitions::{
-        api_v2::{BlockNumber, CurrencyInfo, OrderInfo, RpcInfo, Timestamp},
         Balance,
+        api_v2::{CurrencyInfo, OrderInfo, RpcInfo, Timestamp},
     },
-    error::{ChainError, NotHexError},
-    utils::unhex,
+    error::ChainError,
 };
-use jsonrpsee::ws_client::WsClient;
-use primitive_types::H256;
-use substrate_crypto_light::common::{AccountId32, AsBase58};
+use subxt::utils::AccountId32;
 use tokio::sync::oneshot;
-
-/// Abstraction to distinguish block hash from many other H256 things
-#[derive(Debug, Clone)]
-pub struct BlockHash(pub H256);
-
-impl Display for BlockHash {
-    /// Convert block hash to RPC-friendly format
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "0x{}", const_hex::encode(self.0))
-    }
-}
-
-impl BlockHash {
-    /// Convert string returned by RPC to typesafe block
-    ///
-    /// TODO: integrate nicely with serde
-    pub fn from_str(s: &str) -> Result<Self, crate::error::ChainError> {
-        let block_hash_raw = unhex(s, NotHexError::BlockHash)?;
-        Ok(BlockHash(H256(
-            block_hash_raw
-                .try_into()
-                .map_err(|_| ChainError::BlockHashLength)?,
-        )))
-    }
-}
-
-#[derive(Debug)]
-pub struct EventFilter<'a> {
-    pub pallet: &'a str,
-    pub optional_event_variant: Option<&'a str>,
-}
 
 pub enum ChainRequest {
     WatchAccount(WatchAccount),
@@ -77,9 +41,8 @@ impl WatchAccount {
     ) -> Result<WatchAccount, ChainError> {
         Ok(WatchAccount {
             id,
-            address: AccountId32::from_base58_string(&order.payment_account)
-                .map_err(|e| ChainError::InvoiceAccount(e.to_string()))?
-                .0,
+            address: AccountId32::from_str(&order.payment_account)
+                .map_err(|e| ChainError::InvoiceAccount(e.to_string()))?,
             currency: order.currency,
             amount: order.amount,
             recipient,
@@ -91,7 +54,9 @@ impl WatchAccount {
 
 pub enum ChainTrackerRequest {
     WatchAccount(WatchAccount),
-    NewBlock(BlockNumber),
+    NewBlock(
+        subxt::blocks::Block<crate::chain::AssetHubConfig, crate::chain::AssetHubOnlineClient>,
+    ),
     Reap(WatchAccount),
     #[expect(dead_code)]
     ForceReap(WatchAccount),
@@ -123,39 +88,42 @@ impl Invoice {
 
     pub async fn balance(
         &self,
-        client: &WsClient,
+        client: &AssetHubOnlineClient,
         chain_watcher: &ChainWatcher,
-        block: &BlockHash,
     ) -> Result<Balance, ChainError> {
         let currency = chain_watcher
             .assets
             .get(&self.currency.currency)
-            .ok_or(ChainError::InvalidCurrency(self.currency.currency.clone()))?;
-        if let Some(asset_id) = currency.asset_id {
-            let balance = asset_balance_at_account(
-                client,
-                block,
-                &chain_watcher.metadata,
-                &self.address,
-                asset_id,
-            )
-            .await?;
-            Ok(balance)
-        } else {
-            let balance =
-                system_balance_at_account(client, block, &chain_watcher.metadata, &self.address)
-                    .await?;
-            Ok(balance)
-        }
+            .ok_or_else(|| ChainError::InvalidCurrency(self.currency.currency.clone()))?;
+
+        // TODO: asset_id shouldn't be optional, will change in future
+        let Some(asset_id) = currency.asset_id else {
+            return Err(ChainError::InvalidCurrency(self.currency.currency.clone()));
+        };
+
+        let request_data = crate::chain::runtime::storage()
+            .assets()
+            // TODO: change stored type to subxt's account id
+            .account(asset_id, subxt::utils::AccountId32(self.address.0));
+
+        let balance = client
+            .storage()
+            .at_latest()
+            .await?
+            .fetch(&request_data)
+            .await?
+            .map_or(0, |result| result.balance);
+
+        Ok(Balance(balance))
     }
 
     pub async fn check(
         &self,
-        client: &WsClient,
+        client: &AssetHubOnlineClient,
         chain_watcher: &ChainWatcher,
-        block: &BlockHash,
     ) -> Result<bool, ChainError> {
-        Ok(self.balance(client, chain_watcher, block).await?
+        // TODO: what if we receive significantly more money then expect? Perhaps need to check in some range?
+        Ok(self.balance(client, chain_watcher).await?
             >= Balance::parse(self.amount, self.currency.decimals))
     }
 }
