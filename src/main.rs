@@ -21,21 +21,7 @@ use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 use tracing::Level;
 
-use utils::logger;
-use utils::shutdown::{
-    self,
-    ShutdownNotification,
-    ShutdownOutcome,
-};
-use utils::task_tracker::TaskTracker;
 use chain::ChainManager;
-use dao::DAO;
-use error::{
-    Error,
-    PrettyCause,
-};
-use legacy_types::ConfigWoChains;
-use state::State;
 use chain_client::Keyring;
 use configs::{
     ChainConfig,
@@ -46,11 +32,25 @@ use configs::{
     seed_config_with_prefix,
     web_server_config_with_prefix,
 };
+use dao::DAO;
+use error::{
+    Error,
+    PrettyCause,
+};
 use legacy_types::{
+    ConfigWoChains,
     CurrencyProperties,
     Timestamp,
     TokenKind,
 };
+use state::State;
+use utils::logger;
+use utils::shutdown::{
+    self,
+    ShutdownNotification,
+    ShutdownOutcome,
+};
+use utils::task_tracker::TaskTracker;
 
 const DEFAULT_ENV_PREFIX: &str = "KALATORI";
 

@@ -84,8 +84,7 @@ fn build_transaction(
 ) -> Transaction {
     let transaction_type = tx_kind_to_transaction_type(tx_kind);
     #[expect(clippy::cast_possible_wrap)]
-    let created_at =
-        DateTime::from_timestamp_millis(timestamp as i64).unwrap_or_else(Utc::now);
+    let created_at = DateTime::from_timestamp_millis(timestamp as i64).unwrap_or_else(Utc::now);
     let status = tx_status_to_transaction_status(tx_status);
     let sender = to_base58_string(sender.0, 42);
     let recipient = to_base58_string(recipient.0, 42);

@@ -179,9 +179,11 @@ impl AssetHubClient {
     }
 
     #[instrument(skip(self))]
-    async fn fetch_block_by_hash(&self, block_hash: H256) -> Result<Block<SubxtAssetHubConfig, SubxtAssetHubClient>, QueryError> {
-        self
-            .client
+    async fn fetch_block_by_hash(
+        &self,
+        block_hash: H256,
+    ) -> Result<Block<SubxtAssetHubConfig, SubxtAssetHubClient>, QueryError> {
+        self.client
             .blocks()
             .at(block_hash)
             .await
@@ -543,9 +545,7 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
             .get_asset_info(asset_id)
             .await
             .ok_or_else(|| TransactionError::BuildFailed {
-                reason: format!(
-                    "Asset ID {asset_id} not found in asset info store"
-                ),
+                reason: format!("Asset ID {asset_id} not found in asset info store"),
             })?
             .decimals;
 
@@ -561,9 +561,7 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
                     "Amount exceeds u128::MAX after normalization"
                 );
                 TransactionError::BuildFailed {
-                    reason: format!(
-                        "Amount {amount} exceeds u128::MAX after normalization"
-                    ),
+                    reason: format!("Amount {amount} exceeds u128::MAX after normalization"),
                 }
             })?;
 

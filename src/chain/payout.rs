@@ -149,7 +149,8 @@ pub async fn payout(
         tx_record.status = TransactionStatus::Completed;
         tx_record.block_number = Some(result.transaction_id.0);
         tx_record.position_in_block = Some(result.transaction_id.1);
-        // TODO: probably it's gonna be easier to just use UTC::DateTime everywhere - including timestamps in asset hub client
+        // TODO: probably it's gonna be easier to just use UTC::DateTime everywhere -
+        // including timestamps in asset hub client
         tx_record.outgoing_meta.confirmed_at = Some(
             #[expect(clippy::cast_possible_wrap)]
             DateTime::from_timestamp_millis(result.timestamp as i64).unwrap_or_else(Utc::now),

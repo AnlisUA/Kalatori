@@ -364,7 +364,7 @@ impl DAO {
             let result = sqlx::query_as::<_, ServerInfo>(
                 "INSERT INTO server_info (instance_id, version)
                  VALUES (?, ?)
-                 RETURNING instance_id, version, kalatori_remark",
+                 RETURNING instance_id, version, remark as kalatori_remark",
             )
             .bind(&new_instance_id)
             .bind(version)
@@ -490,9 +490,7 @@ mod tests {
             sqlx::Error::Database(db_err) => {
                 assert!(db_err.message().contains("UNIQUE"));
             },
-            err => panic!(
-                "Expected database UNIQUE constraint error, got: {err:?}"
-            ),
+            err => panic!("Expected database UNIQUE constraint error, got: {err:?}"),
         }
     }
 
@@ -1045,9 +1043,7 @@ mod tests {
             sqlx::Error::Database(db_err) => {
                 assert!(db_err.message().contains("FOREIGN KEY"));
             },
-            err => panic!(
-                "Expected FK constraint error, got: {err:?}"
-            ),
+            err => panic!("Expected FK constraint error, got: {err:?}"),
         }
     }
 

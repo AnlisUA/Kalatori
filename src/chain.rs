@@ -22,13 +22,13 @@ use crate::error::{
     ChainError,
     Error,
 };
-use crate::legacy_types::OrderInfo;
-use crate::state::State;
-use crate::utils::task_tracker::TaskTracker;
 use crate::legacy_types::{
     Health,
+    OrderInfo,
     RpcInfo,
 };
+use crate::state::State;
+use crate::utils::task_tracker::TaskTracker;
 
 use definitions::{
     ChainRequest,
