@@ -15,7 +15,7 @@ documentation = "https://docs.rs/Kalatori"
 readme = "README.md"
 keywords = ["substrate", "blockchain", "finance", "service", "middleware"]
 categories = ["finance"]
-exclude = [".github", "cliff.toml", "Dockerfile", "chopsticks/", "configs", "is_version_greater.sh", "shoot.sh", "start.sh", "/tests"]
+exclude = [".github", "cliff.toml", "Dockerfile", "chopsticks/", "configs", "is_version_greater.sh", "/tests"]
 rust-version = "1.85"
 
 [dependencies]
@@ -26,7 +26,7 @@ axum = { version = "0.7", default-features = false, features = [
     "json",
     "matched-path",
 ] }
-tracing-subscriber = { version = "0.3", features = ["env-filter", "time"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "time", "json"] }
 names = { version = "0.14", default-features = false }
 tokio-util = { version = "0.7", features = ["rt"] }
 tokio = { version = "1", features = ["rt-multi-thread", "signal", "time"] }
@@ -42,6 +42,11 @@ codec = { package = "parity-scale-codec", version = "3", features = [
 serde_json = { version = "1", features = ["raw_value"] }
 config = "0.15"
 sled = "0.34"
+# On update sqlx version, plase also update sqlx-cli to corresponding version in Makefile
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "macros", "migrate", "chrono", "uuid", "json"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+rust_decimal = { version = "1", features = ["serde"] }
+chrono = { version = "0.4", features = ["serde"] }
 zeroize = "1"
 # Don't forget to update me in `[build-dependencies]`!
 shadow-rs = { version = "0.36", default-features = false }
@@ -58,10 +63,13 @@ bip39 = { version = "2", features = ["zeroize"] }
 mnemonic-external = "0.1.0"
 base58 = "0.2.0"
 blake2b_simd = "1.0"
+async-stream = "0.3"
+futures = "0.3"
 
 [dev-dependencies]
 indoc = "2"
 serial_test = "3.2"
+tempfile = "3"
 
 [build-dependencies]
 # Don't forget to update me in `[dependencies]`!
@@ -79,16 +87,15 @@ future_incompatible = "warn"
 let_underscore = "warn"
 rust_2018_idioms = "warn"
 unused = "warn"
-# TODO: https://github.com/rust-lang/cargo/issues/12918
-rust-2024-compatibility = { level = "warn", priority = -1 }
 
 [lints.clippy]
-allow_attributes = "warn"
-shadow_reuse = "warn"
-shadow_same = "warn"
-shadow_unrelated = "warn"
+allow_attributes = "deny"
 cargo_common_metadata = "warn"
-arithmetic_side_effects = "warn"
+arithmetic_side_effects = "deny"
+cast_possible_truncation = "deny"
+needless_borrow = "deny"
+ignored_unit_patterns = "deny"
+let_unit_value = "deny"
 # Having multiple module layout styles in a project can be confusing. Moreover, `mod.rs` files don't
 # really harmonize with Git as they can be renamed back to self-named modules and Git fundamentally
 # prone to poorly handle the file renaming that can result in their history erasure.

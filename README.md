@@ -52,11 +52,14 @@ Required configs are:
 - `chain.json`: `name`, `endpoints` and `assets` fields are mandatory. `assets` can not be reconfigured over env vars;
 - `payments.json`: only `recipient` field is mandatory;
 - `seed.json`: only `seed` field is mandatory.
+
 All config examples can be found in `configs` folder of this project.
 Any config field (except `chain.json`'s `assets`) can be overridden using environment variables. If both value in `.json` file and env var present,
 daemon will use the one from env var.
 If any value is already set in env var it's not required to be present in config file.
+
 In order to make daemon read some field from env var, var's name should be named in convenient `{ENV_PREFIX}{CONFIG_FILE_NAME}{CONFIG_FIELD_NAME}={CONFIG_VALUE}`.
+
 Default `ENV_PREFIX` is `KALATORI`, so to set `recipient` field of `payments` config you can use the following sentence:
 ```sh
 export KALATORI_PAYMENTS_RECIPIENT=your_recipient_here

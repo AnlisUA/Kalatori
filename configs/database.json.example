@@ -1,4 +1,5 @@
 {
+    "dir": "./database",
     "path": "kalatori.db",
     "temporary": false
 }
