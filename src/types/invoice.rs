@@ -166,6 +166,7 @@ impl InvoiceCart {
 pub struct Invoice {
     pub id: Uuid,
     pub order_id: String, // Merchant-provided order ID
+    // TODO: make it non-optional, for native asset use asset_id = 0
     pub asset_id: Option<u32>,
     pub chain: String,
     pub amount: Decimal,
@@ -205,7 +206,7 @@ impl From<InvoiceRow> for Invoice {
             order_id: row.order_id,
             asset_id: row.asset_id,
             chain: row.chain,
-            amount: row.amount.0,
+            amount: row.amount.into_inner(),
             payment_address: row.payment_address,
             status: row.status,
             withdrawal_status: row.withdrawal_status,

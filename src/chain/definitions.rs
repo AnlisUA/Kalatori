@@ -46,12 +46,13 @@ impl WatchAccount {
     pub fn new(
         id: Uuid,
         order: OrderInfo,
+        order_id: String,
         recipient: AccountId32,
         res: oneshot::Sender<Result<(), ChainError>>,
     ) -> Result<WatchAccount, ChainError> {
         Ok(WatchAccount {
             id,
-            order_id: order.order_id,
+            order_id,
             address: AccountId32::from_str(&order.payment_account)
                 .map_err(|e| ChainError::InvoiceAccount(e.to_string()))?,
             currency: order.currency,

@@ -17,7 +17,7 @@ use crate::chain::utils::to_base58_string;
 use crate::chain_client::{
     AssetHubClient,
     BlockChainClient,
-    Encodeable,
+    SignedTransactionUtils,
     KeyringClient,
 };
 use crate::error::ChainError;
@@ -54,7 +54,7 @@ pub async fn payout(
         .asset_id
         .ok_or(ChainError::AssetId)?;
 
-    let derivation_params = vec![order.order_id];
+    let derivation_params = vec![order.id.to_string()];
 
     let sender = keyring_client
         .generate_asset_hub_address(derivation_params.clone().into())

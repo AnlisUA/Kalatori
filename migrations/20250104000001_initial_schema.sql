@@ -98,26 +98,30 @@ CREATE TABLE IF NOT EXISTS payouts (
     invoice_id TEXT NOT NULL,  -- References invoices.id
 
     -- Asset information
-    asset_id INTEGER NOT NULL,
+    asset_id TEXT NOT NULL,
     chain TEXT NOT NULL,
+    amount TEXT NOT NULL,  -- Decimal string
 
     -- Addresses
     source_address TEXT NOT NULL,  -- Payment address
     destination_address TEXT NOT NULL,  -- Payout address (merchant's final wallet)
-
-    -- Amount is always "transfer all" for payouts (sweep entire balance)
-    -- No explicit amount field - uses transfer_all mechanism
 
     -- Initiator
     initiator_type TEXT NOT NULL CHECK(initiator_type IN ('System', 'Admin')),
     initiator_id TEXT,  -- Optional UUID v4 (NULL for System-initiated payouts)
 
     -- Status
-    status TEXT NOT NULL CHECK(status IN ('Waiting', 'InProgress', 'Completed', 'Failed')) DEFAULT 'Waiting',
+    status TEXT NOT NULL CHECK(status IN ('Waiting', 'InProgress', 'Completed', 'FailedRetriable', 'Failed')) DEFAULT 'Waiting',
 
     -- Timestamps
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+
+    -- Retry mechanism
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    last_attempt_at TEXT,
+    next_retry_at TEXT,
+    failure_message TEXT,
 
     FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE
 );
@@ -129,25 +133,30 @@ CREATE TABLE IF NOT EXISTS refunds (
     invoice_id TEXT NOT NULL,  -- References invoices.id
 
     -- Asset information
-    asset_id INTEGER NOT NULL,
+    asset_id TEXT NOT NULL,
     chain TEXT NOT NULL,
     amount TEXT NOT NULL,  -- Decimal string
 
     -- Addresses
     source_address TEXT NOT NULL,  -- Payment address or reserve account
     destination_address TEXT NOT NULL,  -- Usually the sender from original payment
-    allow_transfer_all INTEGER NOT NULL DEFAULT 0,  -- Boolean (SQLite uses INTEGER: 0=false, 1=true)
 
     -- Initiator
     initiator_type TEXT NOT NULL CHECK(initiator_type IN ('System', 'Admin')),
     initiator_id TEXT,  -- Optional UUID v4 (NULL for System)
 
     -- Status
-    status TEXT NOT NULL CHECK(status IN ('Waiting', 'InProgress', 'Completed', 'Failed')) DEFAULT 'Waiting',
+    status TEXT NOT NULL CHECK(status IN ('Waiting', 'InProgress', 'Completed', 'FailedRetriable', 'Failed')) DEFAULT 'Waiting',
 
     -- Timestamps
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+
+    -- Retry mechanism
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    last_attempt_at TEXT,
+    next_retry_at TEXT,
+    failure_message TEXT,
 
     FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE
 );

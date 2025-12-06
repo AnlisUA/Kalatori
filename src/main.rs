@@ -52,6 +52,9 @@ use utils::shutdown::{
 };
 use utils::task_tracker::TaskTracker;
 
+use crate::chain::TransfersExecutor;
+use crate::chain_client::{AssetHubClient, BlockChainClient};
+
 const DEFAULT_ENV_PREFIX: &str = "KALATORI";
 
 fn main() -> ExitCode {
@@ -244,11 +247,6 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
     // TODO: replace with expect?
     let recipient = AccountId32::from_str(&payments_config.recipient).unwrap();
 
-    // TODO: quite dirty hack to make it work right now. Should be refactored ASAP.
-    // Spawn separate task for handling payouts. This task should replace Signer and
-    // store seed phrase let signer = Signer::init(recipient.clone(),
-    // &task_tracker, seed_config.seed.clone());
-
     // Initialize DAO for SQLite database operations
     let dao = DAO::new(database_config.clone())
         .await
@@ -263,8 +261,22 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
         .await
         .map_err(error::DaoError::Sqlx)?;
 
+    let asset_hub_client = AssetHubClient::new(&chain_config)
+        .await
+        .map_err(|_| Error::Fatal)?;
+
+    asset_hub_client.init_asset_info(&chain_config.assets.iter().map(|config| config.id).collect::<Vec<_>>()).await.map_err(|_| Error::Fatal)?;
+
     let keyring = Keyring::new(seed_config.seed);
     let (keyring_handle, keyring_client) = keyring.ignite();
+
+    let transfer_executor = TransfersExecutor::new(
+        asset_hub_client,
+        dao.clone(),
+        keyring_client.clone(),
+    );
+
+    let transfer_executor_handle = transfer_executor.ignite(shutdown_notification.token.clone());
 
     let (cm_tx, cm_rx) = oneshot::channel();
 
@@ -316,7 +328,7 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
         () = task_tracker.wait_and_shutdown(error_rx, shutdown_notification) => {
             shutdown_completed.cancel();
 
-            let (shutdown_result, _keyring_result) = tokio::join!(shutdown_listener, keyring_handle);
+            let (shutdown_result, _keyring_result, _transfer_executor_result) = tokio::join!(shutdown_listener, keyring_handle, transfer_executor_handle);
             shutdown_result
         }
         shutdown_listener_result = &mut shutdown_listener => shutdown_listener_result

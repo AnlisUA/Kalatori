@@ -29,8 +29,6 @@ use tracing::{
     warn,
 };
 
-use crate::chain_client::Encodeable;
-
 use super::{
     AssetInfo,
     AssetInfoStore,
@@ -40,10 +38,12 @@ use super::{
     ClientError,
     KeyringClient,
     QueryError,
-    SignedTransaction,
+    SignedTransactionUtils,
     SubscriptionError,
     TransactionError,
     UnsignedTransaction,
+    GeneralTransactionId,
+    SignedTransaction,
 };
 
 use super::errors::is_insufficient_balance_error;
@@ -99,9 +99,13 @@ pub type AssetHubSignedTransaction =
     subxt::tx::SubmittableTransaction<SubxtAssetHubConfig, SubxtAssetHubClient>;
 pub type AssetHubAccountId = subxt::utils::AccountId32;
 
-impl Encodeable for AssetHubSignedTransaction {
+impl SignedTransactionUtils for AssetHubSignedTransaction {
     fn to_hex_string(&self) -> String {
         const_hex::encode_prefixed(self.encoded())
+    }
+
+    fn hash(&self) -> String {
+        self.hash().to_string()
     }
 }
 
@@ -117,6 +121,16 @@ impl ChainConfig for AssetHubChainConfig {
     type TransactionHash = H256;
     type TransactionId = (u32, u32);
     type UnsignedTransaction = AssetHubUnsignedTransaction;
+}
+
+impl From<(u32, u32)> for GeneralTransactionId {
+    fn from(value: (u32, u32)) -> Self {
+        GeneralTransactionId {
+            block_number: Some(value.0),
+            position_in_block: Some(value.1),
+            hash: None,
+        }
+    }
 }
 
 enum AnyTransferExtrinsic {
@@ -651,6 +665,7 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
         let transaction = keyring_client
             .sign_asset_hub_transaction(data)
             .await?;
+
         Ok(SignedTransaction {
             transaction,
         })

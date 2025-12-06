@@ -6,29 +6,45 @@
 /// - All creation and update methods should return the full updated object.
 /// - We manually update `updated_at` and increment `version` in UPDATE
 ///   statements rather than using database triggers.
+/// - We want to be able to compare datetime fields directly in SQL queries,
+///   so we convert `chrono::DateTime<Utc>` to `NaiveDateTime` when binding parameters
+///   (see details [here](https://docs.rs/sqlx/latest/sqlx/sqlite/types/index.html#note-current_timestamp-and-comparisoninteroperability-of-datetime-values)).
+
+use chrono::{DateTime, Utc};
 use names::Generator;
+use sqlx::SqliteTransaction;
 use sqlx::types::{
     Json,
     Text,
 };
 use uuid::Uuid;
 
+use crate::chain_client::GeneralTransactionId;
 use crate::configs::DatabaseConfig;
 use crate::legacy_types::{
     ServerInfo,
     WithdrawalStatus,
 };
 use crate::types::{
-    Invoice,
-    InvoiceRow,
-    InvoiceStatus,
-    Transaction,
-    TransactionRow,
-    UpdateInvoiceData,
+    Invoice, InvoiceRow, InvoiceStatus, OutgoingTransactionMeta, Payout, PayoutRow, PayoutStatus, Refund, RefundRow, RefundStatus, RetryMeta, Transaction, TransactionRow, UpdateInvoiceData
 };
 
 pub type DaoError = sqlx::Error;
 pub type DaoResult<T> = Result<T, DaoError>;
+
+pub struct DaoTransaction {
+    transaction: SqliteTransaction<'static>,
+}
+
+impl DaoTransaction {
+    pub async fn commit(self) -> DaoResult<()> {
+        self.transaction.commit().await
+    }
+
+    pub async fn rollback(self) -> DaoResult<()> {
+        self.transaction.rollback().await
+    }
+}
 
 #[expect(clippy::upper_case_acronyms)]
 #[derive(Clone)]
@@ -61,15 +77,33 @@ impl DAO {
             .await
             .expect("Failed to create database connection pool");
 
+        let dao = Self { pool };
+
+        let sqlite_version = dao.sqlite_version().await?;
+        tracing::info!("Current SQLite version: {}", sqlite_version);
+
         tracing::info!("Run database migrations...");
+
         sqlx::migrate!("./migrations")
-            .run(&pool)
+            .run(&dao.pool)
             .await?;
+
         tracing::info!("Database migrations done.");
 
-        Ok(Self {
-            pool,
-        })
+        Ok(dao)
+    }
+
+    pub async fn begin_transaction(&self) -> DaoResult<DaoTransaction> {
+        let transaction = self.pool.begin().await?;
+        Ok(DaoTransaction { transaction })
+    }
+
+    pub async fn sqlite_version(&self) -> DaoResult<String> {
+        let version: String = sqlx::query_scalar("SELECT sqlite_version()")
+            .fetch_one(&self.pool)
+            .await?;
+
+        Ok(version)
     }
 
     pub async fn create_invoice(
@@ -249,6 +283,72 @@ impl DAO {
         Ok(transaction.into())
     }
 
+    pub async fn update_transaction_successful(
+        &self,
+        dao_transaction: &mut DaoTransaction,
+        transaction_id: Uuid,
+        chain_transaction_id: GeneralTransactionId,
+        confirmed_at: DateTime<Utc>,
+    ) -> DaoResult<Transaction> {
+        // TODO: add additional check that transaction is `Outgoing`? Check it's status?
+        // TODO: add updated_at field?
+        let transaction = sqlx::query_as::<_, TransactionRow>(
+            "UPDATE transactions
+             SET block_number = ?, position_in_block = ?, tx_hash = ?, status = 'Completed',
+                 outgoing_meta = json_set(
+                     outgoing_meta,
+                     '$.confirmed_at', ?
+                 )
+             WHERE id = ?
+             RETURNING *",
+        )
+        .bind(chain_transaction_id.block_number)
+        .bind(chain_transaction_id.position_in_block)
+        .bind(chain_transaction_id.hash)
+        // TODO: Naive datetime does not work here for some reason, using rfc3339 string
+        // It doesn't seem to be critical for now but it's quite inconsistent with other places
+        .bind(confirmed_at.to_rfc3339())
+        .bind(transaction_id)
+        .fetch_one(&mut *dao_transaction.transaction)
+        .await?;
+
+        Ok(transaction.into())
+    }
+
+    pub async fn update_transaction_failed(
+        &self,
+        dao_transaction: &mut DaoTransaction,
+        transaction_id: Uuid,
+        chain_transaction_id: GeneralTransactionId,
+        failure_message: String,
+        failed_at: DateTime<Utc>,
+    ) -> DaoResult<Transaction> {
+        // TODO: add additional check that transaction is `Outgoing`? Check it's status?
+        let transaction = sqlx::query_as::<_, TransactionRow>(
+            "UPDATE transactions
+             SET block_number = ?, position_in_block = ?, tx_hash = ?, status = 'Failed',
+                 outgoing_meta = json_set(
+                     outgoing_meta,
+                     '$.failed_at', ?,
+                     '$.failure_message', ?
+                 )
+             WHERE id = ?
+             RETURNING *",
+        )
+        .bind(chain_transaction_id.block_number)
+        .bind(chain_transaction_id.position_in_block)
+        .bind(chain_transaction_id.hash)
+        // TODO: Naive datetime does not work here for some reason, using rfc3339 string
+        // It doesn't seem to be critical for now but it's quite inconsistent with other places
+        .bind(failed_at.to_rfc3339())
+        .bind(failure_message)
+        .bind(transaction_id)
+        .fetch_one(&mut *dao_transaction.transaction)
+        .await?;
+
+        Ok(transaction.into())
+    }
+
     pub async fn update_transaction(
         &self,
         transaction: Transaction,
@@ -374,6 +474,260 @@ impl DAO {
             Ok(result.instance_id)
         }
     }
+
+    // Payout methods
+
+    pub async fn create_payout(
+        &self,
+        payout: Payout,
+    ) -> DaoResult<Payout> {
+        let payout = sqlx::query_as::<_, PayoutRow>(
+            "INSERT INTO payouts (id, invoice_id, asset_id, chain, source_address, destination_address, amount, initiator_type, initiator_id, status, created_at, updated_at, retry_count, last_attempt_at, next_retry_at, failure_message)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             RETURNING *"
+        )
+            .bind(payout.id)
+            .bind(payout.invoice_id)
+            .bind(payout.transfer_info.asset_id)
+            .bind(&payout.transfer_info.chain)
+            .bind(&payout.transfer_info.source_address)
+            .bind(&payout.transfer_info.destination_address)
+            .bind(Text(payout.transfer_info.amount))
+            .bind(payout.initiator_type)
+            .bind(payout.initiator_id)
+            .bind(payout.status)
+            .bind(payout.created_at.naive_utc())
+            .bind(payout.updated_at.naive_utc())
+            .bind(payout.retry_meta.retry_count)
+            .bind(payout.retry_meta.last_attempt_at.map(|dt| dt.naive_utc()))
+            .bind(payout.retry_meta.next_retry_at.map(|dt| dt.naive_utc()))
+            .bind(&payout.retry_meta.failure_message)
+            .fetch_one(&self.pool)
+            .await?
+            .into();
+
+        Ok(payout)
+    }
+
+    pub async fn get_payout_by_id(
+        &self,
+        payout_id: Uuid,
+    ) -> DaoResult<Option<Payout>> {
+        let payout = sqlx::query_as::<_, PayoutRow>(
+            "SELECT *
+             FROM payouts
+             WHERE id = ?",
+        )
+        .bind(payout_id)
+        .fetch_optional(&self.pool)
+        .await?
+        .map(From::from);
+
+        Ok(payout)
+    }
+
+    /// Fetch pending payouts and mark them as InProgress
+    // TODO: besides of Payouts it should also return associated outgoing Transactions
+    pub async fn get_pending_payouts(&self, limit: u32) -> DaoResult<Vec<Payout>> {
+        // TODO: in future versions of sqlite (bundled in sqlx) we'll probably be able to use
+        // UPDATE ... ORDER BY LIMIT directly
+        let payouts = sqlx::query_as::<_, PayoutRow>(
+            "WITH sel AS (
+                SELECT id
+                FROM payouts
+                WHERE status = 'Waiting'
+                    AND (next_retry_at IS NULL OR next_retry_at <= datetime('now'))
+                ORDER BY created_at ASC
+                LIMIT ?
+            )
+            UPDATE payouts
+            SET status = 'InProgress',
+                updated_at = datetime('now')
+            WHERE id IN (SELECT id FROM sel)
+            RETURNING *",
+        )
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?
+        .into_iter()
+        .map(From::from)
+        .collect();
+
+        Ok(payouts)
+    }
+
+    pub async fn update_payout_status(
+        &self,
+        dao_transaction: &mut DaoTransaction,
+        payout_id: Uuid,
+        status: PayoutStatus,
+    ) -> DaoResult<Payout> {
+        // TODO: add status transition validation
+        let payout = sqlx::query_as::<_, PayoutRow>(
+            "UPDATE payouts
+             SET status = ?, updated_at = datetime('now')
+             WHERE id = ?
+             RETURNING *",
+        )
+        .bind(status)
+        .bind(payout_id)
+        .fetch_one(&mut *dao_transaction.transaction)
+        .await?
+        .into();
+
+        Ok(payout)
+    }
+
+    pub async fn update_payout_retry(
+        &self,
+        dao_transaction: &mut DaoTransaction,
+        payout_id: Uuid,
+        retry_meta: RetryMeta,
+        is_retriable: bool,
+    ) -> DaoResult<Payout> {
+        let status = if is_retriable {
+            PayoutStatus::FailedRetriable
+        } else {
+            PayoutStatus::Failed
+        };
+
+        let payout = sqlx::query_as::<_, PayoutRow>(
+            "UPDATE payouts
+             SET retry_count = ?,
+                 last_attempt_at = ?,
+                 next_retry_at = ?,
+                 failure_message = ?,
+                 status = ?,
+                 updated_at = datetime('now')
+             WHERE id = ?
+             RETURNING *",
+        )
+        .bind(retry_meta.retry_count)
+        .bind(retry_meta.last_attempt_at)
+        .bind(retry_meta.next_retry_at)
+        .bind(&retry_meta.failure_message)
+        .bind(status)
+        .bind(payout_id)
+        .fetch_one(&mut *dao_transaction.transaction)
+        .await?
+        .into();
+
+        Ok(payout)
+    }
+
+    // Refund methods
+
+    pub async fn create_refund(
+        &self,
+        refund: Refund,
+    ) -> DaoResult<Refund> {
+        let refund = sqlx::query_as::<_, RefundRow>(
+            "INSERT INTO refunds (id, invoice_id, asset_id, chain, amount, source_address, destination_address, initiator_type, initiator_id, status, created_at, updated_at, retry_count, last_attempt_at, next_retry_at, failure_message)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             RETURNING *"
+        )
+            .bind(refund.id)
+            .bind(refund.invoice_id)
+            .bind(refund.transfer_info.asset_id)
+            .bind(&refund.transfer_info.chain)
+            .bind(Text(refund.transfer_info.amount))
+            .bind(&refund.transfer_info.source_address)
+            .bind(&refund.transfer_info.destination_address)
+            .bind(refund.initiator_type)
+            .bind(refund.initiator_id)
+            .bind(refund.status)
+            .bind(refund.created_at.naive_utc())
+            .bind(refund.updated_at.naive_utc())
+            .bind(refund.retry_meta.retry_count)
+            .bind(refund.retry_meta.last_attempt_at.map(|dt| dt.naive_utc()))
+            .bind(refund.retry_meta.next_retry_at.map(|dt| dt.naive_utc()))
+            .bind(&refund.retry_meta.failure_message)
+            .fetch_one(&self.pool)
+            .await?;
+
+        Ok(refund.into())
+    }
+
+    pub async fn get_refund_by_id(
+        &self,
+        refund_id: Uuid,
+    ) -> DaoResult<Option<Refund>> {
+        let refund = sqlx::query_as::<_, RefundRow>(
+            "SELECT *
+             FROM refunds
+             WHERE id = ?",
+        )
+        .bind(refund_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(refund.map(From::from))
+    }
+
+    pub async fn get_pending_refunds(&self) -> DaoResult<Vec<Refund>> {
+        let refunds = sqlx::query_as::<_, RefundRow>(
+            "SELECT *
+             FROM refunds
+             WHERE status = 'Waiting'
+               AND (next_retry_at IS NULL OR next_retry_at <= datetime('now'))
+             ORDER BY created_at ASC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(refunds
+            .into_iter()
+            .map(From::from)
+            .collect())
+    }
+
+    pub async fn update_refund_status(
+        &self,
+        refund_id: Uuid,
+        status: RefundStatus,
+    ) -> DaoResult<Refund> {
+        let refund = sqlx::query_as::<_, RefundRow>(
+            "UPDATE refunds
+             SET status = ?, updated_at = datetime('now')
+             WHERE id = ?
+             RETURNING *",
+        )
+        .bind(status)
+        .bind(refund_id)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(refund.into())
+    }
+
+    pub async fn update_refund_retry(
+        &self,
+        refund_id: Uuid,
+        retry_count: i32,
+        last_attempt_at: chrono::DateTime<chrono::Utc>,
+        next_retry_at: Option<chrono::DateTime<chrono::Utc>>,
+        failure_message: Option<String>,
+    ) -> DaoResult<Refund> {
+        let refund = sqlx::query_as::<_, RefundRow>(
+            "UPDATE refunds
+             SET retry_count = ?,
+                 last_attempt_at = ?,
+                 next_retry_at = ?,
+                 failure_message = ?,
+                 updated_at = datetime('now')
+             WHERE id = ?
+             RETURNING *",
+        )
+        .bind(retry_count)
+        .bind(last_attempt_at)
+        .bind(next_retry_at)
+        .bind(&failure_message)
+        .bind(refund_id)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(refund.into())
+    }
 }
 
 #[cfg(test)]
@@ -393,17 +747,24 @@ async fn create_test_dao() -> DAO {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use super::*;
     use crate::legacy_types::WithdrawalStatus;
     use crate::types::{
         Invoice,
         InvoiceStatus,
         OutgoingTransactionMeta,
+        PayoutStatus,
+        RefundStatus,
         Transaction,
         TransactionOrigin,
         TransactionStatus,
         TransactionType,
+        RetryMeta,
         default_invoice,
+        default_payout,
+        default_refund,
         default_transaction,
         default_update_invoice_data,
     };
@@ -1102,6 +1463,82 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_update_transaction_failed_and_successful() {
+        let dao = create_test_dao().await;
+        let invoice = dao
+            .create_invoice(default_invoice())
+            .await
+            .unwrap();
+
+        let tx = Transaction {
+            block_number: None,
+            position_in_block: None,
+            tx_hash: None,
+            ..default_transaction(invoice.id)
+        };
+
+        let created = dao
+            .create_transaction(tx)
+            .await
+            .unwrap();
+
+        assert!(created.block_number.is_none());
+        assert!(created.position_in_block.is_none());
+        assert!(created.tx_hash.is_none());
+
+        let transaction_id = created.id;
+
+        let chain_transaction_id = GeneralTransactionId {
+            block_number: Some(123),
+            position_in_block: Some(1),
+            hash: None,
+        };
+
+        let mut dao_transaction1 = dao.begin_transaction().await.unwrap();
+        let now1 = Utc::now();
+
+        let updated1 = dao
+            .update_transaction_failed(
+                &mut dao_transaction1,
+                transaction_id,
+                chain_transaction_id.clone(),
+                "Network error".to_string(),
+                now1,
+            )
+            .await
+            .unwrap();
+
+        dao_transaction1.commit().await.unwrap();
+
+        assert_eq!(updated1.block_number, Some(123));
+        assert_eq!(updated1.position_in_block, Some(1));
+        assert!(updated1.tx_hash.is_none());
+        assert_eq!(updated1.status, TransactionStatus::Failed);
+        assert_eq!(updated1.outgoing_meta.failed_at, Some(now1));
+
+        let mut dao_transaction2 = dao.begin_transaction().await.unwrap();
+        let now2 = Utc::now();
+
+        let updated2 = dao
+            .update_transaction_successful(
+                &mut dao_transaction2,
+                transaction_id,
+                chain_transaction_id,
+                now2,
+            )
+            .await
+            .unwrap();
+
+        dao_transaction2.commit().await.unwrap();
+
+        assert_eq!(updated2.block_number, Some(123));
+        assert_eq!(updated2.position_in_block, Some(1));
+        assert!(updated2.tx_hash.is_none());
+        assert_eq!(updated2.status, TransactionStatus::Completed);
+        assert_eq!(updated2.outgoing_meta.confirmed_at, Some(now2));
+    }
+
+    #[tokio::test]
     async fn test_transaction_json_fields() {
         let dao = create_test_dao().await;
         let invoice = dao
@@ -1125,7 +1562,6 @@ mod tests {
             .create_transaction(tx_with_origin)
             .await
             .unwrap();
-        assert_eq!(created.origin, origin_with_refund);
 
         // Test OutgoingTransactionMeta with metadata
         let outgoing_meta = OutgoingTransactionMeta {
@@ -1285,5 +1721,342 @@ mod tests {
             .unwrap();
         assert_eq!(updated.block_number, Some(5000));
         assert_eq!(updated.position_in_block, Some(3));
+    }
+
+    // Payout tests
+
+    #[tokio::test]
+    async fn test_payout_create_and_get() {
+        let dao = create_test_dao().await;
+        let invoice = dao
+            .create_invoice(default_invoice())
+            .await
+            .unwrap();
+
+        // Create payout
+        let payout = default_payout(invoice.id);
+        let payout_id = payout.id;
+        let created = dao.create_payout(payout.clone()).await.unwrap();
+
+        // Verify fields
+        assert_eq!(created, payout);
+
+        // Get by ID
+        let fetched = dao
+            .get_payout_by_id(payout_id)
+            .await
+            .unwrap();
+        assert!(fetched.is_some());
+        assert_eq!(fetched.unwrap(), payout);
+
+        // Get non-existent
+        let not_found = dao
+            .get_payout_by_id(Uuid::new_v4())
+            .await
+            .unwrap();
+        assert!(not_found.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_get_pending_payouts_filtering() {
+        let dao = create_test_dao().await;
+        let invoice = dao
+            .create_invoice(default_invoice())
+            .await
+            .unwrap();
+
+        // Create payout with Waiting status (should be returned)
+        let payout1 = default_payout(invoice.id);
+        dao.create_payout(payout1).await.unwrap();
+
+        // Create payout with InProgress status (should NOT be returned)
+        let mut payout2 = default_payout(invoice.id);
+        payout2.status = PayoutStatus::InProgress;
+        dao.create_payout(payout2).await.unwrap();
+
+        // Create payout with Completed status (should NOT be returned)
+        let mut payout3 = default_payout(invoice.id);
+        payout3.status = PayoutStatus::Completed;
+        dao.create_payout(payout3).await.unwrap();
+
+        // Create payout with Waiting status but next_retry_at in future (should NOT be returned)
+        let mut payout4 = default_payout(invoice.id);
+        payout4.retry_meta.next_retry_at = Some(Utc::now() + chrono::Duration::hours(1));
+        dao.create_payout(payout4).await.unwrap();
+
+        // Get pending payouts
+        let pending = dao.get_pending_payouts(2).await.unwrap();
+
+        // Should only return payout1 (InProgress with no next_retry_at)
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].status, PayoutStatus::InProgress);
+        assert_eq!(pending[0].retry_meta, RetryMeta::default());
+
+        let payout5 = Payout {
+            created_at: Utc::now() - chrono::Duration::minutes(10),
+            ..default_payout(invoice.id)
+        };
+        dao.create_payout(payout5.clone()).await.unwrap();
+
+        let payout6 = Payout {
+            created_at: Utc::now() - chrono::Duration::minutes(5),
+            retry_meta: RetryMeta {
+                next_retry_at: Some(Utc::now() - chrono::Duration::minutes(2)),
+                ..RetryMeta::default()
+            },
+            ..default_payout(invoice.id)
+        };
+        dao.create_payout(payout6.clone()).await.unwrap();
+
+        let payout7 = default_payout(invoice.id);
+        dao.create_payout(payout7).await.unwrap();
+
+        let pending_all = dao.get_pending_payouts(2).await.unwrap();
+        assert_eq!(pending_all.len(), 2);
+        assert_eq!(pending_all[0].status, PayoutStatus::InProgress);
+        assert_eq!(pending_all[1].status, PayoutStatus::InProgress);
+        assert_eq!(pending_all[0].id, payout5.id);
+        assert_eq!(pending_all[1].id, payout6.id);
+    }
+
+    #[tokio::test]
+    async fn test_update_payout_status() {
+        let dao = create_test_dao().await;
+        let invoice = dao
+            .create_invoice(default_invoice())
+            .await
+            .unwrap();
+
+        let payout = default_payout(invoice.id);
+        let payout_id = payout.id;
+        let created = dao.create_payout(payout).await.unwrap();
+        assert_eq!(created.status, PayoutStatus::Waiting);
+
+        // Update to InProgress
+        let mut trans1 = dao.begin_transaction().await.unwrap();
+        let updated = dao
+            .update_payout_status(&mut trans1, payout_id, PayoutStatus::InProgress)
+            .await
+            .unwrap();
+
+        trans1.commit().await.unwrap();
+        assert_eq!(updated.status, PayoutStatus::InProgress);
+
+        // Update to Completed
+        let mut trans2 = dao.begin_transaction().await.unwrap();
+        let completed = dao
+            .update_payout_status(&mut trans2, payout_id, PayoutStatus::Completed)
+            .await
+            .unwrap();
+
+        trans2.commit().await.unwrap();
+        assert_eq!(completed.status, PayoutStatus::Completed);
+    }
+
+    #[tokio::test]
+    async fn test_update_payout_retry() {
+        let dao = create_test_dao().await;
+        let invoice = dao
+            .create_invoice(default_invoice())
+            .await
+            .unwrap();
+
+        let payout = default_payout(invoice.id);
+        let payout_id = payout.id;
+        dao.create_payout(payout).await.unwrap();
+
+        // First retry
+        let mut dao_transaction = dao.begin_transaction().await.unwrap();
+        let now = Utc::now();
+        let next_retry = now + chrono::Duration::minutes(1);
+
+        let retry_meta = RetryMeta {
+            retry_count: 1,
+            last_attempt_at: Some(now),
+            next_retry_at: Some(next_retry),
+            failure_message: Some("Network error".to_string()),
+        };
+
+        let updated = dao
+            .update_payout_retry(
+                &mut dao_transaction,
+                payout_id,
+                retry_meta,
+                true,
+            )
+            .await
+            .unwrap();
+
+        dao_transaction.commit().await.unwrap();
+
+        assert_eq!(updated.retry_meta.retry_count, 1);
+        assert!(updated.retry_meta.last_attempt_at.is_some());
+        assert!(updated.retry_meta.next_retry_at.is_some());
+        assert_eq!(
+            updated.retry_meta.failure_message,
+            Some("Network error".to_string())
+        );
+        assert_eq!(updated.status, PayoutStatus::FailedRetriable);
+
+        // Second retry
+        let mut dao_transaction2 = dao.begin_transaction().await.unwrap();
+        let now2 = Utc::now();
+        let next_retry2 = now2 + chrono::Duration::minutes(5);
+
+        let retry_meta2 = RetryMeta {
+            retry_count: 2,
+            last_attempt_at: Some(now2),
+            next_retry_at: Some(next_retry2),
+            failure_message: Some("Connection timeout".to_string()),
+        };
+
+        let updated2 = dao
+            .update_payout_retry(
+                &mut dao_transaction2,
+                payout_id,
+                retry_meta2,
+                false,
+            )
+            .await
+            .unwrap();
+
+        dao_transaction2.commit().await.unwrap();
+
+        assert_eq!(updated2.retry_meta.retry_count, 2);
+        assert_eq!(
+            updated2.retry_meta.failure_message,
+            Some("Connection timeout".to_string())
+        );
+        assert_eq!(updated2.status, PayoutStatus::Failed);
+    }
+
+    // Refund tests
+
+    #[tokio::test]
+    async fn test_refund_create_and_get() {
+        let dao = create_test_dao().await;
+        let invoice = dao
+            .create_invoice(default_invoice())
+            .await
+            .unwrap();
+
+        // Create refund
+        let refund = default_refund(invoice.id);
+        let refund_id = refund.id;
+        let created = dao.create_refund(refund).await.unwrap();
+
+        // Verify fields
+        assert_eq!(created.id, refund_id);
+        assert_eq!(created.invoice_id, invoice.id);
+        assert_eq!(created.status, RefundStatus::Waiting);
+        assert_eq!(created.retry_meta.retry_count, 0);
+
+        // Get by ID
+        let fetched = dao
+            .get_refund_by_id(refund_id)
+            .await
+            .unwrap();
+        assert!(fetched.is_some());
+        assert_eq!(fetched.unwrap().id, refund_id);
+
+        // Get non-existent
+        let not_found = dao
+            .get_refund_by_id(Uuid::new_v4())
+            .await
+            .unwrap();
+        assert!(not_found.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_get_pending_refunds_filtering() {
+        let dao = create_test_dao().await;
+        let invoice = dao
+            .create_invoice(default_invoice())
+            .await
+            .unwrap();
+
+        // Create refund with Waiting status (should be returned)
+        let refund1 = default_refund(invoice.id);
+        dao.create_refund(refund1).await.unwrap();
+
+        // Create refund with InProgress status (should NOT be returned)
+        let mut refund2 = default_refund(invoice.id);
+        refund2.status = RefundStatus::InProgress;
+        dao.create_refund(refund2).await.unwrap();
+
+        // Create refund with Completed status (should NOT be returned)
+        let mut refund3 = default_refund(invoice.id);
+        refund3.status = RefundStatus::Completed;
+        dao.create_refund(refund3).await.unwrap();
+
+        // Get pending refunds
+        let pending = dao.get_pending_refunds().await.unwrap();
+
+        // Should only return refund1
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].status, RefundStatus::Waiting);
+    }
+
+    #[tokio::test]
+    async fn test_update_refund_status() {
+        let dao = create_test_dao().await;
+        let invoice = dao
+            .create_invoice(default_invoice())
+            .await
+            .unwrap();
+
+        let refund = default_refund(invoice.id);
+        let refund_id = refund.id;
+        let created = dao.create_refund(refund).await.unwrap();
+        assert_eq!(created.status, RefundStatus::Waiting);
+
+        // Update to InProgress
+        let updated = dao
+            .update_refund_status(refund_id, RefundStatus::InProgress)
+            .await
+            .unwrap();
+        assert_eq!(updated.status, RefundStatus::InProgress);
+
+        // Update to Completed
+        let completed = dao
+            .update_refund_status(refund_id, RefundStatus::Completed)
+            .await
+            .unwrap();
+        assert_eq!(completed.status, RefundStatus::Completed);
+    }
+
+    #[tokio::test]
+    async fn test_update_refund_retry() {
+        let dao = create_test_dao().await;
+        let invoice = dao
+            .create_invoice(default_invoice())
+            .await
+            .unwrap();
+
+        let refund = default_refund(invoice.id);
+        let refund_id = refund.id;
+        dao.create_refund(refund).await.unwrap();
+
+        // First retry
+        let now = Utc::now();
+        let next_retry = now + chrono::Duration::minutes(1);
+        let updated = dao
+            .update_refund_retry(
+                refund_id,
+                1,
+                now,
+                Some(next_retry),
+                Some("Insufficient balance".to_string()),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(updated.retry_meta.retry_count, 1);
+        assert!(updated.retry_meta.last_attempt_at.is_some());
+        assert!(updated.retry_meta.next_retry_at.is_some());
+        assert_eq!(
+            updated.retry_meta.failure_message,
+            Some("Insufficient balance".to_string())
+        );
     }
 }

@@ -31,18 +31,22 @@ pub use keyring::{
     KeyringError,
 };
 
-pub trait Encodeable {
+pub trait SignedTransactionUtils {
+    /// Encode transaction bytes to hex string
     fn to_hex_string(&self) -> String;
+
+    /// Compute hash of the transaction
+    fn hash(&self) -> String;
 }
 
-pub trait ChainConfig: Clone + std::fmt::Debug {
-    type AssetId: Hash + FromStr + Eq + Clone + std::fmt::Debug;
-    type TransactionId: Hash + Eq + Clone + std::fmt::Debug;
-    type TransactionHash: FromStr + ToString;
-    type BlockHash: FromStr + ToString;
+pub trait ChainConfig: Clone + std::fmt::Debug + Sync + Send {
+    type AssetId: Hash + FromStr + ToString + Eq + Clone + std::fmt::Debug + Sync + Send;
+    type TransactionId: Hash + Eq + Clone + std::fmt::Debug + Into<GeneralTransactionId> + Sync + Send;
+    type TransactionHash: FromStr + ToString + Sync + Send;
+    type BlockHash: FromStr + ToString + Sync + Send;
     type UnsignedTransaction;
-    type SignedTransaction: Encodeable;
-    type AccountId;
+    type SignedTransaction: SignedTransactionUtils + Sync + Send;
+    type AccountId: FromStr + ToString + Sync + Send;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,6 +54,46 @@ pub struct AssetInfo<T: ChainConfig> {
     pub name: String,
     pub id: T::AssetId,
     pub decimals: u8,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GeneralTransactionId {
+    pub block_number: Option<u32>,
+    pub position_in_block: Option<u32>,
+    pub hash: Option<String>,
+}
+
+impl GeneralTransactionId {
+    pub fn empty() -> Self {
+        Self {
+            block_number: None,
+            position_in_block: None,
+            hash: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GeneralChainTransfer {
+    pub chain: String,
+    pub asset_id: String,
+    pub amount: Decimal,
+    pub sender: String,
+    pub recipient: String,
+    pub block_number: Option<u32>,
+    pub position_in_block: Option<u32>,
+    pub transaction_hash: Option<String>,
+    pub timestamp: u64, // milliseconds since epoch
+}
+
+impl GeneralChainTransfer {
+    pub fn general_transaction_id(&self) -> GeneralTransactionId {
+        GeneralTransactionId {
+            block_number: self.block_number,
+            position_in_block: self.position_in_block,
+            hash: self.transaction_hash.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -60,6 +104,24 @@ pub struct ChainTransfer<T: ChainConfig> {
     pub recipient: T::AccountId, // base58 ss58 format
     pub transaction_id: T::TransactionId,
     pub timestamp: u64, // milliseconds since epoch
+}
+
+impl<T: ChainConfig> From<ChainTransfer<T>> for GeneralChainTransfer {
+    fn from(transfer: ChainTransfer<T>) -> Self {
+        let trans_id: GeneralTransactionId = transfer.transaction_id.into();
+
+        Self {
+            chain: String::new(), // Chain name is not available here
+            asset_id: transfer.asset_id.to_string(),
+            amount: transfer.amount,
+            sender: transfer.sender.to_string(),
+            recipient: transfer.recipient.to_string(),
+            block_number: trans_id.block_number,
+            position_in_block: trans_id.position_in_block,
+            transaction_hash: trans_id.hash,
+            timestamp: transfer.timestamp,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -108,9 +170,13 @@ pub struct SignedTransaction<T: ChainConfig> {
     transaction: T::SignedTransaction,
 }
 
-impl<T: ChainConfig> Encodeable for SignedTransaction<T> {
+impl<T: ChainConfig> SignedTransactionUtils for SignedTransaction<T> {
     fn to_hex_string(&self) -> String {
         self.transaction.to_hex_string()
+    }
+
+    fn hash(&self) -> String {
+        self.transaction.hash()
     }
 }
 
@@ -132,11 +198,16 @@ pub trait BlockChainClient<T: ChainConfig>: Sync + Send + Sized {
         asset_id: &T::AssetId,
     ) -> Result<AssetInfo<T>, QueryError>;
 
-    async fn fetch_asset_balance(
+    // async fn fetch_asset_balance(
+    //     &self,
+    //     asset_id: &T::AssetId,
+    //     account: &T::AccountId,
+    // ) -> Result<Decimal, QueryError>;
+    fn fetch_asset_balance(
         &self,
         asset_id: &T::AssetId,
         account: &T::AccountId,
-    ) -> Result<Decimal, QueryError>;
+    ) -> impl Future<Output = Result<Decimal, QueryError>> + Send;
 
     async fn subscribe_transfers(
         &self,
@@ -172,10 +243,11 @@ pub trait BlockChainClient<T: ChainConfig>: Sync + Send + Sized {
         keyring_client: &KeyringClient,
     ) -> Result<SignedTransaction<T>, TransactionError<T>>;
 
-    async fn submit_and_watch_transaction(
+
+    fn submit_and_watch_transaction(
         &self,
         transaction: SignedTransaction<T>,
-    ) -> Result<ChainTransfer<T>, TransactionError<T>>;
+    ) -> impl Future<Output = Result<ChainTransfer<T>, TransactionError<T>>> + Send;
 
     // This method should be called at the very start of the program, right after
     // client initialization.

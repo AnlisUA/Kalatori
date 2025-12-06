@@ -2,6 +2,7 @@ pub mod definitions;
 pub mod payout;
 pub mod tracker;
 pub mod utils;
+mod executor;
 
 use std::collections::HashMap;
 
@@ -36,6 +37,8 @@ use definitions::{
     WatchAccount,
 };
 use tracker::start_chain_watch;
+
+pub use executor::TransfersExecutor;
 
 /// Wait this long before forgetting about stuck chain watcher
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(120_000);
@@ -189,12 +192,13 @@ impl ChainManager {
         &self,
         invoice_id: uuid::Uuid,
         order: OrderInfo,
+        order_id: String,
         recipient: AccountId32,
     ) -> Result<(), ChainError> {
         let (res, rx) = oneshot::channel();
         self.tx
             .send(ChainRequest::WatchAccount(
-                WatchAccount::new(invoice_id, order, recipient, res)?,
+                WatchAccount::new(invoice_id, order, order_id, recipient, res)?,
             ))
             .await
             .map_err(|_| ChainError::MessageDropped)?;
@@ -215,12 +219,13 @@ impl ChainManager {
         &self,
         invoice_id: uuid::Uuid,
         order: OrderInfo,
+        order_id: String,
         recipient: AccountId32,
     ) -> Result<(), ChainError> {
         let (res, rx) = oneshot::channel();
         self.tx
             .send(ChainRequest::Reap(WatchAccount::new(
-                invoice_id, order, recipient, res,
+                invoice_id, order, order_id, recipient, res,
             )?))
             .await
             .map_err(|_| ChainError::MessageDropped)?;
