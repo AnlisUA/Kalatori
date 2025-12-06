@@ -36,14 +36,14 @@ use super::{
     ChainConfig,
     ChainTransfer,
     ClientError,
+    GeneralTransactionId,
     KeyringClient,
     QueryError,
+    SignedTransaction,
     SignedTransactionUtils,
     SubscriptionError,
     TransactionError,
     UnsignedTransaction,
-    GeneralTransactionId,
-    SignedTransaction,
 };
 
 use super::errors::is_insufficient_balance_error;

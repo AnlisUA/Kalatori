@@ -329,7 +329,8 @@ async fn migrate_orders(
 
         // Decode order_id and order_info
         let order_id = String::decode(&mut &key[..])?;
-        let order_info = OrderInfo::decode(&mut &value[..]).inspect_err(|e| tracing::error!("ERROR HAPPENS HERE {:?}", e))?;
+        let order_info = OrderInfo::decode(&mut &value[..])
+            .inspect_err(|e| tracing::error!("ERROR HAPPENS HERE {:?}", e))?;
 
         // Validate currency exists
         validate_currency_exists(currencies, &order_info.currency)?;

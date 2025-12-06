@@ -107,7 +107,9 @@ pub struct TransactionOrigin {
 
 pub enum TransactionOriginVariant {
     Payout(Uuid),
+    #[expect(dead_code)]
     Refund(Uuid),
+    #[expect(dead_code)]
     InternalTransfer(Uuid),
     None,
 }
@@ -120,6 +122,7 @@ impl TransactionOrigin {
         }
     }
 
+    #[expect(dead_code)]
     pub fn refund(refund_id: Uuid) -> Self {
         Self {
             refund_id: Some(refund_id),
@@ -127,6 +130,7 @@ impl TransactionOrigin {
         }
     }
 
+    #[expect(dead_code)]
     pub fn internal_transfer(internal_transfer_id: Uuid) -> Self {
         Self {
             internal_transfer_id: Some(internal_transfer_id),
@@ -170,6 +174,7 @@ pub struct Transaction {
     pub id: Uuid,
     pub invoice_id: Uuid,
     pub chain: String,
+    // TODO: change to String for compatibility with different chains
     pub asset_id: u32,
     pub amount: Decimal,
     pub sender: String,
@@ -267,10 +272,18 @@ impl From<OutgoingTransaction> for Transaction {
             id: value.id,
             invoice_id: value.invoice_id,
             chain: value.transfer_info.chain,
-            asset_id: value.transfer_info.asset_id.parse().unwrap(),
+            asset_id: value
+                .transfer_info
+                .asset_id
+                .parse()
+                .unwrap(),
             amount: value.transfer_info.amount,
-            sender: value.transfer_info.source_address.to_string(),
-            recipient: value.transfer_info.destination_address.to_string(),
+            sender: value
+                .transfer_info
+                .source_address,
+            recipient: value
+                .transfer_info
+                .destination_address,
             block_number: None,
             position_in_block: None,
             tx_hash: Some(value.tx_hash),

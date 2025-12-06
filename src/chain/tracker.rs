@@ -24,13 +24,11 @@ use crate::chain::definitions::{
     ChainTrackerRequest,
     Invoice,
 };
-use crate::chain::payout::payout;
 use crate::chain::utils::to_base58_string;
 use crate::chain_client::{
     AssetHubClient,
     BlockChainClient,
     ClientError,
-    KeyringClient,
 };
 use crate::configs::ChainConfig;
 use crate::error::ChainError;
@@ -44,7 +42,9 @@ use crate::legacy_types::{
 };
 use crate::state::State;
 use crate::types::{
-    OutgoingTransactionMeta, Payout, Transaction, TransactionOrigin
+    OutgoingTransactionMeta,
+    Transaction,
+    TransactionOrigin,
 };
 use crate::utils::task_tracker::TaskTracker;
 
@@ -107,14 +107,12 @@ fn build_transaction(
     }
 }
 
-#[expect(clippy::too_many_lines, clippy::too_many_arguments)]
+#[expect(clippy::too_many_lines)]
 pub fn start_chain_watch(
-    keyring_client: KeyringClient,
     chain: ChainConfig,
-    _chain_tx: mpsc::Sender<ChainTrackerRequest>,
     mut chain_rx: mpsc::Receiver<ChainTrackerRequest>,
     state: State,
-    task_tracker: TaskTracker,
+    task_tracker: &TaskTracker,
     cancellation_token: CancellationToken,
     rpc_update_tx: mpsc::Sender<RpcInfo>,
 ) {
@@ -310,63 +308,6 @@ pub fn start_chain_watch(
                         }
                         ChainTrackerRequest::WatchAccount(request) => {
                             watched_accounts.insert(request.id, Invoice::from_request(request));
-                        }
-                        ChainTrackerRequest::Reap(request) => {
-                            let payout = Payout {
-                                id: Uuid::new_v4(),
-                                // TODO: check it
-                                invoice_id: request.id,
-                                initiator_type: crate::types::InitiatorType::System,
-                                initiator_id: None,
-                                status: crate::types::PayoutStatus::Waiting,
-                                transfer_info: crate::types::TransferInfo {
-                                    chain: chain.name.clone(),
-                                    asset_id: request.currency.asset_id.unwrap_or(0).to_string(),
-                                    amount: Decimal::from_f64_retain(request.amount).unwrap_or(Decimal::ZERO),
-                                    source_address: to_base58_string(request.address.0, 42),
-                                    destination_address: to_base58_string(request.recipient.0, 42),
-                                },
-                                created_at: Utc::now(),
-                                updated_at: Utc::now(),
-                                retry_meta: crate::types::RetryMeta::default(),
-                            };
-
-                            // let id = request.id;
-                            // let reap_state_handle = state.interface();
-                            // let watcher_for_reaper = watcher.clone();
-                            // let keyring_client_cloned = keyring_client.clone();
-                            // let client_cloned = asset_hub_client.clone();
-
-                            // task_tracker.clone().spawn(format!("Initiate payout for order {}", id.clone()), async move {
-                            //     let () = payout(
-                            //         client_cloned,
-                            //         Invoice::from_request(request),
-                            //         reap_state_handle,
-                            //         watcher_for_reaper,
-                            //         keyring_client_cloned,
-                            //     ).await?;
-
-                            //     Ok(format!("Payout attempt for order {id} terminated"))
-                            // });
-                        }
-                        ChainTrackerRequest::ForceReap(request) => {
-                            let id = request.id;
-                            let reap_state_handle = state.interface();
-                            let watcher_for_reaper = watcher.clone();
-                            let keyring_client_cloned = keyring_client.clone();
-                            let client_cloned = asset_hub_client.clone();
-
-                            task_tracker.clone().spawn(format!("Initiate forced payout for order {}", id.clone()), async move {
-                                let () = payout(
-                                    client_cloned,
-                                    Invoice::from_request(request),
-                                    reap_state_handle,
-                                    watcher_for_reaper,
-                                    keyring_client_cloned,
-                                ).await?;
-
-                                Ok(format!("Forced payout attempt for order {id} terminated"))
-                            });
                         }
                         ChainTrackerRequest::Shutdown(res) => {
                             shutdown = true;

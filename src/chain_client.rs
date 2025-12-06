@@ -41,7 +41,13 @@ pub trait SignedTransactionUtils {
 
 pub trait ChainConfig: Clone + std::fmt::Debug + Sync + Send {
     type AssetId: Hash + FromStr + ToString + Eq + Clone + std::fmt::Debug + Sync + Send;
-    type TransactionId: Hash + Eq + Clone + std::fmt::Debug + Into<GeneralTransactionId> + Sync + Send;
+    type TransactionId: Hash
+        + Eq
+        + Clone
+        + std::fmt::Debug
+        + Into<GeneralTransactionId>
+        + Sync
+        + Send;
     type TransactionHash: FromStr + ToString + Sync + Send;
     type BlockHash: FromStr + ToString + Sync + Send;
     type UnsignedTransaction;
@@ -242,7 +248,6 @@ pub trait BlockChainClient<T: ChainConfig>: Sync + Send + Sized {
         derivation_params: Vec<String>,
         keyring_client: &KeyringClient,
     ) -> Result<SignedTransaction<T>, TransactionError<T>>;
-
 
     fn submit_and_watch_transaction(
         &self,

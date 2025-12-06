@@ -95,16 +95,20 @@ impl RetryMeta {
         // TODO: it's simplified strategy. In future might be better
         // to calculate delay based on average block execution time of the chain
         match self.retry_count {
-            0 => 60,         // 1 minute
-            1 => 5 * 60,     // 5 minutes
-            2 => 15 * 60,    // 15 minutes
-            3 => 30 * 60,    // 30 minutes
-            4 => 60 * 60,    // 1 hour
-            _ => 2 * 60 * 60 // 2 hours
+            0 => 60,          // 1 minute
+            1 => 5 * 60,      // 5 minutes
+            2 => 15 * 60,     // 15 minutes
+            3 => 30 * 60,     // 30 minutes
+            4 => 60 * 60,     // 1 hour
+            _ => 2 * 60 * 60, // 2 hours
         }
     }
 
-    pub fn increment_retry(&mut self, failure_message: String) {
+    #[expect(clippy::arithmetic_side_effects)]
+    pub fn increment_retry(
+        &mut self,
+        failure_message: String,
+    ) {
         let now = Utc::now();
         self.retry_count += 1;
         self.last_attempt_at = Some(now);

@@ -68,7 +68,9 @@ impl std::str::FromStr for PayoutStatus {
 impl From<PayoutStatus> for WithdrawalStatus {
     fn from(status: PayoutStatus) -> Self {
         match status {
-            PayoutStatus::Waiting | PayoutStatus::InProgress | PayoutStatus::FailedRetriable => Self::Waiting,
+            PayoutStatus::Waiting | PayoutStatus::InProgress | PayoutStatus::FailedRetriable => {
+                Self::Waiting
+            },
             PayoutStatus::Completed => Self::Completed,
             PayoutStatus::Failed => Self::Failed,
         }

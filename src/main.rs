@@ -53,7 +53,10 @@ use utils::shutdown::{
 use utils::task_tracker::TaskTracker;
 
 use crate::chain::TransfersExecutor;
-use crate::chain_client::{AssetHubClient, BlockChainClient};
+use crate::chain_client::{
+    AssetHubClient,
+    BlockChainClient,
+};
 
 const DEFAULT_ENV_PREFIX: &str = "KALATORI";
 
@@ -265,7 +268,16 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
         .await
         .map_err(|_| Error::Fatal)?;
 
-    asset_hub_client.init_asset_info(&chain_config.assets.iter().map(|config| config.id).collect::<Vec<_>>()).await.map_err(|_| Error::Fatal)?;
+    asset_hub_client
+        .init_asset_info(
+            &chain_config
+                .assets
+                .iter()
+                .map(|config| config.id)
+                .collect::<Vec<_>>(),
+        )
+        .await
+        .map_err(|_| Error::Fatal)?;
 
     let keyring = Keyring::new(seed_config.seed);
     let (keyring_handle, keyring_client) = keyring.ignite();
@@ -296,7 +308,6 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
 
     cm_tx
         .send(ChainManager::ignite(
-            keyring_client,
             chain_config,
             &state,
             &task_tracker,

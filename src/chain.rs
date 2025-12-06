@@ -1,8 +1,7 @@
 pub mod definitions;
-pub mod payout;
+mod executor;
 pub mod tracker;
 pub mod utils;
-mod executor;
 
 use std::collections::HashMap;
 
@@ -17,7 +16,6 @@ use tokio::time::{
 };
 use tokio_util::sync::CancellationToken;
 
-use crate::chain_client::KeyringClient;
 use crate::configs::ChainConfig;
 use crate::error::{
     ChainError,
@@ -53,9 +51,7 @@ impl ChainManager {
     /// Run once to start all chain connections; this should be very robust, if
     /// manager fails
     /// - all modules should be restarted, probably.
-    #[expect(clippy::too_many_lines)]
     pub fn ignite(
-        keyring_client: KeyringClient,
         chain_info: ChainConfig,
         state: &State,
         task_tracker: &TaskTracker,
@@ -91,12 +87,10 @@ impl ChainManager {
         }
 
         start_chain_watch(
-            keyring_client,
             chain_info,
-            chain_tx.clone(),
             chain_rx,
             state.interface(),
-            task_tracker.clone(),
+            task_tracker,
             cancellation_token.clone(),
             rpc_update_tx.clone(),
         );
@@ -117,22 +111,6 @@ impl ChainManager {
                                             let _unused = receiver
                                                 .send(ChainTrackerRequest::WatchAccount(request))
                                                 .await;
-                                        } else {
-                                            let _unused = request
-                                                .res
-                                                .send(Err(ChainError::InvalidChain(chain.clone())));
-                                        }
-                                    } else {
-                                        let _unused = request
-                                            .res
-                                            .send(Err(ChainError::InvalidCurrency(request.currency.currency)));
-                                    }
-                                }
-                                ChainRequest::Reap(request) => {
-                                    if let Some(chain) = currency_map.get(&request.currency.currency) {
-                                        if let Some(receiver) = watch_chain.get(chain) {
-                                            let _unused =
-                                                receiver.send(ChainTrackerRequest::Reap(request)).await;
                                         } else {
                                             let _unused = request
                                                 .res
@@ -198,7 +176,9 @@ impl ChainManager {
         let (res, rx) = oneshot::channel();
         self.tx
             .send(ChainRequest::WatchAccount(
-                WatchAccount::new(invoice_id, order, order_id, recipient, res)?,
+                WatchAccount::new(
+                    invoice_id, order, order_id, recipient, res,
+                )?,
             ))
             .await
             .map_err(|_| ChainError::MessageDropped)?;
@@ -213,24 +193,6 @@ impl ChainManager {
             .await
             .map_err(|_| Error::Fatal)?;
         res_rx.await.map_err(|_| Error::Fatal)
-    }
-
-    pub async fn reap(
-        &self,
-        invoice_id: uuid::Uuid,
-        order: OrderInfo,
-        order_id: String,
-        recipient: AccountId32,
-    ) -> Result<(), ChainError> {
-        let (res, rx) = oneshot::channel();
-        self.tx
-            .send(ChainRequest::Reap(WatchAccount::new(
-                invoice_id, order, order_id, recipient, res,
-            )?))
-            .await
-            .map_err(|_| ChainError::MessageDropped)?;
-        rx.await
-            .map_err(|_| ChainError::MessageDropped)?
     }
 
     pub async fn shutdown(&self) -> () {

@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
+use chrono::Utc;
 use subxt::utils::AccountId32;
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
-use chrono::Utc;
 
 use crate::chain::ChainManager;
 use crate::chain::utils::to_base58_string;
@@ -230,28 +230,6 @@ impl State {
                                     );
                                 }
                             }
-                            StateAccessRequest::UpdateTransactionV2 { transaction } => {
-                                let update = state.dao.update_transaction(transaction.clone()).await;
-
-                                if let Err(e) = update {
-                                    tracing::error!(
-                                        "Failed to update transaction {}: {e:?}",
-                                        transaction.id
-                                    );
-                                }
-                            }
-                            StateAccessRequest::OrderWithdrawn(id) => {
-                                match state.dao.update_invoice_withdrawal_status(id, crate::legacy_types::WithdrawalStatus::Completed).await {
-                                    Ok(_order) => {
-                                        tracing::info!("Order {id} successfully marked as withdrawn");
-                                    }
-                                    Err(e) => {
-                                        tracing::error!(
-                                            "Order was withdrawn but this could not be recorded! {e:?}"
-                                        );
-                                    }
-                                }
-                            }
                             StateAccessRequest::ForceWithdrawal(order_id) => {
                                 // Look up invoice_id from order_id
                                 match state.dao.get_invoice_by_order_id(&order_id).await {
@@ -261,9 +239,7 @@ impl State {
                                         // let order = state.invoice_to_order_info(&invoice, &currency_info);
 
                                         match order {
-                                            Ok(order_info) => {
-                                                // let result = state.chain_manager.reap(invoice.id, order_info, state.recipient.clone()).await;
-
+                                            Ok(_order_info) => {
                                                 let payout = Payout {
                                                     id: Uuid::new_v4(),
                                                     invoice_id: invoice.id,
@@ -496,22 +472,6 @@ impl State {
         }
     }
 
-    pub async fn order_withdrawn(
-        &self,
-        order: Uuid,
-    ) {
-        if self
-            .tx
-            .send(StateAccessRequest::OrderWithdrawn(
-                order,
-            ))
-            .await
-            .is_err()
-        {
-            tracing::warn!("Data race on shutdown; please restart the daemon for cleaning up");
-        }
-    }
-
     pub async fn force_withdrawal(
         &self,
         order: String,
@@ -550,22 +510,9 @@ impl State {
             .await
             .map_err(|_| Error::Fatal)
     }
-
-    pub async fn update_transaction_v2(
-        &self,
-        transaction: Transaction,
-    ) -> Result<(), Error> {
-        self.tx
-            .send(
-                StateAccessRequest::UpdateTransactionV2 {
-                    transaction,
-                },
-            )
-            .await
-            .map_err(|_| Error::Fatal)
-    }
 }
 
+#[expect(clippy::large_enum_variant)]
 enum StateAccessRequest {
     ConnectChain(HashMap<String, CurrencyProperties>),
     GetInvoiceStatus(GetInvoiceStatus),
@@ -582,10 +529,6 @@ enum StateAccessRequest {
         invoice_id: Uuid,
         transaction: Transaction,
     },
-    UpdateTransactionV2 {
-        transaction: Transaction,
-    },
-    OrderWithdrawn(Uuid),
     ForceWithdrawal(String),
 }
 
@@ -804,7 +747,8 @@ impl StateData {
 
                     invoice.id = invoice_id;
 
-                    let invoice = self.dao
+                    let invoice = self
+                        .dao
                         .create_invoice(invoice.clone())
                         .await
                         .map_err(DaoError::Sqlx)?;

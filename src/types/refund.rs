@@ -4,12 +4,10 @@ use chrono::{
     DateTime,
     Utc,
 };
-use rust_decimal::Decimal;
 use serde::{
     Deserialize,
     Serialize,
 };
-use sqlx::types::Text;
 use sqlx::{
     FromRow,
     Type,
@@ -110,7 +108,7 @@ pub fn default_refund(invoice_id: Uuid) -> Refund {
     let transfer_info = TransferInfo {
         asset_id: 1984.to_string(),
         chain: "statemint".to_string(),
-        amount: Decimal::new(5000, 2), // 50.00
+        amount: rust_decimal::Decimal::new(5000, 2), // 50.00
         source_address: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string(),
         destination_address: "5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty".to_string(),
     };

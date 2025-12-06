@@ -1,15 +1,45 @@
 use std::str::FromStr;
 
+use chrono::Utc;
+use futures::stream::{
+    FuturesUnordered,
+    StreamExt,
+};
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
+use tokio::time::{
+    Duration,
+    interval,
+};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
-use chrono::Utc;
-use futures::stream::{FuturesUnordered, StreamExt};
-use tokio::time::{interval, Duration};
 
-use crate::chain_client::{AssetHubChainConfig, AssetHubClient, BlockChainClient, GeneralChainTransfer, GeneralTransactionId, TransactionError, ChainConfig, KeyringClient, SignedTransaction, SignedTransactionUtils};
-use crate::types::{OutgoingTransaction, Payout, PayoutStatus, RetryMeta, Transaction, TransactionOrigin, TransactionOriginVariant, TransferInfo};
-use crate::dao::{DAO, DaoError};
+use crate::chain_client::{
+    AssetHubChainConfig,
+    AssetHubClient,
+    BlockChainClient,
+    ChainConfig,
+    GeneralChainTransfer,
+    GeneralTransactionId,
+    KeyringClient,
+    SignedTransaction,
+    SignedTransactionUtils,
+    TransactionError,
+};
+use crate::dao::{
+    DAO,
+    DaoError,
+};
+use crate::types::{
+    OutgoingTransaction,
+    Payout,
+    PayoutStatus,
+    RetryMeta,
+    Transaction,
+    TransactionOrigin,
+    TransactionOriginVariant,
+    TransferInfo,
+};
 
 const MAX_CONCURRENT_TRANSFERS: u32 = 10;
 const POLLING_INTERVAL_MILLIS: u64 = 100;
@@ -27,14 +57,21 @@ pub struct ChainPayoutRequest<T: ChainConfig> {
 }
 
 impl<T: ChainConfig> ChainPayoutRequest<T> {
-    pub fn new(id: Uuid, invoice_id: Uuid, transfer_info: TransferInfo, retry_meta: RetryMeta) -> Result<Self, ()> {
+    pub fn new(
+        id: Uuid,
+        invoice_id: Uuid,
+        transfer_info: TransferInfo,
+        retry_meta: RetryMeta,
+    ) -> Result<Self, ()> {
         Ok(Self {
             id,
             invoice_id,
             chain: transfer_info.chain,
             asset_id: T::AssetId::from_str(&transfer_info.asset_id).map_err(|_| ())?,
-            source_address: T::AccountId::from_str(&transfer_info.source_address).map_err(|_| ())?,
-            destination_address: T::AccountId::from_str(&transfer_info.destination_address).map_err(|_| ())?,
+            source_address: T::AccountId::from_str(&transfer_info.source_address)
+                .map_err(|_| ())?,
+            destination_address: T::AccountId::from_str(&transfer_info.destination_address)
+                .map_err(|_| ())?,
             amount: transfer_info.amount,
             retry_meta,
         })
@@ -51,8 +88,13 @@ impl TryFrom<Payout> for ChainPayoutRequestTyped {
 
     fn try_from(value: Payout) -> Result<Self, Self::Error> {
         let request = match value.transfer_info.chain.as_ref() {
-            "statemint" => ChainPayoutRequestTyped::AssetHub(ChainPayoutRequest::new(value.id, value.invoice_id, value.transfer_info, value.retry_meta)?),
-            _ => return Err(())
+            "statemint" => ChainPayoutRequestTyped::AssetHub(ChainPayoutRequest::new(
+                value.id,
+                value.invoice_id,
+                value.transfer_info,
+                value.retry_meta,
+            )?),
+            _ => return Err(()),
         };
 
         Ok(request)
@@ -89,17 +131,17 @@ async fn send_transfer_request<T: ChainConfig, C: BlockChainClient<T>>(
     request: ChainPayoutRequest<T>,
     transaction: Transaction,
 ) -> TransactionExecutionData {
-    let balance = client.fetch_asset_balance(&request.asset_id, &request.source_address).await;
-    tracing::info!("Balance before transfer {:?}", balance);
-    let response = client.submit_and_watch_transaction(signed_transaction).await;
+    let response = client
+        .submit_and_watch_transaction(signed_transaction)
+        .await;
+
     let mut meta = request.retry_meta;
 
     let result = match response {
-        Ok(transfer) => {
-            Ok(transfer.into())
-        },
+        Ok(transfer) => Ok(transfer.into()),
         Err(TransactionError::SubmissionStatusUnknown) => {
-            meta.increment_retry("".to_string());
+            // TODO: rework errors
+            meta.increment_retry(String::new());
 
             Err(TransactionExecutionError {
                 transaction_id: GeneralTransactionId::empty(),
@@ -107,7 +149,10 @@ async fn send_transfer_request<T: ChainConfig, C: BlockChainClient<T>>(
                 is_retriable: true,
             })
         },
-        Err(TransactionError::ExecutionFailed { transaction_id, error_code }) => {
+        Err(TransactionError::ExecutionFailed {
+            transaction_id,
+            error_code,
+        }) => {
             meta.increment_retry(error_code);
 
             Err(TransactionExecutionError {
@@ -116,8 +161,10 @@ async fn send_transfer_request<T: ChainConfig, C: BlockChainClient<T>>(
                 is_retriable: false,
             })
         },
-        Err(TransactionError::TransactionInfoFetchFailed { transaction_id }) => {
-            meta.increment_retry("".to_string());
+        Err(TransactionError::TransactionInfoFetchFailed {
+            transaction_id,
+        }) => {
+            meta.increment_retry(String::new());
 
             Err(TransactionExecutionError {
                 transaction_id: transaction_id.into(),
@@ -125,8 +172,10 @@ async fn send_transfer_request<T: ChainConfig, C: BlockChainClient<T>>(
                 is_retriable: true,
             })
         },
-        Err(TransactionError::InsufficientBalance { transaction_id }) => {
-            meta.increment_retry("".to_string());
+        Err(TransactionError::InsufficientBalance {
+            transaction_id,
+        }) => {
+            meta.increment_retry(String::new());
 
             Err(TransactionExecutionError {
                 transaction_id: transaction_id.into(),
@@ -134,7 +183,10 @@ async fn send_transfer_request<T: ChainConfig, C: BlockChainClient<T>>(
                 is_retriable: false,
             })
         },
-        Err(TransactionError::UnknownAsset { transaction_id, asset_id }) => {
+        Err(TransactionError::UnknownAsset {
+            transaction_id,
+            asset_id,
+        }) => {
             meta.increment_retry(asset_id.to_string());
 
             Err(TransactionExecutionError {
@@ -143,7 +195,9 @@ async fn send_transfer_request<T: ChainConfig, C: BlockChainClient<T>>(
                 is_retriable: false,
             })
         },
-        Err(TransactionError::BuildFailed {..}) => unreachable!()
+        Err(TransactionError::BuildFailed {
+            ..
+        }) => unreachable!(),
     };
 
     TransactionExecutionData {
@@ -155,8 +209,12 @@ async fn send_transfer_request<T: ChainConfig, C: BlockChainClient<T>>(
 }
 
 impl TransfersExecutor {
-    async fn collect_pending_payout_requests(&self, limit: u32) -> Result<Vec<ChainPayoutRequestTyped>, DaoError> {
-        let payout_requests = self.dao
+    async fn collect_pending_payout_requests(
+        &self,
+        limit: u32,
+    ) -> Result<Vec<ChainPayoutRequestTyped>, DaoError> {
+        let payout_requests = self
+            .dao
             .get_pending_payouts(limit)
             .await?
             .into_iter()
@@ -168,20 +226,26 @@ impl TransfersExecutor {
         Ok(payout_requests)
     }
 
-    async fn build_and_sign_transfer<T: ChainConfig, C: BlockChainClient<T>>(&self, client: &C, request: &ChainPayoutRequest<T>) -> Result<SignedTransaction<T>, ()> {
-        let transaction = client.build_transfer_all(
-            &request.source_address,
-            &request.destination_address,
-            &request.asset_id,
-        )
+    async fn build_and_sign_transfer<T: ChainConfig, C: BlockChainClient<T>>(
+        &self,
+        client: &C,
+        request: &ChainPayoutRequest<T>,
+    ) -> Result<SignedTransaction<T>, ()> {
+        let transaction = client
+            .build_transfer_all(
+                &request.source_address,
+                &request.destination_address,
+                &request.asset_id,
+            )
             .await
             .map_err(|_| ())?;
 
-        let signed_transaction = client.sign_transaction(
-            transaction,
-            vec![request.invoice_id.to_string()],
-            &self.keyring_client,
-        )
+        let signed_transaction = client
+            .sign_transaction(
+                transaction,
+                vec![request.invoice_id.to_string()],
+                &self.keyring_client,
+            )
             .await
             .map_err(|_| ())?;
 
@@ -208,12 +272,23 @@ impl TransfersExecutor {
             origin: TransactionOrigin::payout(request.id),
         };
 
-        self.dao.create_transaction(data.into()).await
+        self.dao
+            .create_transaction(data.into())
+            .await
     }
 
-    async fn prepare_transfer<T: ChainConfig + 'static, C: BlockChainClient<T> + 'static>(&self, client: C, request: ChainPayoutRequest<T>) -> Result<BoxedTransferFuture, ()> {
-        let signed_transaction = self.build_and_sign_transfer(&client, &request).await?;
-        let transaction = self.store_built_transfer(&request, &signed_transaction).await.map_err(|_| ())?;
+    async fn prepare_transfer<T: ChainConfig + 'static, C: BlockChainClient<T> + 'static>(
+        &self,
+        client: C,
+        request: ChainPayoutRequest<T>,
+    ) -> Result<BoxedTransferFuture, ()> {
+        let signed_transaction = self
+            .build_and_sign_transfer(&client, &request)
+            .await?;
+        let transaction = self
+            .store_built_transfer(&request, &signed_transaction)
+            .await
+            .map_err(|_| ())?;
 
         let fut = Box::pin(send_transfer_request(
             client,
@@ -225,30 +300,48 @@ impl TransfersExecutor {
         Ok(fut)
     }
 
-    async fn schedule_transfers(&self, futures_set: &mut FuturesUnordered<BoxedTransferFuture>) -> Result<(), DaoError> {
-        let limit = MAX_CONCURRENT_TRANSFERS - futures_set.len() as u32;
+    async fn schedule_transfers(
+        &self,
+        futures_set: &mut FuturesUnordered<BoxedTransferFuture>,
+    ) -> Result<(), DaoError> {
+        // Will be 0 if we reached the limit or overflowed (but it's not really expected)
+        let limit = MAX_CONCURRENT_TRANSFERS
+            .saturating_sub(
+                futures_set
+                    .len()
+                    .to_u32()
+                    .unwrap_or(u32::MAX)
+            );
 
         if limit == 0 {
             return Ok(())
         }
 
-        let payout_requests = self.collect_pending_payout_requests(limit).await?;
+        let payout_requests = self
+            .collect_pending_payout_requests(limit)
+            .await?;
 
         for request in payout_requests {
             tracing::info!(?request, "Prepare transfer for request");
             match request {
                 ChainPayoutRequestTyped::AssetHub(request) => {
                     let client = self.asset_hub_client.clone();
-                    let prepared_transfer = self.prepare_transfer(client, request).await.unwrap();
+                    let prepared_transfer = self
+                        .prepare_transfer(client, request)
+                        .await
+                        .unwrap();
                     futures_set.push(prepared_transfer);
-                }
+                },
             }
         }
 
         Ok(())
     }
 
-    async fn handle_transfer_result(&self, data: TransactionExecutionData) -> Result<(), DaoError> {
+    async fn handle_transfer_result(
+        &self,
+        data: TransactionExecutionData,
+    ) -> Result<(), DaoError> {
         // Update the transaction and origin entity based on the result
         let mut dao_transaction = self.dao.begin_transaction().await?;
 
@@ -256,63 +349,84 @@ impl TransfersExecutor {
             Ok(transfer) => {
                 let chain_transaction_id = transfer.general_transaction_id();
 
-                self.dao.update_transaction_successful(
-                    &mut dao_transaction,
-                    data.transaction_id,
-                    chain_transaction_id,
-                    // TODO: use transfer.timestamp
-                    Utc::now(),
-                ).await?;
+                self.dao
+                    .update_transaction_successful(
+                        &mut dao_transaction,
+                        data.transaction_id,
+                        chain_transaction_id,
+                        // TODO: use transfer.timestamp
+                        Utc::now(),
+                    )
+                    .await?;
 
+                #[expect(clippy::single_match)]
                 match data.origin.variant() {
                     TransactionOriginVariant::Payout(payout_id) => {
-                        self.dao.update_payout_status(
-                            &mut dao_transaction,
-                            payout_id,
-                            PayoutStatus::Completed,
-                        ).await?;
+                        self.dao
+                            .update_payout_status(
+                                &mut dao_transaction,
+                                payout_id,
+                                PayoutStatus::Completed,
+                            )
+                            .await?;
                     },
                     // TODO: should be implemented later, not necessary for now
-                    _ => {}
+                    _ => {},
                 }
             },
             Err(error) => {
-                self.dao.update_transaction_failed(
-                    &mut dao_transaction,
-                    data.transaction_id,
-                    error.transaction_id,
-                    error.retry_meta.failure_message.clone().unwrap_or_default(),
-                    // TODO: use transfer.timestamp
-                    Utc::now(),
-                ).await?;
+                self.dao
+                    .update_transaction_failed(
+                        &mut dao_transaction,
+                        data.transaction_id,
+                        error.transaction_id,
+                        error
+                            .retry_meta
+                            .failure_message
+                            .clone()
+                            .unwrap_or_default(),
+                        // TODO: use transfer.timestamp
+                        Utc::now(),
+                    )
+                    .await?;
 
+                #[expect(clippy::single_match)]
                 match data.origin.variant() {
                     TransactionOriginVariant::Payout(payout_id) => {
-                        self.dao.update_payout_retry(
-                            &mut dao_transaction,
-                            payout_id,
-                            error.retry_meta,
-                            error.is_retriable,
-                        ).await?;
+                        self.dao
+                            .update_payout_retry(
+                                &mut dao_transaction,
+                                payout_id,
+                                error.retry_meta,
+                                error.is_retriable,
+                            )
+                            .await?;
                     },
-                    _ => {}
+                    _ => {},
                 }
-            }
+            },
         }
 
         dao_transaction.commit().await?;
 
         // TODO: make it in transaction
-        self.dao.update_invoice_withdrawal_status(
-            data.invoice_id,
-            crate::legacy_types::WithdrawalStatus::Completed
-        ).await?;
+        self.dao
+            .update_invoice_withdrawal_status(
+                data.invoice_id,
+                crate::legacy_types::WithdrawalStatus::Completed,
+            )
+            .await?;
 
         Ok(())
     }
 
-    async fn perform(self, token: CancellationToken) {
-        let mut interval = interval(Duration::from_millis(POLLING_INTERVAL_MILLIS));
+    async fn perform(
+        self,
+        token: CancellationToken,
+    ) {
+        let mut interval = interval(Duration::from_millis(
+            POLLING_INTERVAL_MILLIS,
+        ));
 
         let mut shutdown_expected = false;
         let mut futures_set = FuturesUnordered::new();
@@ -337,7 +451,7 @@ impl TransfersExecutor {
                         // TODO: log unexpected empty future result
                     }
                 },
-                _ = token.cancelled() => {
+                () = token.cancelled() => {
                     tracing::info!("Transfers executor received shutdown signal, finishing ongoing transfers...");
 
                     shutdown_expected = true;
@@ -364,60 +478,12 @@ impl TransfersExecutor {
         }
     }
 
-    pub fn ignite(self, token: CancellationToken) -> tokio::task::JoinHandle<()> {
+    pub fn ignite(
+        self,
+        token: CancellationToken,
+    ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             self.perform(token).await;
         })
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::{chain_client::Keyring, configs::{AssetConfig, DatabaseConfig}, types::{default_invoice, default_payout}};
-    use subxt_signer::SecretString;
-
-    use super::*;
-
-    // #[tokio::test]
-    // async fn test_transfers_executor_perform() {
-    //     let config = DatabaseConfig {
-    //         path: "".to_string(),
-    //         dir: "".to_string(),
-    //         temporary: true,
-    //     };
-    //     let dao = DAO::new(config).await.unwrap();
-    //     let keyring = Keyring::new(SecretString::from("bottom drive obey lake curtain smoke basket hold race lonely fit walk"));
-    //     let (keyring_handle, keyring_client) = keyring.ignite();
-
-    //     let ah_config = crate::configs::ChainConfig {
-    //         endpoints: vec!["ws://localhost:9000".to_string()],
-    //         name: "statemint".to_string(),
-    //         allow_insecure_endpoints: true,
-    //         assets: vec![AssetConfig {
-    //             name: "USDT".to_string(),
-    //             id: 1984,
-    //         }]
-    //     };
-
-    //     let asset_hub_client = AssetHubClient::new(&ah_config)
-    //         .await
-    //         .unwrap();
-
-    //     asset_hub_client.init_asset_info(&ah_config.assets.iter().map(|asset| asset.id).collect::<Vec<_>>()).await.unwrap();
-
-    //     let executor = TransfersExecutor {
-    //         asset_hub_client,
-    //         dao: dao.clone(),
-    //         keyring_client,
-    //     };
-
-    //     let executor_handle = executor.ignite();
-
-    //     let invoice = default_invoice();
-    //     let payout = default_payout(invoice.id);
-    //     dao.create_invoice(invoice).await.unwrap();
-    //     dao.create_payout(payout).await.unwrap();
-
-    //     tokio::join!(keyring_handle, executor_handle);
-    // }
 }
