@@ -9,6 +9,12 @@ use uuid::Uuid;
 use crate::chain::ChainManager;
 use crate::chain::utils::to_base58_string;
 use crate::chain_client::KeyringClient;
+use crate::dao::{
+    DAO,
+    DaoInvoiceMethods,
+    DaoPayoutMethods,
+    DaoTransactionMethods,
+};
 use crate::error::{
     DaoError,
     Error,
@@ -59,7 +65,7 @@ impl State {
             remark,
             account_lifetime,
         }: ConfigWoChains,
-        dao: crate::dao::DAO,
+        dao: DAO,
         chain_manager_receiver: oneshot::Receiver<ChainManager>,
         instance_id: String,
         task_tracker: TaskTracker,
@@ -546,7 +552,7 @@ struct StateData {
     currencies: HashMap<String, CurrencyProperties>,
     recipient: AccountId32,
     server_info: ServerInfo,
-    dao: crate::dao::DAO,
+    dao: DAO,
     chain_manager: ChainManager,
     signer: KeyringClient,
     account_lifetime: crate::legacy_types::Timestamp,

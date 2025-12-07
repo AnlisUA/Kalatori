@@ -278,12 +278,8 @@ impl From<OutgoingTransaction> for Transaction {
                 .parse()
                 .unwrap(),
             amount: value.transfer_info.amount,
-            sender: value
-                .transfer_info
-                .source_address,
-            recipient: value
-                .transfer_info
-                .destination_address,
+            sender: value.transfer_info.source_address,
+            recipient: value.transfer_info.destination_address,
             block_number: None,
             position_in_block: None,
             tx_hash: Some(value.tx_hash),

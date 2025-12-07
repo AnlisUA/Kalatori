@@ -56,7 +56,11 @@ use codec::Decode;
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
-use crate::dao::DAO;
+use crate::dao::{
+    DAO,
+    DaoInvoiceMethods,
+    DaoTransactionMethods,
+};
 use crate::legacy_types::{
     Amount,
     BlockNumber,

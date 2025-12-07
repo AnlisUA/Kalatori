@@ -29,6 +29,9 @@ use crate::chain_client::{
 use crate::dao::{
     DAO,
     DaoError,
+    DaoInvoiceMethods,
+    DaoPayoutMethods,
+    DaoTransactionMethods,
 };
 use crate::types::{
     OutgoingTransaction,
@@ -304,14 +307,14 @@ impl TransfersExecutor {
         &self,
         futures_set: &mut FuturesUnordered<BoxedTransferFuture>,
     ) -> Result<(), DaoError> {
-        // Will be 0 if we reached the limit or overflowed (but it's not really expected)
-        let limit = MAX_CONCURRENT_TRANSFERS
-            .saturating_sub(
-                futures_set
-                    .len()
-                    .to_u32()
-                    .unwrap_or(u32::MAX)
-            );
+        // Will be 0 if we reached the limit or overflowed (but it's not really
+        // expected)
+        let limit = MAX_CONCURRENT_TRANSFERS.saturating_sub(
+            futures_set
+                .len()
+                .to_u32()
+                .unwrap_or(u32::MAX),
+        );
 
         if limit == 0 {
             return Ok(())
@@ -329,6 +332,7 @@ impl TransfersExecutor {
                     let prepared_transfer = self
                         .prepare_transfer(client, request)
                         .await
+                        // TODO: add error handling and logging here
                         .unwrap();
                     futures_set.push(prepared_transfer);
                 },
@@ -343,15 +347,14 @@ impl TransfersExecutor {
         data: TransactionExecutionData,
     ) -> Result<(), DaoError> {
         // Update the transaction and origin entity based on the result
-        let mut dao_transaction = self.dao.begin_transaction().await?;
+        let dao_transaction = self.dao.begin_transaction().await?;
 
         match data.result {
             Ok(transfer) => {
                 let chain_transaction_id = transfer.general_transaction_id();
 
-                self.dao
+                dao_transaction
                     .update_transaction_successful(
-                        &mut dao_transaction,
                         data.transaction_id,
                         chain_transaction_id,
                         // TODO: use transfer.timestamp
@@ -362,11 +365,14 @@ impl TransfersExecutor {
                 #[expect(clippy::single_match)]
                 match data.origin.variant() {
                     TransactionOriginVariant::Payout(payout_id) => {
-                        self.dao
-                            .update_payout_status(
-                                &mut dao_transaction,
-                                payout_id,
-                                PayoutStatus::Completed,
+                        dao_transaction
+                            .update_payout_status(payout_id, PayoutStatus::Completed)
+                            .await?;
+
+                        dao_transaction
+                            .update_invoice_withdrawal_status(
+                                data.invoice_id,
+                                crate::legacy_types::WithdrawalStatus::Completed,
                             )
                             .await?;
                     },
@@ -375,9 +381,8 @@ impl TransfersExecutor {
                 }
             },
             Err(error) => {
-                self.dao
+                dao_transaction
                     .update_transaction_failed(
-                        &mut dao_transaction,
                         data.transaction_id,
                         error.transaction_id,
                         error
@@ -393,9 +398,8 @@ impl TransfersExecutor {
                 #[expect(clippy::single_match)]
                 match data.origin.variant() {
                     TransactionOriginVariant::Payout(payout_id) => {
-                        self.dao
+                        dao_transaction
                             .update_payout_retry(
-                                &mut dao_transaction,
                                 payout_id,
                                 error.retry_meta,
                                 error.is_retriable,
@@ -408,14 +412,6 @@ impl TransfersExecutor {
         }
 
         dao_transaction.commit().await?;
-
-        // TODO: make it in transaction
-        self.dao
-            .update_invoice_withdrawal_status(
-                data.invoice_id,
-                crate::legacy_types::WithdrawalStatus::Completed,
-            )
-            .await?;
 
         Ok(())
     }
