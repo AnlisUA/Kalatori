@@ -9,6 +9,7 @@
 /// - We want to be able to compare datetime fields directly in SQL queries,
 ///   so we convert `chrono::DateTime<Utc>` to `NaiveDateTime` when binding parameters
 ///   (see details [here](https://docs.rs/sqlx/latest/sqlx/sqlite/types/index.html#note-current_timestamp-and-comparisoninteroperability-of-datetime-values)).
+mod error_parsing;
 mod invoice;
 mod payout;
 mod refund;
@@ -24,12 +25,23 @@ use tokio::sync::Mutex;
 use crate::configs::DatabaseConfig;
 use crate::legacy_types::ServerInfo;
 
+// Export traits
 pub use invoice::DaoInvoiceMethods;
 pub use payout::DaoPayoutMethods;
+#[expect(unused_imports)]
+pub use refund::DaoRefundMethods;
 pub use transaction::DaoTransactionMethods;
 
-pub type DaoError = sqlx::Error;
-pub type DaoResult<T> = Result<T, DaoError>;
+// Export domain-specific errors
+pub use invoice::DaoInvoiceError;
+#[expect(unused_imports)]
+pub use payout::DaoPayoutError;
+#[expect(unused_imports)]
+pub use refund::DaoRefundError;
+pub use transaction::DaoTransactionError;
+
+// Keep DaoResult for internal use (DaoExecutor trait methods)
+pub(crate) type DaoResult<T> = Result<T, sqlx::Error>;
 
 pub trait DaoExecutor: Send + Sync {
     async fn fetch_optional<'a, O>(
@@ -340,6 +352,13 @@ mod tests {
     };
 
     use super::*;
+
+    #[tokio::test]
+    async fn print_sqlite_version() {
+        let dao = create_test_dao().await;
+        let version = dao.sqlite_version().await.unwrap();
+        println!("SQLite version: {}", version);
+    }
 
     #[tokio::test]
     async fn test_transaction_exists_by_bytes() {

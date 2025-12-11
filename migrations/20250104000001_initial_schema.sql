@@ -9,7 +9,7 @@
 -- Invoices table (replaces orders)
 CREATE TABLE IF NOT EXISTS invoices (
     -- Identity
-    id TEXT PRIMARY KEY NOT NULL,  -- UUID v4 - internal ID
+    id BLOB PRIMARY KEY NOT NULL,  -- UUID v4 - internal ID
     order_id TEXT NOT NULL UNIQUE,  -- Merchant-provided order ID
 
     -- Asset information (denormalized to avoid config changes affecting data)
@@ -54,8 +54,8 @@ CREATE TABLE IF NOT EXISTS invoices (
 -- Replaces both old 'transactions' and 'pending_transactions' tables
 CREATE TABLE IF NOT EXISTS transactions (
     -- Identity
-    id TEXT PRIMARY KEY NOT NULL,  -- UUID v4
-    invoice_id TEXT NOT NULL,  -- References invoices.id
+    id BLOB PRIMARY KEY NOT NULL,  -- UUID v4
+    invoice_id BLOB NOT NULL,  -- References invoices.id
 
     -- Asset information
     asset_id INTEGER NOT NULL,
@@ -94,8 +94,8 @@ CREATE TABLE IF NOT EXISTS transactions (
 -- Payout = transfer from Payment Address to Payout Address (merchant's final wallet)
 CREATE TABLE IF NOT EXISTS payouts (
     -- Identity
-    id TEXT PRIMARY KEY NOT NULL,  -- UUID v4
-    invoice_id TEXT NOT NULL,  -- References invoices.id
+    id BLOB PRIMARY KEY NOT NULL,  -- UUID v4
+    invoice_id BLOB NOT NULL,  -- References invoices.id
 
     -- Asset information
     asset_id TEXT NOT NULL,
@@ -129,8 +129,8 @@ CREATE TABLE IF NOT EXISTS payouts (
 -- Refunds table (NEW - not in old system)
 CREATE TABLE IF NOT EXISTS refunds (
     -- Identity
-    id TEXT PRIMARY KEY NOT NULL,  -- UUID v4
-    invoice_id TEXT NOT NULL,  -- References invoices.id
+    id BLOB PRIMARY KEY NOT NULL,  -- UUID v4
+    invoice_id BLOB NOT NULL,  -- References invoices.id
 
     -- Asset information
     asset_id TEXT NOT NULL,
@@ -194,3 +194,106 @@ CREATE INDEX IF NOT EXISTS idx_payouts_created_at ON payouts(created_at);
 CREATE INDEX IF NOT EXISTS idx_refunds_invoice_id ON refunds(invoice_id);
 CREATE INDEX IF NOT EXISTS idx_refunds_status ON refunds(status);
 CREATE INDEX IF NOT EXISTS idx_refunds_created_at ON refunds(created_at);
+
+-- ============================================================================
+-- Status Transition Triggers
+-- ============================================================================
+-- These triggers enforce valid status transitions at the database level.
+-- Error format: "ERROR_TYPE|old_status=VALUE|new_status=VALUE|id=VALUE"
+-- This allows parsing in application code without additional diagnostic queries.
+
+-- Invoice status transition enforcement
+-- Valid transitions:
+-- Waiting -> PartiallyPaid, Paid, OverPaid, UnpaidExpired, AdminApproved, AdminCanceled, CustomerCanceled
+-- PartiallyPaid -> Paid, OverPaid, PartiallyPaidExpired, AdminApproved, AdminCanceled
+-- All final/expired/canceled statuses -> no further transitions allowed
+CREATE TRIGGER IF NOT EXISTS enforce_invoice_status_transition
+BEFORE UPDATE OF status ON invoices
+FOR EACH ROW
+BEGIN
+    SELECT CASE
+        WHEN OLD.status = 'Waiting' AND NEW.status != OLD.status AND NEW.status NOT IN
+            ('PartiallyPaid', 'Paid', 'OverPaid', 'UnpaidExpired', 'AdminApproved', 'AdminCanceled', 'CustomerCanceled')
+        THEN RAISE(ABORT, 'INVOICE_STATUS_TRANSITION|old_status=' || OLD.status || '|new_status=' || NEW.status)
+
+        WHEN OLD.status = 'PartiallyPaid' AND NEW.status != OLD.status AND NEW.status NOT IN
+            ('Paid', 'OverPaid', 'PartiallyPaidExpired', 'AdminApproved', 'AdminCanceled')
+        THEN RAISE(ABORT, 'INVOICE_STATUS_TRANSITION|old_status=' || OLD.status || '|new_status=' || NEW.status)
+
+        WHEN OLD.status IN ('Paid', 'OverPaid', 'AdminApproved', 'UnpaidExpired', 'PartiallyPaidExpired', 'CustomerCanceled', 'AdminCanceled')
+            AND NEW.status != OLD.status
+        THEN RAISE(ABORT, 'INVOICE_STATUS_TRANSITION|old_status=' || OLD.status || '|new_status=' || NEW.status)
+    END;
+END;
+
+-- Invoice withdrawal status transition enforcement
+CREATE TRIGGER IF NOT EXISTS enforce_invoice_withdrawal_status_transition
+BEFORE UPDATE OF withdrawal_status ON invoices
+FOR EACH ROW
+BEGIN
+    SELECT CASE
+        WHEN OLD.withdrawal_status = 'Waiting' AND NEW.withdrawal_status != OLD.withdrawal_status
+            AND NEW.withdrawal_status NOT IN ('Completed', 'Failed', 'Forced')
+        THEN RAISE(ABORT, 'INVOICE_WITHDRAWAL_TRANSITION|old_status=' || OLD.withdrawal_status || '|new_status=' || NEW.withdrawal_status)
+
+        WHEN OLD.withdrawal_status IN ('Completed', 'Failed', 'Forced') AND NEW.withdrawal_status != OLD.withdrawal_status
+        THEN RAISE(ABORT, 'INVOICE_WITHDRAWAL_TRANSITION|old_status=' || OLD.withdrawal_status || '|new_status=' || NEW.withdrawal_status)
+    END;
+END;
+
+-- Payout status transition enforcement
+CREATE TRIGGER IF NOT EXISTS enforce_payout_status_transition
+BEFORE UPDATE OF status ON payouts
+FOR EACH ROW
+BEGIN
+    SELECT CASE
+        WHEN OLD.status = 'Waiting' AND NEW.status != OLD.status AND NEW.status NOT IN ('InProgress')
+        THEN RAISE(ABORT, 'PAYOUT_STATUS_TRANSITION|old_status=' || OLD.status || '|new_status=' || NEW.status)
+
+        WHEN OLD.status = 'InProgress' AND NEW.status != OLD.status AND NEW.status NOT IN ('Completed', 'FailedRetriable', 'Failed')
+        THEN RAISE(ABORT, 'PAYOUT_STATUS_TRANSITION|old_status=' || OLD.status || '|new_status=' || NEW.status)
+
+        WHEN OLD.status = 'FailedRetriable' AND NEW.status != OLD.status AND NEW.status NOT IN ('InProgress')
+        THEN RAISE(ABORT, 'PAYOUT_STATUS_TRANSITION|old_status=' || OLD.status || '|new_status=' || NEW.status)
+
+        WHEN OLD.status IN ('Completed', 'Failed') AND NEW.status != OLD.status
+        THEN RAISE(ABORT, 'PAYOUT_STATUS_TRANSITION|old_status=' || OLD.status || '|new_status=' || NEW.status)
+    END;
+END;
+
+-- Refund status transition enforcement
+CREATE TRIGGER IF NOT EXISTS enforce_refund_status_transition
+BEFORE UPDATE OF status ON refunds
+FOR EACH ROW
+BEGIN
+    SELECT CASE
+        WHEN OLD.status = 'Waiting' AND NEW.status != OLD.status AND NEW.status NOT IN ('InProgress')
+        THEN RAISE(ABORT, 'REFUND_STATUS_TRANSITION|old_status=' || OLD.status || '|new_status=' || NEW.status)
+
+        WHEN OLD.status = 'InProgress' AND NEW.status != OLD.status AND NEW.status NOT IN ('Completed', 'FailedRetriable', 'Failed')
+        THEN RAISE(ABORT, 'REFUND_STATUS_TRANSITION|old_status=' || OLD.status || '|new_status=' || NEW.status)
+
+        WHEN OLD.status = 'FailedRetriable' AND NEW.status != OLD.status AND NEW.status NOT IN ('InProgress')
+        THEN RAISE(ABORT, 'REFUND_STATUS_TRANSITION|old_status=' || OLD.status || '|new_status=' || NEW.status)
+
+        WHEN OLD.status IN ('Completed', 'Failed') AND NEW.status != OLD.status
+        THEN RAISE(ABORT, 'REFUND_STATUS_TRANSITION|old_status=' || OLD.status || '|new_status=' || NEW.status)
+    END;
+END;
+
+-- Transaction status transition enforcement
+CREATE TRIGGER IF NOT EXISTS enforce_transaction_status_transition
+BEFORE UPDATE OF status ON transactions
+FOR EACH ROW
+BEGIN
+    SELECT CASE
+        WHEN OLD.status = 'Waiting' AND NEW.status != OLD.status AND NEW.status NOT IN ('InProgress', 'Completed')
+        THEN RAISE(ABORT, 'TRANSACTION_STATUS_TRANSITION|old_status=' || OLD.status || '|new_status=' || NEW.status)
+
+        WHEN OLD.status = 'InProgress' AND NEW.status != OLD.status AND NEW.status NOT IN ('Completed', 'Failed')
+        THEN RAISE(ABORT, 'TRANSACTION_STATUS_TRANSITION|old_status=' || OLD.status || '|new_status=' || NEW.status)
+
+        WHEN OLD.status IN ('Completed', 'Failed') AND NEW.status != OLD.status
+        THEN RAISE(ABORT, 'TRANSACTION_STATUS_TRANSITION|old_status=' || OLD.status || '|new_status=' || NEW.status)
+    END;
+END;

@@ -21,6 +21,7 @@ use crate::error::{
     ForceWithdrawalError,
     OrderError,
 };
+use crate::dao::DaoInvoiceError;
 use crate::legacy_types::{
     Amount,
     ConfigWoChains,
@@ -671,7 +672,7 @@ impl StateData {
             .dao
             .get_invoice_by_order_id(&order)
             .await
-            .map_err(DaoError::Sqlx)?
+            ?
         else {
             return Ok(OrderResponse::NotFound);
         };
@@ -681,7 +682,7 @@ impl StateData {
             .dao
             .get_invoice_transactions(invoice.id)
             .await
-            .map_err(DaoError::Sqlx)?;
+            ?;
 
         // Convert transactions to legacy format
         let legacy_transactions: Vec<TransactionInfo> = transactions
@@ -739,7 +740,7 @@ impl StateData {
                 .dao
                 .get_invoice_by_order_id(&order)
                 .await
-                .map_err(DaoError::Sqlx)?
+                ?
             {
                 None => {
                     // PHASE 2a: Create new invoice
@@ -757,7 +758,7 @@ impl StateData {
                         .dao
                         .create_invoice(invoice.clone())
                         .await
-                        .map_err(DaoError::Sqlx)?;
+                        ?;
 
                     // Convert Invoice back to OrderInfo for backward compatibility
                     let order_info = self.invoice_to_order_info(&invoice, &currency);
@@ -795,11 +796,11 @@ impl StateData {
                             .await
                         {
                             Ok(invoice) => invoice,
-                            Err(sqlx::Error::RowNotFound) => {
-                                // Version conflict - retry
+                            Err(DaoInvoiceError::VersionConflict { .. }) | Err(DaoInvoiceError::StatusConstraintViolation { .. }) => {
+                                // Version conflict or status constraint - retry
                                 if attempt < MAX_RETRIES.saturating_sub(1) {
                                     tracing::warn!(
-                                        "Version conflict updating invoice {}, retrying... (attempt {}/{})",
+                                        "Version conflict or status constraint updating invoice {}, retrying... (attempt {}/{})",
                                         order,
                                         attempt.saturating_add(1),
                                         MAX_RETRIES
@@ -808,7 +809,7 @@ impl StateData {
                                 }
                                 return Err(DaoError::MaxRetriesReached.into());
                             },
-                            Err(e) => return Err(DaoError::Sqlx(e).into()),
+                            Err(e) => return Err(e.into()),
                         };
 
                         let order_info = self.invoice_to_order_info(&updated_invoice, &currency);

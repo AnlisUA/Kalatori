@@ -124,6 +124,34 @@ pub enum WithdrawalStatus {
     Completed,
 }
 
+impl std::fmt::Display for WithdrawalStatus {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        match self {
+            Self::Waiting => write!(f, "Waiting"),
+            Self::Failed => write!(f, "Failed"),
+            Self::Forced => write!(f, "Forced"),
+            Self::Completed => write!(f, "Completed"),
+        }
+    }
+}
+
+impl std::str::FromStr for WithdrawalStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Waiting" => Ok(Self::Waiting),
+            "Failed" => Ok(Self::Failed),
+            "Forced" => Ok(Self::Forced),
+            "Completed" => Ok(Self::Completed),
+            _ => Err(format!("Unknown withdrawal status: {s}")),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ServerStatus {
     pub server_info: ServerInfo,

@@ -7,23 +7,74 @@ use sqlx::types::{
     Text,
 };
 use uuid::Uuid;
+use thiserror::Error;
 
 use crate::chain_client::GeneralTransactionId;
 use crate::types::{
     Transaction,
     TransactionRow,
+    TransactionStatus,
 };
 
-use super::{
-    DaoExecutor,
-    DaoResult,
-};
+use super::DaoExecutor;
+use super::error_parsing::{StatusTransitionError, TriggerError};
+
+// ============================================================================
+// Transaction Domain Errors
+// ============================================================================
+
+#[derive(Debug, Error)]
+pub enum DaoTransactionError {
+    /// Transaction not found by ID
+    #[error("Transaction not found: {transaction_id}")]
+    NotFound {
+        transaction_id: Uuid,
+    },
+
+    /// Referenced invoice doesn't exist (foreign key violation)
+    #[error("Invoice not found: {invoice_id}")]
+    InvoiceNotFound {
+        invoice_id: Uuid,
+    },
+
+    /// Status transition not allowed
+    #[error("Cannot transition from {current_status} to {attempted_status}")]
+    StatusConstraintViolation {
+        current_status: TransactionStatus,
+        attempted_status: TransactionStatus,
+    },
+
+    /// Database operation failed
+    #[error("Database error during transaction operation")]
+    DatabaseError,
+}
+
+impl From<sqlx::Error> for DaoTransactionError {
+    fn from(_e: sqlx::Error) -> Self {
+        DaoTransactionError::DatabaseError
+    }
+}
+
+impl From<TriggerError<TransactionStatus>> for DaoTransactionError {
+    fn from(e: TriggerError<TransactionStatus>) -> Self {
+        DaoTransactionError::StatusConstraintViolation {
+            current_status: e.old_status,
+            attempted_status: e.new_status,
+        }
+    }
+}
+
+impl StatusTransitionError for TransactionStatus {
+    type ErrorType = DaoTransactionError;
+
+    const ERROR_TYPE_PREFIX: &'static str = "TRANSACTION_STATUS_TRANSITION|";
+}
 
 pub trait DaoTransactionMethods: DaoExecutor + 'static {
     async fn create_transaction(
         &self,
         transaction: Transaction,
-    ) -> DaoResult<Transaction> {
+    ) -> Result<Transaction, DaoTransactionError> {
         let query = sqlx::query_as::<_, TransactionRow>(
         "INSERT INTO transactions (id, invoice_id, asset_id, chain, amount, sender, recipient, block_number, position_in_block, tx_hash, origin, status, transaction_type, outgoing_meta, created_at, transaction_bytes)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -49,6 +100,31 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
         self.fetch_one(query)
             .await
             .map(From::from)
+            .map_err(|e| {
+                tracing::debug!(
+                    error.category = "dao.transaction",
+                    error.operation = "create_transaction",
+                    transaction_id = %transaction.id,
+                    invoice_id = %transaction.invoice_id,
+                    error.source = ?e,
+                    "Failed to create transaction"
+                );
+
+                match &e {
+                    sqlx::Error::Database(db_err) => {
+                        let message = db_err.message();
+
+                        if message.contains("FOREIGN KEY") {
+                            return DaoTransactionError::InvoiceNotFound {
+                                invoice_id: transaction.invoice_id,
+                            };
+                        }
+
+                        DaoTransactionError::DatabaseError
+                    }
+                    _ => DaoTransactionError::DatabaseError,
+                }
+            })
     }
 
     async fn update_transaction_successful(
@@ -56,7 +132,7 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
         transaction_id: Uuid,
         chain_transaction_id: GeneralTransactionId,
         confirmed_at: DateTime<Utc>,
-    ) -> DaoResult<Transaction> {
+    ) -> Result<Transaction, DaoTransactionError> {
         // TODO: add additional check that transaction is `Outgoing`? Check it's status?
         // TODO: add updated_at field?
         let query = sqlx::query_as::<_, TransactionRow>(
@@ -80,6 +156,25 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
         self.fetch_one(query)
             .await
             .map(From::from)
+            .map_err(|e| {
+                tracing::debug!(
+                    error.category = "dao.transaction",
+                    error.operation = "update_transaction_successful",
+                    %transaction_id,
+                    error.source = ?e,
+                    "Failed to update transaction as successful"
+                );
+
+                // Parse with TransactionStatus type
+                if let Some(error) = TransactionStatus::from_sqlx_error(&e) {
+                    return error;
+                }
+
+                match e {
+                    sqlx::Error::RowNotFound => DaoTransactionError::NotFound { transaction_id },
+                    _ => DaoTransactionError::DatabaseError,
+                }
+            })
     }
 
     async fn update_transaction_failed(
@@ -88,7 +183,7 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
         chain_transaction_id: GeneralTransactionId,
         failure_message: String,
         failed_at: DateTime<Utc>,
-    ) -> DaoResult<Transaction> {
+    ) -> Result<Transaction, DaoTransactionError> {
         // TODO: add additional check that transaction is `Outgoing`? Check it's status?
         let query = sqlx::query_as::<_, TransactionRow>(
             "UPDATE transactions
@@ -113,13 +208,32 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
         self.fetch_one(query)
             .await
             .map(From::from)
+            .map_err(|e| {
+                tracing::debug!(
+                    error.category = "dao.transaction",
+                    error.operation = "update_transaction_failed",
+                    %transaction_id,
+                    error.source = ?e,
+                    "Failed to update transaction as failed"
+                );
+
+                // Parse with TransactionStatus type
+                if let Some(error) = TransactionStatus::from_sqlx_error(&e) {
+                    return error;
+                }
+
+                match e {
+                    sqlx::Error::RowNotFound => DaoTransactionError::NotFound { transaction_id },
+                    _ => DaoTransactionError::DatabaseError,
+                }
+            })
     }
 
     #[cfg_attr(not(test), expect(dead_code))]
     async fn update_transaction(
         &self,
         transaction: Transaction,
-    ) -> DaoResult<Transaction> {
+    ) -> Result<Transaction, DaoTransactionError> {
         let query = sqlx::query_as::<_, TransactionRow>(
             "UPDATE transactions
             SET invoice_id = ?, asset_id = ?, chain = ?, amount = ?, sender = ?, recipient = ?,
@@ -147,6 +261,27 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
         self.fetch_one(query)
             .await
             .map(From::from)
+            .map_err(|e| {
+                tracing::debug!(
+                    error.category = "dao.transaction",
+                    error.operation = "update_transaction",
+                    transaction_id = %transaction.id,
+                    error.source = ?e,
+                    "Failed to update transaction"
+                );
+
+                // Parse with TransactionStatus type
+                if let Some(error) = TransactionStatus::from_sqlx_error(&e) {
+                    return error;
+                }
+
+                match e {
+                    sqlx::Error::RowNotFound => DaoTransactionError::NotFound {
+                        transaction_id: transaction.id,
+                    },
+                    _ => DaoTransactionError::DatabaseError,
+                }
+            })
     }
 
     // TODO: Implement create_transaction_outgoing when OutgoingTransaction type is
@@ -157,7 +292,7 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
     async fn get_invoice_transactions(
         &self,
         invoice_id: Uuid,
-    ) -> DaoResult<Vec<Transaction>> {
+    ) -> Result<Vec<Transaction>, DaoTransactionError> {
         let query = sqlx::query_as::<_, TransactionRow>(
         "SELECT id, invoice_id, asset_id, chain, amount, sender, recipient, block_number, position_in_block, tx_hash, origin, status, transaction_type, outgoing_meta, created_at, transaction_bytes
             FROM transactions
@@ -166,14 +301,19 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
         )
             .bind(invoice_id);
 
-        let transactions = self
-            .fetch_all(query)
-            .await?
-            .into_iter()
-            .map(From::from)
-            .collect();
-
-        Ok(transactions)
+        self.fetch_all(query)
+            .await
+            .map(|rows| rows.into_iter().map(From::from).collect())
+            .map_err(|e| {
+                tracing::debug!(
+                    error.category = "dao.transaction",
+                    error.operation = "get_invoice_transactions",
+                    %invoice_id,
+                    error.source = ?e,
+                    "Failed to fetch invoice transactions"
+                );
+                DaoTransactionError::DatabaseError
+            })
     }
 }
 
@@ -307,18 +447,19 @@ mod tests {
         let dao = create_test_dao().await;
 
         // Try to create transaction with non-existent invoice_id
-        let transaction = default_transaction(Uuid::new_v4());
+        let fake_invoice_id = Uuid::new_v4();
+        let transaction = default_transaction(fake_invoice_id);
         let result = dao
             .create_transaction(transaction)
             .await;
 
-        // Should fail with foreign key constraint error
+        // Should fail with InvoiceNotFound error
         assert!(result.is_err());
         match result.unwrap_err() {
-            sqlx::Error::Database(db_err) => {
-                assert!(db_err.message().contains("FOREIGN KEY"));
+            DaoTransactionError::InvoiceNotFound { invoice_id } => {
+                assert_eq!(invoice_id, fake_invoice_id);
             },
-            err => panic!("Expected FK constraint error, got: {err:?}"),
+            err => panic!("Expected InvoiceNotFound, got: {err:?}"),
         }
     }
 
@@ -384,25 +525,33 @@ mod tests {
             .await
             .unwrap();
 
-        let tx = Transaction {
+        // Test 1: Update transaction to Failed
+        let tx1 = Transaction {
             block_number: None,
             position_in_block: None,
             tx_hash: None,
             ..default_transaction(invoice.id)
         };
 
-        let created = dao
-            .create_transaction(tx)
+        let created1 = dao
+            .create_transaction(tx1)
             .await
             .unwrap();
 
-        assert!(created.block_number.is_none());
-        assert!(created.position_in_block.is_none());
-        assert!(created.tx_hash.is_none());
+        assert!(created1.block_number.is_none());
+        assert!(created1.position_in_block.is_none());
+        assert!(created1.tx_hash.is_none());
 
-        let transaction_id = created.id;
+        let transaction_id1 = created1.id;
 
-        let chain_transaction_id = GeneralTransactionId {
+        // First transition to InProgress (required before Failed)
+        let mut tx_in_progress = created1.clone();
+        tx_in_progress.status = TransactionStatus::InProgress;
+        dao.update_transaction(tx_in_progress)
+            .await
+            .unwrap();
+
+        let chain_transaction_id1 = GeneralTransactionId {
             block_number: Some(123),
             position_in_block: Some(1),
             hash: None,
@@ -412,8 +561,8 @@ mod tests {
 
         let updated1 = dao
             .update_transaction_failed(
-                transaction_id,
-                chain_transaction_id.clone(),
+                transaction_id1,
+                chain_transaction_id1.clone(),
                 "Network error".to_string(),
                 now1,
             )
@@ -432,19 +581,47 @@ mod tests {
             Some(now1)
         );
 
+        // Test 2: Update different transaction to Completed
+        let tx2 = Transaction {
+            block_number: None,
+            position_in_block: None,
+            tx_hash: None,
+            ..default_transaction(invoice.id)
+        };
+
+        let created2 = dao
+            .create_transaction(tx2)
+            .await
+            .unwrap();
+
+        let transaction_id2 = created2.id;
+
+        // Transition to InProgress first
+        let mut tx2_in_progress = created2.clone();
+        tx2_in_progress.status = TransactionStatus::InProgress;
+        dao.update_transaction(tx2_in_progress)
+            .await
+            .unwrap();
+
+        let chain_transaction_id2 = GeneralTransactionId {
+            block_number: Some(456),
+            position_in_block: Some(2),
+            hash: None,
+        };
+
         let now2 = Utc::now();
 
         let updated2 = dao
             .update_transaction_successful(
-                transaction_id,
-                chain_transaction_id,
+                transaction_id2,
+                chain_transaction_id2,
                 now2,
             )
             .await
             .unwrap();
 
-        assert_eq!(updated2.block_number, Some(123));
-        assert_eq!(updated2.position_in_block, Some(1));
+        assert_eq!(updated2.block_number, Some(456));
+        assert_eq!(updated2.position_in_block, Some(2));
         assert!(updated2.tx_hash.is_none());
         assert_eq!(
             updated2.status,
@@ -562,11 +739,11 @@ mod tests {
         let tx = default_transaction(invoice.id);
         let result = dao.update_transaction(tx).await;
 
-        // Should fail with RowNotFound
+        // Should fail with NotFound
         assert!(result.is_err());
         match result.unwrap_err() {
-            sqlx::Error::RowNotFound => { /* Expected */ },
-            err => panic!("Expected RowNotFound, got: {err:?}"),
+            DaoTransactionError::NotFound { .. } => { /* Expected */ },
+            err => panic!("Expected NotFound, got: {err:?}"),
         }
     }
 
@@ -607,5 +784,92 @@ mod tests {
             .unwrap();
         assert_eq!(updated.block_number, Some(5000));
         assert_eq!(updated.position_in_block, Some(3));
+    }
+
+    #[tokio::test]
+    async fn test_transaction_status_transition_triggers() {
+        let dao = create_test_dao().await;
+        let invoice = default_invoice();
+        let invoice_id = invoice.id;
+        dao.create_invoice(invoice)
+            .await
+            .unwrap();
+
+        // Scenario 1: Invalid transition from Completed -> InProgress
+        let tx1 = Transaction {
+            status: TransactionStatus::Completed,
+            ..default_transaction(invoice_id)
+        };
+        let id1 = tx1.id;
+        dao.create_transaction(tx1)
+            .await
+            .unwrap();
+
+        let chain_tx_id = GeneralTransactionId {
+            block_number: Some(100),
+            position_in_block: Some(1),
+            hash: Some("0x123".to_string()),
+        };
+
+        // Try to update to Completed again (idempotent - should succeed)
+        // Trigger doesn't fire because NEW.status == OLD.status
+        let result = dao
+            .update_transaction_successful(id1, chain_tx_id.clone(), Utc::now())
+            .await;
+        
+        // Should succeed (idempotent update)
+        assert!(result.is_ok());
+        let updated = result.unwrap();
+        assert_eq!(updated.status, TransactionStatus::Completed);
+        assert_eq!(updated.block_number, Some(100));
+        assert_eq!(updated.position_in_block, Some(1));
+
+        // Scenario 2: Valid transition Waiting -> Completed (direct, for incoming
+        // transactions)
+        let tx2 = Transaction {
+            status: TransactionStatus::Waiting,
+            ..default_transaction(invoice_id)
+        };
+        let id2 = tx2.id;
+        dao.create_transaction(tx2)
+            .await
+            .unwrap();
+
+        let updated = dao
+            .update_transaction_successful(id2, chain_tx_id, Utc::now())
+            .await
+            .unwrap();
+        assert_eq!(updated.status, TransactionStatus::Completed);
+
+        // Scenario 3: Valid transition Waiting -> InProgress -> Completed
+        let tx3 = Transaction {
+            status: TransactionStatus::Waiting,
+            ..default_transaction(invoice_id)
+        };
+        let id3 = tx3.id;
+        dao.create_transaction(tx3.clone())
+            .await
+            .unwrap();
+
+        // Update to InProgress
+        let mut tx3_inprogress = tx3;
+        tx3_inprogress.status = TransactionStatus::InProgress;
+        let updated1 = dao
+            .update_transaction(tx3_inprogress)
+            .await
+            .unwrap();
+        assert_eq!(updated1.status, TransactionStatus::InProgress);
+
+        // Then to Completed
+        let chain_tx_id2 = GeneralTransactionId {
+            block_number: Some(200),
+            position_in_block: Some(2),
+            hash: Some("0x456".to_string()),
+        };
+        let updated2 = dao
+            .update_transaction_successful(id3, chain_tx_id2, Utc::now())
+            .await
+            .unwrap();
+        assert_eq!(updated2.status, TransactionStatus::Completed);
     }
 }

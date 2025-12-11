@@ -1,5 +1,6 @@
 use sqlx::types::Text;
 use uuid::Uuid;
+use thiserror::Error;
 
 use crate::types::{
     Refund,
@@ -7,17 +8,69 @@ use crate::types::{
     RefundStatus,
 };
 
-use super::{
-    DaoExecutor,
-    DaoResult,
+use super::DaoExecutor;
+use super::error_parsing::{
+    TriggerError,
+    StatusTransitionError,
 };
+
+// ============================================================================
+// Refund Domain Errors
+// ============================================================================
+
+#[derive(Debug, Error)]
+pub enum DaoRefundError {
+    /// Refund not found by ID
+    #[error("Refund not found: {refund_id}")]
+    NotFound {
+        refund_id: Uuid,
+    },
+
+    /// Referenced invoice doesn't exist (foreign key violation)
+    #[error("Invoice not found: {invoice_id}")]
+    InvoiceNotFound {
+        invoice_id: Uuid,
+    },
+
+    /// Status transition not allowed
+    #[error("Cannot transition from {current_status} to {attempted_status}")]
+    StatusConstraintViolation {
+        current_status: RefundStatus,
+        attempted_status: RefundStatus,
+    },
+
+    /// Database operation failed
+    #[error("Database error during refund operation")]
+    DatabaseError,
+}
+
+impl From<sqlx::Error> for DaoRefundError {
+    fn from(_e: sqlx::Error) -> Self {
+        DaoRefundError::DatabaseError
+    }
+}
+
+impl From<TriggerError<RefundStatus>> for DaoRefundError {
+    fn from(e: TriggerError<RefundStatus>) -> Self {
+        DaoRefundError::StatusConstraintViolation {
+            current_status: e.old_status,
+            attempted_status: e.new_status,
+        }
+    }
+}
+
+impl StatusTransitionError for RefundStatus {
+    type ErrorType = DaoRefundError;
+
+    const ERROR_TYPE_PREFIX: &'static str = "REFUND_STATUS_TRANSITION|";
+}
 
 pub trait DaoRefundMethods: DaoExecutor + 'static {
     #[cfg_attr(not(test), expect(dead_code))]
     async fn create_refund(
         &self,
         refund: Refund,
-    ) -> DaoResult<Refund> {
+    ) -> Result<Refund, DaoRefundError> {
         let query = sqlx::query_as::<_, RefundRow>(
         "INSERT INTO refunds (id, invoice_id, asset_id, chain, amount, source_address, destination_address, initiator_type, initiator_id, status, created_at, updated_at, retry_count, last_attempt_at, next_retry_at, failure_message)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -43,13 +96,38 @@ pub trait DaoRefundMethods: DaoExecutor + 'static {
         self.fetch_one(query)
             .await
             .map(From::from)
+            .map_err(|e| {
+                tracing::debug!(
+                    error.category = "dao.refund",
+                    error.operation = "create_refund",
+                    refund_id = %refund.id,
+                    invoice_id = %refund.invoice_id,
+                    error.source = ?e,
+                    "Failed to create refund"
+                );
+
+                match &e {
+                    sqlx::Error::Database(db_err) => {
+                        let message = db_err.message();
+
+                        if message.contains("FOREIGN KEY") {
+                            return DaoRefundError::InvoiceNotFound {
+                                invoice_id: refund.invoice_id,
+                            };
+                        }
+
+                        DaoRefundError::DatabaseError
+                    }
+                    _ => DaoRefundError::DatabaseError,
+                }
+            })
     }
 
     #[cfg_attr(not(test), expect(dead_code))]
     async fn get_refund_by_id(
         &self,
         refund_id: Uuid,
-    ) -> DaoResult<Option<Refund>> {
+    ) -> Result<Option<Refund>, DaoRefundError> {
         let query = sqlx::query_as::<_, RefundRow>(
             "SELECT *
                 FROM refunds
@@ -57,16 +135,23 @@ pub trait DaoRefundMethods: DaoExecutor + 'static {
         )
         .bind(refund_id);
 
-        let result = self
-            .fetch_optional(query)
-            .await?
-            .map(From::from);
-
-        Ok(result)
+        self.fetch_optional(query)
+            .await
+            .map(|opt| opt.map(From::from))
+            .map_err(|e| {
+                tracing::debug!(
+                    error.category = "dao.refund",
+                    error.operation = "get_refund_by_id",
+                    %refund_id,
+                    error.source = ?e,
+                    "Failed to fetch refund"
+                );
+                DaoRefundError::DatabaseError
+            })
     }
 
     #[cfg_attr(not(test), expect(dead_code))]
-    async fn get_pending_refunds(&self) -> DaoResult<Vec<Refund>> {
+    async fn get_pending_refunds(&self) -> Result<Vec<Refund>, DaoRefundError> {
         let query = sqlx::query_as::<_, RefundRow>(
             "SELECT *
             FROM refunds
@@ -75,14 +160,18 @@ pub trait DaoRefundMethods: DaoExecutor + 'static {
             ORDER BY created_at ASC",
         );
 
-        let refunds = self
-            .fetch_all(query)
-            .await?
-            .into_iter()
-            .map(From::from)
-            .collect();
-
-        Ok(refunds)
+        self.fetch_all(query)
+            .await
+            .map(|rows| rows.into_iter().map(From::from).collect())
+            .map_err(|e| {
+                tracing::debug!(
+                    error.category = "dao.refund",
+                    error.operation = "get_pending_refunds",
+                    error.source = ?e,
+                    "Failed to fetch pending refunds"
+                );
+                DaoRefundError::DatabaseError
+            })
     }
 
     #[cfg_attr(not(test), expect(dead_code))]
@@ -90,7 +179,7 @@ pub trait DaoRefundMethods: DaoExecutor + 'static {
         &self,
         refund_id: Uuid,
         status: RefundStatus,
-    ) -> DaoResult<Refund> {
+    ) -> Result<Refund, DaoRefundError> {
         let query = sqlx::query_as::<_, RefundRow>(
             "UPDATE refunds
             SET status = ?, updated_at = datetime('now')
@@ -103,6 +192,26 @@ pub trait DaoRefundMethods: DaoExecutor + 'static {
         self.fetch_one(query)
             .await
             .map(From::from)
+            .map_err(|e| {
+                tracing::debug!(
+                    error.category = "dao.refund",
+                    error.operation = "update_refund_status",
+                    %refund_id,
+                    new_status = ?status,
+                    error.source = ?e,
+                    "Failed to update refund status"
+                );
+
+                // Parse with RefundStatus type
+                if let Some(error) = RefundStatus::from_sqlx_error(&e) {
+                    return error;
+                }
+
+                match e {
+                    sqlx::Error::RowNotFound => DaoRefundError::NotFound { refund_id },
+                    _ => DaoRefundError::DatabaseError,
+                }
+            })
     }
 
     #[cfg_attr(not(test), expect(dead_code))]
@@ -113,7 +222,7 @@ pub trait DaoRefundMethods: DaoExecutor + 'static {
         last_attempt_at: chrono::DateTime<chrono::Utc>,
         next_retry_at: Option<chrono::DateTime<chrono::Utc>>,
         failure_message: Option<String>,
-    ) -> DaoResult<Refund> {
+    ) -> Result<Refund, DaoRefundError> {
         let query = sqlx::query_as::<_, RefundRow>(
             "UPDATE refunds
             SET retry_count = ?,
@@ -133,6 +242,28 @@ pub trait DaoRefundMethods: DaoExecutor + 'static {
         self.fetch_one(query)
             .await
             .map(From::from)
+            .map_err(|e| {
+                tracing::debug!(
+                    error.category = "dao.refund",
+                    error.operation = "update_refund_retry",
+                    %refund_id,
+                    retry_count,
+                    error.source = ?e,
+                    "Failed to update refund retry"
+                );
+
+                // Check for trigger violation
+                if let Some(error) = RefundStatus::from_sqlx_error(&e) {
+                    return error;
+                }
+
+                match e {
+                    sqlx::Error::RowNotFound => {
+                        DaoRefundError::NotFound { refund_id }
+                    }
+                    _ => DaoRefundError::DatabaseError,
+                }
+            })
     }
 }
 
@@ -298,5 +429,61 @@ mod tests {
             updated.retry_meta.failure_message,
             Some("Insufficient balance".to_string())
         );
+    }
+
+    #[tokio::test]
+    async fn test_refund_status_transition_triggers() {
+        let dao = create_test_dao().await;
+        let invoice = default_invoice();
+        let invoice_id = invoice.id;
+        dao.create_invoice(invoice)
+            .await
+            .unwrap();
+
+        // Scenario 1: Invalid transition from Completed -> Waiting
+        let refund1 = Refund {
+            status: RefundStatus::Completed,
+            ..default_refund(invoice_id)
+        };
+        let id1 = refund1.id;
+        dao.create_refund(refund1)
+            .await
+            .unwrap();
+
+        let result = dao
+            .update_refund_status(id1, RefundStatus::Waiting)
+            .await;
+        match result.unwrap_err() {
+            DaoRefundError::StatusConstraintViolation {
+                current_status,
+                attempted_status,
+            } => {
+                assert_eq!(current_status, RefundStatus::Completed);
+                assert_eq!(attempted_status, RefundStatus::Waiting);
+            },
+            err => panic!("Expected StatusConstraintViolation, got: {err:?}"),
+        }
+
+        // Scenario 2: Valid transition Waiting -> InProgress -> Completed
+        let refund2 = Refund {
+            status: RefundStatus::Waiting,
+            ..default_refund(invoice_id)
+        };
+        let id2 = refund2.id;
+        dao.create_refund(refund2)
+            .await
+            .unwrap();
+
+        let updated1 = dao
+            .update_refund_status(id2, RefundStatus::InProgress)
+            .await
+            .unwrap();
+        assert_eq!(updated1.status, RefundStatus::InProgress);
+
+        let updated2 = dao
+            .update_refund_status(id2, RefundStatus::Completed)
+            .await
+            .unwrap();
+        assert_eq!(updated2.status, RefundStatus::Completed);
     }
 }

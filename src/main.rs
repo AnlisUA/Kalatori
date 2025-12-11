@@ -238,7 +238,6 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
     let configs_path = std::env::var(format!("{env_prefix}_CONFIG_DIR_PATH")).unwrap_or_default();
 
     let seed_config = seed_config_with_prefix(&configs_path, &env_prefix);
-
     let chain_config = chain_config_with_prefix(&configs_path, &env_prefix);
     let payments_config = payments_config_with_prefix(&configs_path, &env_prefix);
     let web_server_config = web_server_config_with_prefix(&configs_path, &env_prefix);

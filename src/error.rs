@@ -87,6 +87,40 @@ pub enum Error {
     MigrationFailed(#[from] crate::sled_to_sqlite_migration::MigrationError),
 }
 
+impl From<crate::dao::DaoInvoiceError> for Error {
+    fn from(e: crate::dao::DaoInvoiceError) -> Self {
+        // Convert InvoiceError to the legacy DaoError variant
+        // Log the conversion for debugging
+        tracing::debug!(
+            error.category = "error_conversion",
+            error.source = ?e,
+            "Converting InvoiceError to Error::Dao"
+        );
+
+        // Map to appropriate DaoError variant
+        let dao_error = match e {
+            crate::dao::DaoInvoiceError::NotFound { .. } => DaoError::InvoiceNotFound,
+            crate::dao::DaoInvoiceError::VersionConflict { .. } => DaoError::VersionConflict,
+            _ => DaoError::Sqlx(sqlx::Error::RowNotFound),
+        };
+
+        Error::Dao(dao_error)
+    }
+}
+
+impl From<crate::dao::DaoTransactionError> for Error {
+    fn from(e: crate::dao::DaoTransactionError) -> Self {
+        tracing::debug!(
+            error.category = "error_conversion",
+            error.source = ?e,
+            "Converting TransactionError to Error::Dao"
+        );
+
+        // Map TransactionError to DaoError
+        Error::Dao(DaoError::Sqlx(sqlx::Error::RowNotFound))
+    }
+}
+
 impl From<Error> for ChainError {
     fn from(_err: Error) -> Self {
         ChainError::Util(UtilError::NotHex(
@@ -333,7 +367,6 @@ pub enum DbError {
 }
 
 #[derive(Debug, Error)]
-#[expect(dead_code)]
 pub enum DaoError {
     #[error("SQLite database error")]
     Sqlx(#[from] sqlx::Error),

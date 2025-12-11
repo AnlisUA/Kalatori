@@ -60,6 +60,8 @@ use crate::dao::{
     DAO,
     DaoInvoiceMethods,
     DaoTransactionMethods,
+    DaoInvoiceError,
+    DaoTransactionError as DaoTransactionError,
 };
 use crate::legacy_types::{
     Amount,
@@ -105,6 +107,12 @@ pub enum MigrationError {
 
     #[error("SQLite DAO error: {0}")]
     DaoError(#[from] sqlx::Error),
+
+    #[error("Invoice DAO error: {0}")]
+    InvoiceError(#[from] DaoInvoiceError),
+
+    #[error("Transaction DAO error: {0}")]
+    TransactionError(#[from] DaoTransactionError),
 
     #[expect(dead_code, reason = "Error variant for future use")]
     #[error("Amount conversion error: {0}")]

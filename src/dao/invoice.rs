@@ -3,6 +3,7 @@ use sqlx::types::{
     Text,
 };
 use uuid::Uuid;
+use thiserror::Error;
 
 use crate::legacy_types::WithdrawalStatus;
 use crate::types::{
@@ -12,16 +13,96 @@ use crate::types::{
     UpdateInvoiceData,
 };
 
-use super::{
-    DaoExecutor,
-    DaoResult,
-};
+use super::DaoExecutor;
+use super::error_parsing::{TriggerError, StatusTransitionError};
+
+// ============================================================================
+// Invoice Domain Errors
+// ============================================================================
+
+#[derive(Debug, Error)]
+pub enum DaoInvoiceError {
+    /// Invoice not found by ID or order_id
+    #[error("Invoice not found: {identifier}")]
+    NotFound {
+        identifier: String, // Can be UUID string or order_id
+    },
+
+    /// Optimistic locking failure - invoice was modified by another request
+    #[error("Invoice {invoice_id} was modified (expected version {expected_version})")]
+    VersionConflict {
+        invoice_id: Uuid,
+        expected_version: u16,
+    },
+
+    /// Status transition not allowed (invoice in wrong state)
+    #[error("Cannot transition from {current_status} to {attempted_status}")]
+    StatusConstraintViolation {
+        current_status: InvoiceStatus,
+        attempted_status: InvoiceStatus,
+    },
+
+    /// Withdrawal status constraint violation
+    #[error("Cannot transition withdrawal from {current_status} to {attempted_status}")]
+    WithdrawalStatusConstraintViolation {
+        current_status: WithdrawalStatus,
+        attempted_status: WithdrawalStatus,
+    },
+
+    /// Duplicate order_id (UNIQUE constraint violation)
+    #[error("Order ID '{order_id}' already exists")]
+    DuplicateOrderId {
+        order_id: String,
+    },
+
+    /// Database operation failed
+    #[error("Database error during invoice operation")]
+    DatabaseError,
+}
+
+impl From<sqlx::Error> for DaoInvoiceError {
+    fn from(_e: sqlx::Error) -> Self {
+        // Only convert generic database errors
+        // Specific errors are handled at call site
+        DaoInvoiceError::DatabaseError
+    }
+}
+
+impl From<TriggerError<InvoiceStatus>> for DaoInvoiceError {
+    fn from(err: TriggerError<InvoiceStatus>) -> Self {
+        DaoInvoiceError::StatusConstraintViolation {
+            current_status: err.old_status,
+            attempted_status: err.new_status,
+        }
+    }
+}
+
+impl From<TriggerError<WithdrawalStatus>> for DaoInvoiceError {
+    fn from(err: TriggerError<WithdrawalStatus>) -> Self {
+        DaoInvoiceError::WithdrawalStatusConstraintViolation {
+            current_status: err.old_status,
+            attempted_status: err.new_status,
+        }
+    }
+}
+
+impl StatusTransitionError for InvoiceStatus {
+    type ErrorType = DaoInvoiceError;
+
+    const ERROR_TYPE_PREFIX: &'static str = "INVOICE_STATUS_TRANSITION|";
+}
+
+impl StatusTransitionError for WithdrawalStatus {
+    type ErrorType = DaoInvoiceError;
+
+    const ERROR_TYPE_PREFIX: &'static str = "INVOICE_WITHDRAWAL_TRANSITION|";
+}
 
 pub trait DaoInvoiceMethods: DaoExecutor + 'static {
     async fn create_invoice(
         &self,
         invoice: Invoice,
-    ) -> DaoResult<Invoice> {
+    ) -> Result<Invoice, DaoInvoiceError> {
         let query = sqlx::query_as::<_, InvoiceRow>(
         "INSERT INTO invoices (id, order_id, asset_id, chain, amount, payment_address, status, withdrawal_status, callback, cart, valid_till, created_at, updated_at, version)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -45,12 +126,37 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
         self.fetch_one(query)
             .await
             .map(From::from)
+            .map_err(|e| {
+                tracing::debug!(
+                    error.category = "dao.invoice",
+                    error.operation = "create_invoice",
+                    order_id = %invoice.order_id,
+                    invoice_id = %invoice.id,
+                    error.source = ?e,
+                    "Failed to create invoice"
+                );
+
+                match &e {
+                    sqlx::Error::Database(db_err) => {
+                        let message = db_err.message();
+
+                        if message.contains("UNIQUE") && message.contains("order_id") {
+                            return DaoInvoiceError::DuplicateOrderId {
+                                order_id: invoice.order_id.clone(),
+                            };
+                        }
+
+                        DaoInvoiceError::DatabaseError
+                    }
+                    _ => DaoInvoiceError::DatabaseError,
+                }
+            })
     }
 
     async fn get_invoice_by_id(
         &self,
         invoice_id: Uuid,
-    ) -> DaoResult<Option<Invoice>> {
+    ) -> Result<Option<Invoice>, DaoInvoiceError> {
         let query = sqlx::query_as::<_, InvoiceRow>(
             "SELECT *
             FROM invoices
@@ -58,18 +164,25 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
         )
         .bind(invoice_id);
 
-        let result = self
-            .fetch_optional(query)
-            .await?
-            .map(From::from);
-
-        Ok(result)
+        self.fetch_optional(query)
+            .await
+            .map(|opt| opt.map(From::from))
+            .map_err(|e| {
+                tracing::debug!(
+                    error.category = "dao.invoice",
+                    error.operation = "get_invoice_by_id",
+                    %invoice_id,
+                    error.source = ?e,
+                    "Failed to fetch invoice"
+                );
+                DaoInvoiceError::DatabaseError
+            })
     }
 
     async fn get_invoice_by_order_id(
         &self,
         order_id: &str,
-    ) -> DaoResult<Option<Invoice>> {
+    ) -> Result<Option<Invoice>, DaoInvoiceError> {
         let query = sqlx::query_as::<_, InvoiceRow>(
             "SELECT *
             FROM invoices
@@ -77,17 +190,24 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
         )
         .bind(order_id);
 
-        let result = self
-            .fetch_optional(query)
-            .await?
-            .map(From::from);
-
-        Ok(result)
+        self.fetch_optional(query)
+            .await
+            .map(|opt| opt.map(From::from))
+            .map_err(|e| {
+                tracing::debug!(
+                    error.category = "dao.invoice",
+                    error.operation = "get_invoice_by_order_id",
+                    %order_id,
+                    error.source = ?e,
+                    "Failed to fetch invoice by order_id"
+                );
+                DaoInvoiceError::DatabaseError
+            })
     }
 
     /// Get all active invoices that need to be monitored
     /// Returns invoices with status 'Waiting' or '`PartiallyPaid`'
-    async fn get_active_invoices(&self) -> DaoResult<Vec<Invoice>> {
+    async fn get_active_invoices(&self) -> Result<Vec<Invoice>, DaoInvoiceError> {
         let query = sqlx::query_as::<_, InvoiceRow>(
             "SELECT *
             FROM invoices
@@ -95,24 +215,25 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
             ORDER BY created_at ASC",
         );
 
-        // TODO: it might be optimized, we already iterate over all values in
-        // DaoExecutor trait
-        let result = self
-            .fetch_all(query)
-            .await?
-            .into_iter()
-            .map(From::from)
-            .collect();
-
-        Ok(result)
+        self.fetch_all(query)
+            .await
+            .map(|rows| rows.into_iter().map(From::from).collect())
+            .map_err(|e| {
+                tracing::debug!(
+                    error.category = "dao.invoice",
+                    error.operation = "get_active_invoices",
+                    error.source = ?e,
+                    "Failed to fetch active invoices"
+                );
+                DaoInvoiceError::DatabaseError
+            })
     }
 
     async fn update_invoice_status(
         &self,
         invoice_id: Uuid,
         status: InvoiceStatus,
-    ) -> DaoResult<Invoice> {
-        // TODO: add status transition validation
+    ) -> Result<Invoice, DaoInvoiceError> {
         let query = sqlx::query_as::<_, InvoiceRow>(
             "UPDATE invoices
             SET status = ?,
@@ -127,12 +248,36 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
         self.fetch_one(query)
             .await
             .map(From::from)
+            .map_err(|e| {
+                tracing::debug!(
+                    error.category = "dao.invoice",
+                    error.operation = "update_invoice_status",
+                    %invoice_id,
+                    new_status = ?status,
+                    error.source = ?e,
+                    "Failed to update invoice status"
+                );
+
+                // Check for trigger violation
+                if let Some(error) = InvoiceStatus::from_sqlx_error(&e) {
+                    return error;
+                }
+
+                match e {
+                    sqlx::Error::RowNotFound => {
+                        DaoInvoiceError::NotFound {
+                            identifier: invoice_id.to_string(),
+                        }
+                    }
+                    _ => DaoInvoiceError::DatabaseError,
+                }
+            })
     }
 
     async fn update_invoice_data(
         &self,
         data: UpdateInvoiceData,
-    ) -> DaoResult<Invoice> {
+    ) -> Result<Invoice, DaoInvoiceError> {
         let query = sqlx::query_as::<_, InvoiceRow>(
             "UPDATE invoices
             SET amount = ?,
@@ -149,30 +294,104 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
         .bind(data.id)
         .bind(data.version);
 
-        self.fetch_one(query)
-            .await
-            .map(From::from)
+        match self.fetch_one(query).await {
+            Ok(row) => Ok(row.into()),
+            Err(e) => {
+                tracing::debug!(
+                    error.category = "dao.invoice",
+                    error.operation = "update_invoice_data",
+                    invoice_id = %data.id,
+                    expected_version = data.version,
+                    error.source = ?e,
+                    "Update failed"
+                );
+
+                // Check for trigger error first - parse with InvoiceStatus type
+                if let Some(error) = InvoiceStatus::from_sqlx_error(&e) {
+                    return Err(error);
+                }
+
+                // Not a trigger error, check if RowNotFound
+                if matches!(e, sqlx::Error::RowNotFound) {
+                    // Query current status to determine if NotFound or VersionConflict
+                    let diagnostic_query = sqlx::query_as::<_, (i32, String)>(
+                        "SELECT version, status FROM invoices WHERE id = ?",
+                    )
+                    .bind(data.id);
+
+                    match self.fetch_optional(diagnostic_query).await {
+                        Ok(Some((_current_version, _current_status))) => {
+                            // Invoice exists but version mismatch
+                            // (status check was in WHERE clause, trigger would have fired if
+                            // wrong)
+                            Err(DaoInvoiceError::VersionConflict {
+                                invoice_id: data.id,
+                                expected_version: data.version,
+                            })
+                        },
+                        Ok(None) => Err(DaoInvoiceError::NotFound {
+                            identifier: data.id.to_string(),
+                        }),
+                        Err(e) => {
+                            tracing::warn!(
+                                error.category = "dao.invoice",
+                                error.operation = "update_invoice_data.diagnostic",
+                                invoice_id = %data.id,
+                                error.source = ?e,
+                                "Diagnostic query failed"
+                            );
+                            Err(DaoInvoiceError::DatabaseError)
+                        },
+                    }
+                } else {
+                    Err(DaoInvoiceError::DatabaseError)
+                }
+            },
+        }
     }
 
     async fn update_invoice_withdrawal_status(
         &self,
         invoice_id: Uuid,
         status: WithdrawalStatus,
-    ) -> DaoResult<Invoice> {
+    ) -> Result<Invoice, DaoInvoiceError> {
         let query = sqlx::query_as::<_, InvoiceRow>(
             "UPDATE invoices
             SET withdrawal_status = ?,
                 updated_at = datetime('now'),
                 version = version + 1
-            WHERE id = ? AND withdrawal_status == 'Waiting'
+            WHERE id = ?
             RETURNING *",
         )
         .bind(status)
         .bind(invoice_id);
 
-        self.fetch_one(query)
-            .await
-            .map(From::from)
+        match self.fetch_one(query).await {
+            Ok(row) => Ok(row.into()),
+            Err(e) => {
+            tracing::debug!(
+                    error.category = "dao.invoice",
+                    error.operation = "update_invoice_withdrawal_status",
+                    %invoice_id,
+                    new_status = ?status,
+                    error.source = ?e,
+                    "Update failed"
+                );
+
+                // Parse trigger error with WithdrawalStatus type
+                if let Some(error) = WithdrawalStatus::from_sqlx_error(&e) {
+                    return Err(error);
+                }
+
+                // RowNotFound means invoice doesn't exist
+                match e {
+                    sqlx::Error::RowNotFound => Err(DaoInvoiceError::NotFound {
+                        identifier: invoice_id.to_string(),
+                    }),
+                    _ => Err(DaoInvoiceError::DatabaseError),
+                }
+            },
+        }
     }
 }
 
@@ -256,19 +475,19 @@ mod tests {
 
         // Try to create second invoice with same order_id
         let invoice2 = Invoice {
-            order_id,
+            order_id: order_id.clone(),
             ..default_invoice()
         };
 
         let result = dao.create_invoice(invoice2).await;
 
-        // Should fail with UNIQUE constraint error
+        // Should fail with DuplicateOrderId error
         assert!(result.is_err());
         match result.unwrap_err() {
-            sqlx::Error::Database(db_err) => {
-                assert!(db_err.message().contains("UNIQUE"));
+            DaoInvoiceError::DuplicateOrderId { order_id: oid } => {
+                assert_eq!(oid, order_id);
             },
-            err => panic!("Expected database UNIQUE constraint error, got: {err:?}"),
+            err => panic!("Expected DuplicateOrderId error, got: {err:?}"),
         }
     }
 
@@ -431,11 +650,11 @@ mod tests {
             .update_invoice_status(Uuid::new_v4(), InvoiceStatus::Paid)
             .await;
 
-        // Should fail with RowNotFound
+        // Should fail with NotFound
         assert!(result.is_err());
         match result.unwrap_err() {
-            sqlx::Error::RowNotFound => { /* Expected */ },
-            err => panic!("Expected RowNotFound, got: {err:?}"),
+            DaoInvoiceError::NotFound { .. } => { /* Expected */ },
+            err => panic!("Expected NotFound, got: {err:?}"),
         }
     }
 
@@ -523,11 +742,18 @@ mod tests {
             .update_invoice_data(update_data)
             .await;
 
-        // Should fail with RowNotFound
+        // Should fail with VersionConflict (invoice exists but version/status mismatch)
+        // Since status is PartiallyPaid (not Waiting), WHERE clause fails -> RowNotFound -> diagnostic -> VersionConflict
         assert!(result.is_err());
         match result.unwrap_err() {
-            sqlx::Error::RowNotFound => { /* Expected */ },
-            err => panic!("Expected RowNotFound, got: {err:?}"),
+            DaoInvoiceError::VersionConflict {
+                invoice_id,
+                expected_version,
+            } => {
+                assert_eq!(invoice_id, id1);
+                assert_eq!(expected_version, 1);
+            },
+            err => panic!("Expected VersionConflict, got: {err:?}"),
         }
 
         // Scenario B: Wrong status (not in Waiting state)
@@ -556,11 +782,18 @@ mod tests {
             .update_invoice_data(update_data2)
             .await;
 
-        // Should fail with RowNotFound (status constraint)
+        // Should fail with VersionConflict (status='Paid' doesn't match WHERE clause requirement of 'Waiting')
+        // This gets reported as VersionConflict because the invoice exists but WHERE clause doesn't match
         assert!(result2.is_err());
         match result2.unwrap_err() {
-            sqlx::Error::RowNotFound => { /* Expected */ },
-            err => panic!("Expected RowNotFound, got: {err:?}"),
+            DaoInvoiceError::VersionConflict {
+                invoice_id,
+                expected_version,
+            } => {
+                assert_eq!(invoice_id, id2);
+                assert_eq!(expected_version, 2);
+            },
+            err => panic!("Expected VersionConflict, got: {err:?}"),
         }
 
         // Scenario C: Non-existent invoice
@@ -569,11 +802,11 @@ mod tests {
             .update_invoice_data(update_data3)
             .await;
 
-        // Should fail with RowNotFound
+        // Should fail with NotFound
         assert!(result3.is_err());
         match result3.unwrap_err() {
-            sqlx::Error::RowNotFound => { /* Expected */ },
-            err => panic!("Expected RowNotFound, got: {err:?}"),
+            DaoInvoiceError::NotFound { .. } => { /* Expected */ },
+            err => panic!("Expected NotFound, got: {err:?}"),
         }
     }
 
@@ -667,11 +900,17 @@ mod tests {
             .update_invoice_withdrawal_status(invoice_id, WithdrawalStatus::Failed)
             .await;
 
-        // Should fail with RowNotFound (WHERE withdrawal_status == 'Waiting' fails)
+        // Should fail with WithdrawalConstraintViolation
         assert!(result.is_err());
         match result.unwrap_err() {
-            sqlx::Error::RowNotFound => { /* Expected */ },
-            err => panic!("Expected RowNotFound, got: {err:?}"),
+            DaoInvoiceError::WithdrawalStatusConstraintViolation {
+                current_status,
+                attempted_status,
+            } => {
+                assert_eq!(current_status, WithdrawalStatus::Completed);
+                assert_eq!(attempted_status, WithdrawalStatus::Failed);
+            },
+            err => panic!("Expected WithdrawalConstraintViolation, got: {err:?}"),
         }
 
         // Verify withdrawal_status is still Completed (unchanged)
@@ -693,11 +932,80 @@ mod tests {
             )
             .await;
 
-        // Should fail with RowNotFound
+        // Should fail with NotFound
         assert!(result2.is_err());
         match result2.unwrap_err() {
-            sqlx::Error::RowNotFound => { /* Expected */ },
-            err => panic!("Expected RowNotFound, got: {err:?}"),
+            DaoInvoiceError::NotFound { .. } => { /* Expected */ },
+            err => panic!("Expected NotFound, got: {err:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_invoice_status_transition_triggers() {
+        let dao = create_test_dao().await;
+
+        // Scenario 1: Invalid transition from Paid (final state) -> Waiting
+        let invoice1 = Invoice {
+            status: InvoiceStatus::Paid,
+            ..default_invoice()
+        };
+        let id1 = invoice1.id;
+        dao.create_invoice(invoice1)
+            .await
+            .unwrap();
+
+        let result = dao
+            .update_invoice_status(id1, InvoiceStatus::Waiting)
+            .await;
+        match result.unwrap_err() {
+            DaoInvoiceError::StatusConstraintViolation {
+                current_status,
+                attempted_status,
+            } => {
+                assert_eq!(current_status, InvoiceStatus::Paid);
+                assert_eq!(attempted_status, InvoiceStatus::Waiting);
+            },
+            err => panic!("Expected StatusConstraintViolation, got: {err:?}"),
+        }
+
+        // Scenario 2: Valid transition from Waiting -> Paid
+        let invoice2 = Invoice {
+            status: InvoiceStatus::Waiting,
+            ..default_invoice()
+        };
+        let id2 = invoice2.id;
+        dao.create_invoice(invoice2)
+            .await
+            .unwrap();
+
+        let updated = dao
+            .update_invoice_status(id2, InvoiceStatus::Paid)
+            .await
+            .unwrap();
+        assert_eq!(updated.status, InvoiceStatus::Paid);
+
+        // Scenario 3: Invalid transition from PartiallyPaid -> Waiting
+        let invoice3 = Invoice {
+            status: InvoiceStatus::PartiallyPaid,
+            ..default_invoice()
+        };
+        let id3 = invoice3.id;
+        dao.create_invoice(invoice3)
+            .await
+            .unwrap();
+
+        let result = dao
+            .update_invoice_status(id3, InvoiceStatus::Waiting)
+            .await;
+        match result.unwrap_err() {
+            DaoInvoiceError::StatusConstraintViolation {
+                current_status,
+                attempted_status,
+            } => {
+                assert_eq!(current_status, InvoiceStatus::PartiallyPaid);
+                assert_eq!(attempted_status, InvoiceStatus::Waiting);
+            },
+            err => panic!("Expected StatusConstraintViolation, got: {err:?}"),
         }
     }
 }
