@@ -58,8 +58,7 @@ use uuid::Uuid;
 
 use crate::dao::{
     DAO,
-    DaoInvoiceMethods,
-    DaoTransactionMethods,
+    DaoInterface,
     DaoInvoiceError,
     DaoTransactionError as DaoTransactionError,
 };

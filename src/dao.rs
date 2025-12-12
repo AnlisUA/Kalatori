@@ -10,6 +10,7 @@
 ///   so we convert `chrono::DateTime<Utc>` to `NaiveDateTime` when binding parameters
 ///   (see details [here](https://docs.rs/sqlx/latest/sqlx/sqlite/types/index.html#note-current_timestamp-and-comparisoninteroperability-of-datetime-values)).
 mod error_parsing;
+mod interface;
 mod invoice;
 mod payout;
 mod refund;
@@ -25,13 +26,6 @@ use tokio::sync::Mutex;
 use crate::configs::DatabaseConfig;
 use crate::legacy_types::ServerInfo;
 
-// Export traits
-pub use invoice::DaoInvoiceMethods;
-pub use payout::DaoPayoutMethods;
-#[expect(unused_imports)]
-pub use refund::DaoRefundMethods;
-pub use transaction::DaoTransactionMethods;
-
 // Export domain-specific errors
 pub use invoice::DaoInvoiceError;
 #[expect(unused_imports)]
@@ -39,6 +33,13 @@ pub use payout::DaoPayoutError;
 #[expect(unused_imports)]
 pub use refund::DaoRefundError;
 pub use transaction::DaoTransactionError;
+
+// Export high-level interface traits
+pub use interface::{DaoInterface, DaoTransactionInterface};
+
+// Export mocks only in test builds
+#[cfg(test)]
+pub use interface::{MockDaoInterface, MockDaoTransactionInterface};
 
 // Keep DaoResult for internal use (DaoExecutor trait methods)
 pub(crate) type DaoResult<T> = Result<T, sqlx::Error>;
@@ -351,6 +352,9 @@ mod tests {
         default_transaction,
     };
 
+    use super::invoice::DaoInvoiceMethods;
+    use super::transaction::DaoTransactionMethods;
+
     use super::*;
 
     #[tokio::test]
@@ -363,8 +367,7 @@ mod tests {
     #[tokio::test]
     async fn test_transaction_exists_by_bytes() {
         let dao = create_test_dao().await;
-        let invoice = dao
-            .create_invoice(default_invoice())
+        let invoice = DaoInvoiceMethods::create_invoice(&dao, default_invoice())
             .await
             .unwrap();
 
@@ -373,7 +376,7 @@ mod tests {
             transaction_bytes: Some("0xdeadbeef".to_string()),
             ..default_transaction(invoice.id)
         };
-        dao.create_transaction(tx)
+        DaoTransactionMethods::create_transaction(&dao, tx)
             .await
             .unwrap();
 

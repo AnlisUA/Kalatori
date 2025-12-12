@@ -11,9 +11,7 @@ use crate::chain::utils::to_base58_string;
 use crate::chain_client::KeyringClient;
 use crate::dao::{
     DAO,
-    DaoInvoiceMethods,
-    DaoPayoutMethods,
-    DaoTransactionMethods,
+    DaoInterface,
 };
 use crate::error::{
     DaoError,

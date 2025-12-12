@@ -321,10 +321,8 @@ impl<T: DaoExecutor + 'static> DaoTransactionMethods for T {}
 
 #[cfg(test)]
 mod tests {
-    use crate::dao::{
-        DaoInvoiceMethods,
-        create_test_dao,
-    };
+    use crate::dao::create_test_dao;
+    use crate::dao::invoice::DaoInvoiceMethods;
 
     use crate::types::{
         OutgoingTransactionMeta,
@@ -816,7 +814,7 @@ mod tests {
         let result = dao
             .update_transaction_successful(id1, chain_tx_id.clone(), Utc::now())
             .await;
-        
+
         // Should succeed (idempotent update)
         assert!(result.is_ok());
         let updated = result.unwrap();

@@ -4,6 +4,7 @@ mod keyring;
 
 use std::collections::HashMap;
 use std::hash::Hash;
+use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -30,6 +31,8 @@ pub use keyring::{
     KeyringClient,
     KeyringError,
 };
+#[cfg(test)]
+pub use keyring::default_keyring_client;
 
 pub trait SignedTransactionUtils {
     /// Encode transaction bytes to hex string
@@ -39,7 +42,7 @@ pub trait SignedTransactionUtils {
     fn hash(&self) -> String;
 }
 
-pub trait ChainConfig: Clone + std::fmt::Debug + Sync + Send {
+pub trait ChainConfig: Clone + std::fmt::Debug + Sync + Send + 'static {
     type AssetId: Hash + FromStr + ToString + Eq + Clone + std::fmt::Debug + Sync + Send;
     type TransactionId: Hash
         + Eq
@@ -50,7 +53,7 @@ pub trait ChainConfig: Clone + std::fmt::Debug + Sync + Send {
         + Send;
     type TransactionHash: FromStr + ToString + Sync + Send;
     type BlockHash: FromStr + ToString + Sync + Send;
-    type UnsignedTransaction;
+    type UnsignedTransaction: Send;
     type SignedTransaction: SignedTransactionUtils + Sync + Send;
     type AccountId: FromStr + ToString + Sync + Send;
 }
@@ -186,40 +189,41 @@ impl<T: ChainConfig> SignedTransactionUtils for SignedTransaction<T> {
     }
 }
 
-pub trait BlockChainClient<T: ChainConfig>: Sync + Send + Sized {
+#[cfg_attr(test, mockall::automock)]
+#[trait_variant::make(Send)]
+pub trait BlockChainClient<T: ChainConfig>: Sync {
     fn chain_name(&self) -> &'static str;
 
     fn asset_info_store(&self) -> &AssetInfoStore<T>;
 
-    async fn new(config: &crate::configs::ChainConfig) -> Result<Self, ClientError>;
+    async fn new(config: &crate::configs::ChainConfig) -> Result<Self, ClientError>
+    where
+        Self: Sized;
 
     #[expect(dead_code)]
     async fn new_with_store(
         config: &crate::configs::ChainConfig,
         asset_info_store: AssetInfoStore<T>,
-    ) -> Result<Self, ClientError>;
+    ) -> Result<Self, ClientError>
+    where
+        Self: Sized;
 
     async fn fetch_asset_info(
         &self,
         asset_id: &T::AssetId,
     ) -> Result<AssetInfo<T>, QueryError>;
 
-    // async fn fetch_asset_balance(
-    //     &self,
-    //     asset_id: &T::AssetId,
-    //     account: &T::AccountId,
-    // ) -> Result<Decimal, QueryError>;
-    fn fetch_asset_balance(
+    async fn fetch_asset_balance(
         &self,
         asset_id: &T::AssetId,
         account: &T::AccountId,
-    ) -> impl Future<Output = Result<Decimal, QueryError>> + Send;
+    ) -> Result<Decimal, QueryError>;
 
     async fn subscribe_transfers(
         &self,
         asset_ids: &[T::AssetId],
     ) -> Result<
-        impl stream::Stream<Item = Result<Vec<ChainTransfer<T>>, SubscriptionError>>,
+        Pin<Box<dyn stream::Stream<Item = Result<Vec<ChainTransfer<T>>, SubscriptionError>> + Send>>,
         SubscriptionError,
     >;
 
@@ -249,15 +253,24 @@ pub trait BlockChainClient<T: ChainConfig>: Sync + Send + Sized {
         keyring_client: &KeyringClient,
     ) -> Result<SignedTransaction<T>, TransactionError<T>>;
 
-    fn submit_and_watch_transaction(
+    async fn submit_and_watch_transaction(
         &self,
         transaction: SignedTransaction<T>,
-    ) -> impl Future<Output = Result<ChainTransfer<T>, TransactionError<T>>> + Send;
+    ) -> Result<ChainTransfer<T>, TransactionError<T>>;
 
     // This method should be called at the very start of the program, right after
     // client initialization.
-    #[instrument(skip(self))]
     async fn init_asset_info(
+        &self,
+        asset_ids: &[T::AssetId],
+    ) -> Result<(), ClientError>;
+}
+
+// Extension trait providing default implementation for init_asset_info
+// This is separate to avoid issues with mockall and default implementations
+pub trait BlockChainClientExt<T: ChainConfig>: BlockChainClient<T> {
+    #[instrument(skip(self))]
+    async fn init_asset_info_impl(
         &self,
         asset_ids: &[T::AssetId],
     ) -> Result<(), ClientError> {
@@ -281,3 +294,6 @@ pub trait BlockChainClient<T: ChainConfig>: Sync + Send + Sized {
         Ok(())
     }
 }
+
+// Blanket implementation: all BlockChainClient implementations automatically get BlockChainClientExt
+impl<T: ChainConfig, C: BlockChainClient<T>> BlockChainClientExt<T> for C {}

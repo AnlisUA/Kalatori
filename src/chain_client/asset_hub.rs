@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::pin::Pin;
 
 use futures::{
     StreamExt,
@@ -33,6 +34,7 @@ use super::{
     AssetInfo,
     AssetInfoStore,
     BlockChainClient,
+    BlockChainClientExt,
     ChainConfig,
     ChainTransfer,
     ClientError,
@@ -483,7 +485,7 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
         &self,
         asset_ids: &[u32],
     ) -> Result<
-        impl stream::Stream<Item = Result<Vec<ChainTransfer<AssetHubChainConfig>>, SubscriptionError>>,
+        Pin<Box<dyn stream::Stream<Item = Result<Vec<ChainTransfer<AssetHubChainConfig>>, SubscriptionError>> + Send>>,
         SubscriptionError,
     > {
         let client = self.clone();
@@ -542,7 +544,16 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
             tracing::info!("Block subscription stream ended");
         };
 
-        Ok(stream)
+        Ok(Box::pin(stream))
+    }
+
+    #[instrument(skip(self))]
+    async fn init_asset_info(
+        &self,
+        asset_ids: &[u32],
+    ) -> Result<(), ClientError> {
+        // Delegate to the extension trait default implementation
+        BlockChainClientExt::init_asset_info_impl(self, asset_ids).await
     }
 
     #[instrument(skip(self), fields(asset_id = %asset_id, amount = %amount))]

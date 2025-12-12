@@ -1,4 +1,5 @@
 use std::str::FromStr;
+use std::sync::Arc;
 
 use chrono::Utc;
 use futures::stream::{
@@ -29,10 +30,7 @@ use crate::chain_client::{
     TransactionError,
 };
 use crate::dao::{
-    DAO,
-    DaoInvoiceMethods,
-    DaoPayoutMethods,
-    DaoTransactionMethods,
+    DAO, DaoInterface, DaoTransactionInterface
 };
 use crate::types::{
     OutgoingTransaction,
@@ -106,6 +104,7 @@ pub enum ChainPayoutRequestTyped {
 }
 
 impl TryFrom<Payout> for ChainPayoutRequestTyped {
+    // TODO: handle errors properly
     type Error = ();
 
     fn try_from(value: Payout) -> Result<Self, Self::Error> {
@@ -139,16 +138,16 @@ struct TransactionExecutionData {
     result: Result<GeneralChainTransfer, TransactionExecutionError>,
 }
 
-pub struct TransfersExecutor {
-    asset_hub_client: AssetHubClient,
-    dao: DAO,
+pub struct TransfersExecutor<D: DaoInterface + 'static = DAO, AH: BlockChainClient<AssetHubChainConfig> + 'static = AssetHubClient> {
+    asset_hub_client: Arc<AH>,
+    dao: D,
     keyring_client: KeyringClient,
 }
 
 type BoxedTransferFuture = std::pin::Pin<Box<dyn Future<Output = TransactionExecutionData> + Send>>;
 
 async fn send_transfer_request<T: ChainConfig, C: BlockChainClient<T>>(
-    client: C,
+    client: Arc<C>,
     signed_transaction: SignedTransaction<T>,
     request: ChainPayoutRequest<T>,
     transaction: Transaction,
@@ -230,7 +229,7 @@ async fn send_transfer_request<T: ChainConfig, C: BlockChainClient<T>>(
     }
 }
 
-impl TransfersExecutor {
+impl<D: DaoInterface + 'static, AH: BlockChainClient<AssetHubChainConfig> + 'static> TransfersExecutor<D, AH> {
     async fn collect_pending_payout_requests(
         &self,
         limit: u32,
@@ -259,7 +258,7 @@ impl TransfersExecutor {
     #[instrument(skip(self, client, request))]
     async fn build_and_sign_transfer<T: ChainConfig, C: BlockChainClient<T>>(
         &self,
-        client: &C,
+        client: &Arc<C>,
         request: &ChainPayoutRequest<T>,
     ) -> Result<SignedTransaction<T>, ChainExecutorError> {
         let transaction = client
@@ -310,6 +309,7 @@ impl TransfersExecutor {
         Ok(signed_transaction)
     }
 
+    #[instrument(skip(self, request, signed_transaction))]
     async fn store_built_transfer<T: ChainConfig>(
         &self,
         request: &ChainPayoutRequest<T>,
@@ -349,7 +349,7 @@ impl TransfersExecutor {
     )]
     async fn prepare_transfer<T: ChainConfig + 'static, C: BlockChainClient<T> + 'static>(
         &self,
-        client: C,
+        client: Arc<C>,
         request: ChainPayoutRequest<T>,
     ) -> Result<BoxedTransferFuture, ChainExecutorError> {
         let signed_transaction = self
@@ -437,6 +437,187 @@ impl TransfersExecutor {
         Ok(())
     }
 
+    #[instrument(
+        skip(self, dao_transaction, transfer),
+    )]
+    async fn handle_transfer_result_sucess(
+        &self,
+        dao_transaction: D::Transaction,
+        transaction_id: Uuid,
+        invoice_id: Uuid,
+        origin: TransactionOrigin,
+        transfer: GeneralChainTransfer,
+    ) -> Result<(), ChainExecutorError> {
+        let chain_transaction_id = transfer.general_transaction_id();
+
+        dao_transaction
+            .update_transaction_successful(
+                transaction_id,
+                chain_transaction_id,
+                // TODO: use transfer.timestamp
+                Utc::now(),
+            )
+            .await
+            .map_err(|e| {
+                tracing::error!(
+                    error = %e,
+                    "Failed to update transaction as successful in database",
+                );
+
+                ChainExecutorError::DaoTransactionError {
+                    reason: format!(
+                        "Failed to update transaction as successful in database",
+                    ),
+                }
+            })?;
+
+        #[expect(clippy::single_match)]
+        match origin.variant() {
+            TransactionOriginVariant::Payout(payout_id) => {
+                dao_transaction
+                    .update_payout_status(payout_id, PayoutStatus::Completed)
+                    .await
+                    .map_err(|e| {
+                        tracing::error!(
+                            error = %e,
+                            "Failed to update payout as completed in database",
+                        );
+
+                        ChainExecutorError::DaoTransactionError {
+                            reason: format!(
+                                "Failed to update payout as completed in database",
+                            ),
+                        }
+                    })?;
+
+                dao_transaction
+                    .update_invoice_withdrawal_status(
+                        invoice_id,
+                        crate::legacy_types::WithdrawalStatus::Completed,
+                    )
+                    .await
+                    .map_err(|e| {
+                        tracing::error!(
+                            error = %e,
+                            "Failed to update invoice withdrawal status as completed in database",
+                        );
+
+                        ChainExecutorError::DaoTransactionError {
+                            reason: format!(
+                                "Failed to update invoice withdrawal status as completed in database",
+                            ),
+                        }
+                    })?;
+            },
+            // TODO: should be implemented later, not necessary for now
+            _ => {},
+        }
+
+        dao_transaction
+            .commit()
+            .await
+            .map_err(|e| {
+                tracing::error!(
+                    error = %e,
+                    "Failed to commit database transaction while handling transfer result",
+                );
+
+                ChainExecutorError::DaoTransactionError {
+                    reason: "Failed to commit database transaction".to_string(),
+                }
+            })?;
+        // TODO: log origin? We've got invoice id logged, so it's not critical
+        tracing::info!(
+            "Processed successful transfer result",
+        );
+
+        Ok(())
+    }
+
+    #[instrument(
+        skip(self, dao_transaction, error),
+    )]
+    async fn handle_transfer_result_error(
+        &self,
+        dao_transaction: D::Transaction,
+        transaction_id: Uuid,
+        _invoice_id: Uuid,
+        origin: TransactionOrigin,
+        error: TransactionExecutionError,
+    ) -> Result<(), ChainExecutorError> {
+        dao_transaction
+            .update_transaction_failed(
+                transaction_id,
+                error.transaction_id,
+                error
+                    .retry_meta
+                    .failure_message
+                    .clone()
+                    .unwrap_or_default(),
+                // TODO: use transfer.timestamp
+                Utc::now(),
+            )
+            .await
+            .map_err(|e| {
+                tracing::error!(
+                    error = %e,
+                    "Failed to update transaction as failed in database",
+                );
+
+                ChainExecutorError::DaoTransactionError {
+                    reason: format!(
+                        "Failed to update transaction as failed in database",
+                    ),
+                }
+            })?;
+
+        #[expect(clippy::single_match)]
+        match origin.variant() {
+            TransactionOriginVariant::Payout(payout_id) => {
+                dao_transaction
+                    .update_payout_retry(
+                        payout_id,
+                        error.retry_meta,
+                        error.is_retriable,
+                    )
+                    .await
+                    .map_err(|e| {
+                        tracing::error!(
+                            error = %e,
+                            "Failed to update payout as failed in database",
+                        );
+
+                        ChainExecutorError::DaoTransactionError {
+                            reason: format!(
+                                "Failed to update payout as failed in database",
+                            ),
+                        }
+                    })?;
+            },
+            _ => {},
+        }
+
+        dao_transaction
+            .commit()
+            .await
+            .map_err(|e| {
+                tracing::error!(
+                    error = %e,
+                    "Failed to commit database transaction while handling failed transfer result",
+                );
+
+                ChainExecutorError::DaoTransactionError {
+                    reason: "Failed to commit database transaction".to_string(),
+                }
+            })?;
+        // TODO: log origin? We've got invoice id logged, so it's not critical
+        tracing::info!(
+            "Processed failed transfer result",
+        );
+
+        Ok(())
+    }
+
     // Update the transaction and origin entity based on the result
     #[instrument(
         skip(self, data),
@@ -463,165 +644,17 @@ impl TransfersExecutor {
                 }
             })?;
 
-        match data.result {
-            Ok(transfer) => {
-                let chain_transaction_id = transfer.general_transaction_id();
+        let TransactionExecutionData {
+            transaction_id,
+            invoice_id,
+            origin,
+            result,
+        } = data;
 
-                dao_transaction
-                    .update_transaction_successful(
-                        data.transaction_id,
-                        chain_transaction_id,
-                        // TODO: use transfer.timestamp
-                        Utc::now(),
-                    )
-                    .await
-                    .map_err(|e| {
-                        tracing::error!(
-                            error = %e,
-                            "Failed to update transaction as successful in database",
-                        );
-
-                        ChainExecutorError::DaoTransactionError {
-                            reason: format!(
-                                "Failed to update transaction as successful in database",
-                            ),
-                        }
-                    })?;
-
-                #[expect(clippy::single_match)]
-                match data.origin.variant() {
-                    TransactionOriginVariant::Payout(payout_id) => {
-                        dao_transaction
-                            .update_payout_status(payout_id, PayoutStatus::Completed)
-                            .await
-                            .map_err(|e| {
-                                tracing::error!(
-                                    error = %e,
-                                    "Failed to update payout as completed in database",
-                                );
-
-                                ChainExecutorError::DaoTransactionError {
-                                    reason: format!(
-                                        "Failed to update payout as completed in database",
-                                    ),
-                                }
-                            })?;
-
-                        dao_transaction
-                            .update_invoice_withdrawal_status(
-                                data.invoice_id,
-                                crate::legacy_types::WithdrawalStatus::Completed,
-                            )
-                            .await
-                            .map_err(|e| {
-                                tracing::error!(
-                                    error = %e,
-                                    "Failed to update invoice withdrawal status as completed in database",
-                                );
-
-                                ChainExecutorError::DaoTransactionError {
-                                    reason: format!(
-                                        "Failed to update invoice withdrawal status as completed in database",
-                                    ),
-                                }
-                            })?;
-                    },
-                    // TODO: should be implemented later, not necessary for now
-                    _ => {},
-                }
-
-                dao_transaction
-                    .commit()
-                    .await
-                    .map_err(|e| {
-                        tracing::error!(
-                            error = %e,
-                            "Failed to commit database transaction while handling transfer result",
-                        );
-
-                        ChainExecutorError::DaoTransactionError {
-                            reason: "Failed to commit database transaction".to_string(),
-                        }
-                    })?;
-                // TODO: log origin? We've got invoice id logged, so it's not critical
-                tracing::info!(
-                    "Processed successful transfer result",
-                );
-            },
-            Err(error) => {
-                dao_transaction
-                    .update_transaction_failed(
-                        data.transaction_id,
-                        error.transaction_id,
-                        error
-                            .retry_meta
-                            .failure_message
-                            .clone()
-                            .unwrap_or_default(),
-                        // TODO: use transfer.timestamp
-                        Utc::now(),
-                    )
-                    .await
-                    .map_err(|e| {
-                        tracing::error!(
-                            error = %e,
-                            "Failed to update transaction as failed in database",
-                        );
-
-                        ChainExecutorError::DaoTransactionError {
-                            reason: format!(
-                                "Failed to update transaction as failed in database",
-                            ),
-                        }
-                    })?;
-
-                #[expect(clippy::single_match)]
-                match data.origin.variant() {
-                    TransactionOriginVariant::Payout(payout_id) => {
-                        dao_transaction
-                            .update_payout_retry(
-                                payout_id,
-                                error.retry_meta,
-                                error.is_retriable,
-                            )
-                            .await
-                            .map_err(|e| {
-                                tracing::error!(
-                                    error = %e,
-                                    "Failed to update payout as failed in database",
-                                );
-
-                                ChainExecutorError::DaoTransactionError {
-                                    reason: format!(
-                                        "Failed to update payout as failed in database",
-                                    ),
-                                }
-                            })?;
-                    },
-                    _ => {},
-                }
-
-                dao_transaction
-                    .commit()
-                    .await
-                    .map_err(|e| {
-                        tracing::error!(
-                            error = %e,
-                            "Failed to commit database transaction while handling failed transfer result",
-                        );
-
-                        ChainExecutorError::DaoTransactionError {
-                            reason: "Failed to commit database transaction".to_string(),
-                        }
-                    })?;
-                // TODO: log origin? We've got invoice id logged, so it's not critical
-                tracing::info!(
-                    "Processed failed transfer result",
-                );
-            },
+        match result {
+            Ok(transfer) => self.handle_transfer_result_sucess(dao_transaction, transaction_id, invoice_id, origin, transfer).await,
+            Err(error) => self.handle_transfer_result_error(dao_transaction, transaction_id, invoice_id, origin, error).await,
         }
-
-        Ok(())
     }
 
     async fn perform(
@@ -638,7 +671,12 @@ impl TransfersExecutor {
         loop {
             tokio::select! {
                 _ = interval.tick(), if !shutdown_expected => {
-                    self.schedule_transfers(&mut futures_set).await.unwrap();
+                    if let Err(e) = self.schedule_transfers(&mut futures_set).await {
+                        tracing::error!(
+                            error = %e,
+                            "Error while scheduling transfers for processing",
+                        );
+                    };
                 },
                 future_result = futures_set.next(), if !futures_set.is_empty() => {
                     if let Some(data) = future_result {
@@ -670,12 +708,12 @@ impl TransfersExecutor {
     }
 
     pub fn new(
-        asset_hub_client: AssetHubClient,
-        dao: DAO,
+        asset_hub_client: AH,
+        dao: D,
         keyring_client: KeyringClient,
     ) -> Self {
         Self {
-            asset_hub_client,
+            asset_hub_client: Arc::new(asset_hub_client),
             dao,
             keyring_client,
         }
@@ -688,5 +726,43 @@ impl TransfersExecutor {
         tokio::spawn(async move {
             self.perform(token).await;
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use mockall::predicate;
+
+    use crate::chain_client::{default_keyring_client, MockBlockChainClient};
+    use crate::dao::MockDaoInterface;
+    use crate::types::default_payout;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_collect_pending_payout_requests() {
+        let keyring_client = default_keyring_client();
+
+        let mut dao = MockDaoInterface::new();
+
+        dao.expect_get_pending_payouts()
+            .once()
+            .with(predicate::eq(10))
+            .returning(|_| Ok(vec![default_payout(Uuid::new_v4())]));
+
+        let asset_hub_client = MockBlockChainClient::default();
+
+        let executor = TransfersExecutor::new(
+            asset_hub_client,
+            dao,
+            keyring_client,
+        );
+
+        let requests = executor
+            .collect_pending_payout_requests(10)
+            .await
+            .unwrap();
+
+        assert_eq!(requests.len(), 1);
     }
 }

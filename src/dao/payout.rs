@@ -291,10 +291,8 @@ impl<T: DaoExecutor + 'static> DaoPayoutMethods for T {}
 mod tests {
     use chrono::Utc;
 
-    use crate::dao::{
-        DaoInvoiceMethods,
-        create_test_dao,
-    };
+    use crate::dao::create_test_dao;
+    use crate::dao::invoice::DaoInvoiceMethods;
     use crate::types::{
         default_invoice,
         default_payout,
