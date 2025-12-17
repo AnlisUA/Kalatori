@@ -38,6 +38,9 @@ CREATE TABLE IF NOT EXISTS invoices (
     -- Cart metadata
     cart TEXT NOT NULL DEFAULT '{}',  -- JSONB: {cart_items?}
 
+    -- Redirect URL
+    redirect_url TEXT NOT NULL DEFAULT '',
+
     -- Timestamps
     valid_till TEXT NOT NULL,  -- ISO 8601 datetime
     created_at TEXT NOT NULL DEFAULT (datetime('now')),  -- ISO 8601 datetime

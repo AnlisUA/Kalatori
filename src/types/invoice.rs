@@ -175,6 +175,7 @@ pub struct Invoice {
     pub withdrawal_status: WithdrawalStatus, // Temporary backward compat field
     pub callback: String,
     pub cart: InvoiceCart,
+    pub redirect_url: String,
     pub valid_till: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -193,6 +194,7 @@ pub struct InvoiceRow {
     pub withdrawal_status: WithdrawalStatus,
     pub callback: String,
     pub cart: Json<InvoiceCart>,
+    pub redirect_url: String,
     pub valid_till: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -212,6 +214,7 @@ impl From<InvoiceRow> for Invoice {
             withdrawal_status: row.withdrawal_status,
             callback: row.callback,
             cart: row.cart.0,
+            redirect_url: row.redirect_url,
             valid_till: row.valid_till,
             created_at: row.created_at,
             updated_at: row.updated_at,
@@ -230,6 +233,7 @@ pub struct CreateInvoiceData {
     pub payment_address: String,
     pub callback: String,
     pub cart: InvoiceCart,
+    pub redirect_url: String,
     pub valid_till: DateTime<Utc>,
 }
 
@@ -270,6 +274,7 @@ impl Invoice {
             withdrawal_status: WithdrawalStatus::Waiting,
             callback: order_query.callback,
             cart: InvoiceCart::empty(),
+            redirect_url: order_query.redirect_url,
             valid_till,
             created_at: now,
             updated_at: now,
@@ -314,6 +319,7 @@ pub fn default_invoice() -> Invoice {
         withdrawal_status: WithdrawalStatus::Waiting,
         callback: "http://localhost:8080/callback".to_string(),
         cart: InvoiceCart::empty(),
+        redirect_url: "http://localhost:8080/thankyou".to_string(),
         #[expect(clippy::arithmetic_side_effects)]
         valid_till: now + Duration::hours(24),
         created_at: now,

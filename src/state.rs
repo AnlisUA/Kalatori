@@ -118,6 +118,17 @@ impl State {
                         };
 
                         match state_request {
+                            StateAccessRequest::GetInvoice(invoice_id, res) => {
+                                let invoice = state.dao
+                                    .get_invoice_by_id(invoice_id)
+                                    .await
+                                    .map_err(|e| {
+                                        tracing::error!("Failed to get invoice {}: {:?}", invoice_id, e);
+                                        Error::Fatal
+                                    });
+
+                                res.send(invoice).map_err(|_| Error::Fatal)?;
+                            }
                             StateAccessRequest::ConnectChain(assets) => {
                                 // it MUST be asserted in chain tracker that assets are those and only
                                 // those that user requested
@@ -515,10 +526,25 @@ impl State {
             .await
             .map_err(|_| Error::Fatal)
     }
+
+    pub async fn get_invoice(
+        &self,
+        invoice_id: Uuid,
+    ) -> Result<Option<Invoice>, Error> {
+        let (res, rx) = oneshot::channel();
+        self.tx
+            .send(StateAccessRequest::GetInvoice(
+                invoice_id, res,
+            ))
+            .await
+            .map_err(|_| Error::Fatal)?;
+        rx.await.map_err(|_| Error::Fatal)?
+    }
 }
 
 #[expect(clippy::large_enum_variant)]
 enum StateAccessRequest {
+    GetInvoice(Uuid, oneshot::Sender<Result<Option<Invoice>, Error>>),
     ConnectChain(HashMap<String, CurrencyProperties>),
     GetInvoiceStatus(GetInvoiceStatus),
     CreateInvoice(CreateInvoice),
@@ -669,8 +695,7 @@ impl StateData {
         let Some(invoice) = self
             .dao
             .get_invoice_by_order_id(&order)
-            .await
-            ?
+            .await?
         else {
             return Ok(OrderResponse::NotFound);
         };
@@ -679,8 +704,7 @@ impl StateData {
         let transactions = self
             .dao
             .get_invoice_transactions(invoice.id)
-            .await
-            ?;
+            .await?;
 
         // Convert transactions to legacy format
         let legacy_transactions: Vec<TransactionInfo> = transactions
@@ -703,7 +727,7 @@ impl StateData {
             recipient: to_base58_string(self.recipient.0, 2), // TODO maybe but spec says use "2"
             server_info: self.server_info.clone(),
             order_info,
-            payment_page: String::new(),
+            payment_page: format!("http://localhost:16726/public/v1?invoice_id={}", invoice.id),
             redirect_url: String::new(),
         }))
     }
@@ -737,8 +761,7 @@ impl StateData {
             match self
                 .dao
                 .get_invoice_by_order_id(&order)
-                .await
-                ?
+                .await?
             {
                 None => {
                     // PHASE 2a: Create new invoice
@@ -755,8 +778,7 @@ impl StateData {
                     let invoice = self
                         .dao
                         .create_invoice(invoice.clone())
-                        .await
-                        ?;
+                        .await?;
 
                     // Convert Invoice back to OrderInfo for backward compatibility
                     let order_info = self.invoice_to_order_info(&invoice, &currency);
@@ -772,7 +794,7 @@ impl StateData {
                         .await?;
 
                     return Ok(OrderResponse::NewOrder(
-                        self.order_status(order, order_info, String::new()),
+                        self.order_status(order, order_info, invoice_id, String::new()),
                     ));
                 },
                 Some(existing_invoice) => {
@@ -813,7 +835,7 @@ impl StateData {
                         let order_info = self.invoice_to_order_info(&updated_invoice, &currency);
 
                         return Ok(OrderResponse::ModifiedOrder(
-                            self.order_status(order, order_info, String::new()),
+                            self.order_status(order, order_info, existing_invoice.id, String::new()),
                         ));
                     }
                     // Paid/Expired/Canceled - collision
@@ -822,6 +844,7 @@ impl StateData {
                         self.order_status(
                             order,
                             order_info,
+                            existing_invoice.id,
                             String::from("Order with this ID was already processed"),
                         ),
                     ));
@@ -951,6 +974,7 @@ impl StateData {
         &self,
         order: String,
         order_info: OrderInfo,
+        invoice_id: Uuid,
         message: String,
     ) -> OrderStatus {
         OrderStatus {
@@ -959,7 +983,7 @@ impl StateData {
             recipient: to_base58_string(self.recipient.0, 2), // TODO maybe but spec says use "2"
             server_info: self.server_info.clone(),
             order_info,
-            payment_page: String::new(),
+            payment_page: format!("http://localhost:16726/public/v1?invoice_id={}", invoice_id),
             redirect_url: String::new(),
         }
     }

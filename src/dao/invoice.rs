@@ -104,8 +104,8 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
         invoice: Invoice,
     ) -> Result<Invoice, DaoInvoiceError> {
         let query = sqlx::query_as::<_, InvoiceRow>(
-        "INSERT INTO invoices (id, order_id, asset_id, chain, amount, payment_address, status, withdrawal_status, callback, cart, valid_till, created_at, updated_at, version)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        "INSERT INTO invoices (id, order_id, asset_id, chain, amount, payment_address, status, withdrawal_status, callback, cart, redirect_url, valid_till, created_at, updated_at, version)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING *"
         )
             .bind(invoice.id)
@@ -118,6 +118,7 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
             .bind(invoice.withdrawal_status)
             .bind(&invoice.callback)
             .bind(Json(invoice.cart))
+            .bind(invoice.redirect_url)
             .bind(invoice.valid_till)
             .bind(invoice.created_at)
             .bind(invoice.updated_at)
@@ -369,7 +370,7 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
         match self.fetch_one(query).await {
             Ok(row) => Ok(row.into()),
             Err(e) => {
-            tracing::debug!(
+                tracing::debug!(
                     error.category = "dao.invoice",
                     error.operation = "update_invoice_withdrawal_status",
                     %invoice_id,
@@ -392,6 +393,30 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
                 }
             },
         }
+    }
+
+    async fn update_invoices_expired(&self) -> Result<Vec<Invoice>, DaoInvoiceError> {
+        let query = sqlx::query_as::<_, InvoiceRow>(
+            "UPDATE invoices
+            SET status = 'UnpaidExpired',
+                updated_at = datetime('now'),
+                version = version + 1
+            WHERE status = 'Waiting' AND valid_till < datetime('now')
+            RETURNING *",
+        );
+
+        self.fetch_all(query)
+            .await
+            .map(|rows| rows.into_iter().map(From::from).collect())
+            .map_err(|e| {
+                tracing::debug!(
+                    error.category = "dao.invoice",
+                    error.operation = "update_invoices_expired",
+                    error.source = ?e,
+                    "Failed to update expired invoices"
+                );
+                DaoInvoiceError::DatabaseError
+            })
     }
 }
 

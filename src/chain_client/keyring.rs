@@ -82,7 +82,7 @@ impl Keyring {
                 self.process_message(msg);
             }
 
-            // TODO: add logs
+            tracing::info!("Keyring actor has been shut down");
         });
 
         let client = KeyringClient {

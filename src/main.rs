@@ -4,6 +4,7 @@ mod configs;
 mod dao;
 mod definitions;
 mod error;
+mod expiration_detector;
 mod handlers;
 mod legacy_types;
 mod server;
@@ -37,6 +38,7 @@ use error::{
     Error,
     PrettyCause,
 };
+use expiration_detector::ExpirationDetector;
 use legacy_types::{
     ConfigWoChains,
     CurrencyProperties,
@@ -279,7 +281,15 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
         .map_err(|_| Error::Fatal)?;
 
     let keyring = Keyring::new(seed_config.seed);
+    // Please don't keep keyring_client in this scope, it must be moved in order to keep
+    // graceful shutdown working.
     let (keyring_handle, keyring_client) = keyring.ignite();
+
+    let expiration_detector = ExpirationDetector::new(
+        dao.clone(),
+    );
+
+    let expiration_detector_handle = expiration_detector.ignite(shutdown_notification.token.clone());
 
     let transfer_executor = TransfersExecutor::new(
         asset_hub_client,
@@ -292,7 +302,7 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
     let (cm_tx, cm_rx) = oneshot::channel();
 
     let state = State::initialise(
-        keyring_client.clone(),
+        keyring_client,
         ConfigWoChains {
             recipient,
             remark: payments_config.remark,
@@ -338,7 +348,18 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
         () = task_tracker.wait_and_shutdown(error_rx, shutdown_notification) => {
             shutdown_completed.cancel();
 
-            let (shutdown_result, _keyring_result, _transfer_executor_result) = tokio::join!(shutdown_listener, keyring_handle, transfer_executor_handle);
+            let (
+                shutdown_result,
+                _keyring_result,
+                _transfer_executor_result,
+                _expiration_detector_result,
+            ) = tokio::join!(
+                shutdown_listener,
+                keyring_handle,
+                transfer_executor_handle,
+                expiration_detector_handle,
+            );
+
             shutdown_result
         }
         shutdown_listener_result = &mut shutdown_listener => shutdown_listener_result

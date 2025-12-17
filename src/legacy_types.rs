@@ -42,6 +42,7 @@ pub struct OrderQuery {
     pub order: String,
     pub amount: f64,
     pub callback: String,
+    pub redirect_url: String,
     pub currency: String,
 }
 
@@ -68,7 +69,6 @@ pub struct OrderStatus {
 
 #[derive(Clone, Debug, Serialize, Encode, Decode)]
 pub struct OrderInfo {
-    // pub order_id: String,
     pub withdrawal_status: WithdrawalStatus,
     pub payment_status: PaymentStatus,
     pub amount: f64,
@@ -88,7 +88,6 @@ impl OrderInfo {
         death: Timestamp,
     ) -> Self {
         OrderInfo {
-            // order_id: query.order,
             withdrawal_status: WithdrawalStatus::Waiting,
             payment_status: PaymentStatus::Pending,
             amount: query.amount,
