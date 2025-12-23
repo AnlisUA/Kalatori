@@ -27,7 +27,7 @@ describe('Blackbox API Tests', () => {
         decimals: 6,
         kind: 'asset',
         rpc_url: 'wss://asset-hub-polkadot-rpc.dwellir.com',
-        ss58: 0,
+        ss58: 2,
       },
       USDt: {
         asset_id: 1984,
@@ -35,7 +35,7 @@ describe('Blackbox API Tests', () => {
         decimals: 6,
         kind: 'asset',
         rpc_url: 'wss://asset-hub-polkadot-rpc.dwellir.com',
-        ss58: 0,
+        ss58: 2,
       },
     };
 

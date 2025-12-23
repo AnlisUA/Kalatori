@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::pin::Pin;
 
 use futures::{
     StreamExt,
@@ -45,6 +44,7 @@ use super::{
     SignedTransactionUtils,
     SubscriptionError,
     TransactionError,
+    TransfersStream,
     UnsignedTransaction,
 };
 
@@ -360,6 +360,12 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
     }
 
     #[instrument(skip(self))]
+    async fn recreate(&self) -> Result<Self, ClientError> {
+        // TODO: implement recreation
+        Ok(self.clone())
+    }
+
+    #[instrument(skip(self))]
     async fn fetch_asset_info(
         &self,
         asset_id: &u32,
@@ -485,7 +491,7 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
         &self,
         asset_ids: &[u32],
     ) -> Result<
-        Pin<Box<dyn stream::Stream<Item = Result<Vec<ChainTransfer<AssetHubChainConfig>>, SubscriptionError>> + Send>>,
+        TransfersStream<AssetHubChainConfig>,
         SubscriptionError,
     > {
         let client = self.clone();
@@ -897,8 +903,7 @@ mod tests {
 
         println!("Result: {amount:?}");
 
-        // let transfer_stream = client.subscribe_transfers(assets).await;
-        // pin_mut!(transfer_stream);
+        // let mut transfer_stream = client.subscribe_transfers(&assets).await.unwrap();
 
         // println!("Got stream");
 
@@ -916,5 +921,7 @@ mod tests {
         //         }
         //     }
         // }
+
+        // println!("Stream has been closed");
     }
 }

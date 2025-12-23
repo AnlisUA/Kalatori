@@ -23,16 +23,19 @@ use crate::chain_client::{
     BlockChainClient,
     ChainConfig,
     GeneralChainTransfer,
-    GeneralTransactionId,
     KeyringClient,
     SignedTransaction,
     SignedTransactionUtils,
     TransactionError,
 };
 use crate::dao::{
-    DAO, DaoInterface, DaoTransactionInterface
+    DAO,
+    DaoInterface,
+    DaoTransactionInterface,
+    DaoInvoiceError,
 };
 use crate::types::{
+    GeneralTransactionId,
     OutgoingTransaction,
     Payout,
     PayoutStatus,
@@ -438,7 +441,7 @@ impl<D: DaoInterface + 'static, AH: BlockChainClient<AssetHubChainConfig> + 'sta
     }
 
     #[instrument(
-        skip(self, dao_transaction, transfer),
+        skip(self, dao_transaction, origin, transfer),
     )]
     async fn handle_transfer_result_sucess(
         &self,
@@ -490,24 +493,37 @@ impl<D: DaoInterface + 'static, AH: BlockChainClient<AssetHubChainConfig> + 'sta
                         }
                     })?;
 
-                dao_transaction
+                // TODO: get rid of legacy withdrawal status update later
+                let update_withdrawal_status_result = dao_transaction
                     .update_invoice_withdrawal_status(
                         invoice_id,
                         crate::legacy_types::WithdrawalStatus::Completed,
                     )
-                    .await
-                    .map_err(|e| {
+                    .await;
+
+                match update_withdrawal_status_result {
+                    Err(DaoInvoiceError::WithdrawalStatusConstraintViolation { current_status, .. }) => {
+                        if current_status == crate::legacy_types::WithdrawalStatus::Forced {
+                            tracing::warn!(
+                                invoice_id = %invoice_id,
+                                "Invoice withdrawal status is Forced, skip updating to Completed",
+                            );
+                        }
+                    },
+                    Err(e) => {
                         tracing::error!(
                             error = %e,
                             "Failed to update invoice withdrawal status as completed in database",
                         );
 
-                        ChainExecutorError::DaoTransactionError {
+                        return Err(ChainExecutorError::DaoTransactionError {
                             reason: format!(
                                 "Failed to update invoice withdrawal status as completed in database",
                             ),
-                        }
-                    })?;
+                        })
+                    },
+                    Ok(_) => {}
+                }
             },
             // TODO: should be implemented later, not necessary for now
             _ => {},
@@ -526,6 +542,7 @@ impl<D: DaoInterface + 'static, AH: BlockChainClient<AssetHubChainConfig> + 'sta
                     reason: "Failed to commit database transaction".to_string(),
                 }
             })?;
+
         // TODO: log origin? We've got invoice id logged, so it's not critical
         tracing::info!(
             "Processed successful transfer result",

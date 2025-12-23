@@ -9,7 +9,6 @@
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-use crate::chain_client::GeneralTransactionId;
 use crate::legacy_types::WithdrawalStatus;
 use crate::types::*;
 

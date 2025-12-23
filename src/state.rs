@@ -5,8 +5,9 @@ use subxt::utils::AccountId32;
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
+use rust_decimal::Decimal;
 
-use crate::chain::ChainManager;
+use crate::chain::{InvoiceRegistry, InvoiceRegistryRecord};
 use crate::chain::utils::to_base58_string;
 use crate::chain_client::KeyringClient;
 use crate::dao::{
@@ -65,7 +66,8 @@ impl State {
             account_lifetime,
         }: ConfigWoChains,
         dao: DAO,
-        chain_manager_receiver: oneshot::Receiver<ChainManager>,
+        registry: InvoiceRegistry,
+        currencies: HashMap<String, CurrencyProperties>,
         instance_id: String,
         task_tracker: TaskTracker,
         shutdown_notification: CancellationToken,
@@ -92,22 +94,19 @@ impl State {
 
         // Remember to always spawn async here or things might deadlock
         task_tracker.clone().spawn("State Handler", async move {
-            let chain_manager = chain_manager_receiver.await.map_err(|_| Error::Fatal)?;
-
-            // Clone chain_manager for restoration before moving into StateData
-            let chain_manager_for_restoration = chain_manager.clone();
-
-            let currencies = HashMap::new();
             let mut state = StateData {
                 currencies,
                 recipient: recipient.clone(),
                 server_info,
                 dao,
-                chain_manager,
+                registry,
                 signer,
                 account_lifetime,
                 invoices_restored: false,
             };
+
+            // Restore active invoices now that currencies are populated
+            state.restore_active_invoices().await;
 
             loop {
                 tokio::select! {
@@ -135,10 +134,7 @@ impl State {
                                 state.update_currencies(assets);
 
                                 // Restore active invoices now that currencies are populated
-                                state.restore_active_invoices(
-                                    chain_manager_for_restoration.clone(),
-                                    &task_tracker
-                                ).await;
+                                state.restore_active_invoices().await;
                             }
                             StateAccessRequest::GetInvoiceStatus(request) => {
                                 request
@@ -164,7 +160,13 @@ impl State {
                                 res.send(server_status).map_err(|_| Error::Fatal)?;
                             }
                             StateAccessRequest::ServerHealth(res) => {
-                                let connected_rpcs = state.chain_manager.get_connected_rpcs().await?;
+                                // TODO: return actual RPC endpoints, don't really care about statuses for now
+                                let connected_rpcs = vec![RpcInfo {
+                                    chain_name: "statemint".to_string(),
+                                    rpc_url: "http://localhost:9000".to_string(),
+                                    status: Health::Ok,
+                                }];
+
                                 let server_health = ServerHealth {
                                     server_info: state.server_info.clone(),
                                     connected_rpcs: connected_rpcs.clone(),
@@ -217,10 +219,6 @@ impl State {
                                                 if let Err(e) = result {
                                                     tracing::error!("Failed to initiate payout for order {}: {e:?}", order.id);
                                                 }
-
-                                                // let currency = state.get_currency_info(&invoice.chain, invoice.asset_id)?;
-                                                // let order_info = state.invoice_to_order_info(&order, &currency);
-                                                // drop(state.chain_manager.reap(invoice_id, order_info, state.recipient.clone()).await);
                                             }
                                             Err(e) => {
                                                 tracing::error!(
@@ -331,12 +329,6 @@ impl State {
                     }
                     // Orchestrate shutdown from here
                     () = shutdown_notification.cancelled() => {
-                        // Web server shuts down on its own; it does not matter what it sends now.
-
-                        // First shut down active actions for external world.
-                        state.chain_manager.shutdown().await;
-
-                        // And shut down finally
                         break;
                     }
                 }
@@ -578,7 +570,7 @@ struct StateData {
     recipient: AccountId32,
     server_info: ServerInfo,
     dao: DAO,
-    chain_manager: ChainManager,
+    registry: InvoiceRegistry,
     signer: KeyringClient,
     account_lifetime: crate::legacy_types::Timestamp,
     invoices_restored: bool,
@@ -594,8 +586,6 @@ impl StateData {
 
     async fn restore_active_invoices(
         &mut self,
-        chain_manager_wakeup: ChainManager,
-        task_tracker: &TaskTracker,
     ) {
         // Only restore once
         if self.invoices_restored {
@@ -619,70 +609,18 @@ impl StateData {
             active_invoices.len()
         );
 
-        // Pre-process invoices: convert to OrderInfo using state methods
-        let mut invoices_to_restore = Vec::new();
-        for invoice in active_invoices {
-            match self.get_currency_info(&invoice.chain, invoice.asset_id) {
-                Ok(currency) => {
-                    let order_info = self.invoice_to_order_info(&invoice, &currency);
-                    invoices_to_restore.push((
-                        invoice.id,
-                        invoice.order_id.clone(),
-                        order_info,
-                    ));
-                },
-                Err(e) => {
-                    tracing::error!(
-                        "Failed to get currency info for invoice {} (order: {}): {e:?}",
-                        invoice.id,
-                        invoice.order_id
-                    );
-                },
-            }
-        }
+        // TODO: fetch invoice's filled amount from transactions instead of ZERO hardcode.
+        // The best approach will be:
+        // 1. Fetch all transactions for active invoice
+        // 2. Sum up amounts of completed transactions
+        // 3. Fetch current balance of payment account from chain
+        // 4. Compare if they're equal, if not, try to fetch missing transactions using some chain tracker
+        let restore_invoices = active_invoices
+            .into_iter()
+            .map(|invoice| InvoiceRegistryRecord::new(invoice, Decimal::ZERO))
+            .collect();
 
-        let recipient_cloned = self.recipient.clone();
-        task_tracker.spawn("Restore saved orders", async move {
-            let mut restored_count: u32 = 0;
-            let mut failed_count: u32 = 0;
-
-            for (invoice_id, order_id, order_info) in invoices_to_restore {
-                match chain_manager_wakeup
-                    .add_invoice(
-                        invoice_id,
-                        order_info,
-                        order_id.clone(),
-                        recipient_cloned.clone(),
-                    )
-                    .await
-                {
-                    Ok(()) => {
-                        tracing::info!(
-                            "Restored invoice {} (order: {})",
-                            invoice_id,
-                            order_id
-                        );
-                        restored_count = restored_count.saturating_add(1);
-                    },
-                    Err(e) => {
-                        tracing::error!(
-                            "Failed to restore invoice {} (order: {}): {e:?}",
-                            invoice_id,
-                            order_id
-                        );
-                        failed_count = failed_count.saturating_add(1);
-                    },
-                }
-            }
-
-            tracing::info!(
-                "Invoice restoration complete: {} restored, {} failed",
-                restored_count,
-                failed_count
-            );
-
-            Ok("All saved orders restored")
-        });
+        self.registry.add_invoices(restore_invoices).await;
 
         self.invoices_restored = true;
     }
@@ -753,7 +691,7 @@ impl StateData {
             .generate_asset_hub_address(derivation_params.into())
             .await?;
 
-        let payment_account = to_base58_string(payment_account_id.0, currency.ss58);
+        let payment_account = to_base58_string(payment_account_id.0, 2);
 
         // Retry loop for optimistic locking conflicts
         for attempt in 0..MAX_RETRIES {
@@ -780,18 +718,10 @@ impl StateData {
                         .create_invoice(invoice.clone())
                         .await?;
 
-                    // Convert Invoice back to OrderInfo for backward compatibility
                     let order_info = self.invoice_to_order_info(&invoice, &currency);
 
-                    // Register with chain manager
-                    self.chain_manager
-                        .add_invoice(
-                            invoice.id,
-                            order_info.clone(),
-                            invoice.order_id.clone(),
-                            self.recipient.clone(),
-                        )
-                        .await?;
+                    // Newly created invoice, filled amount is zero
+                    self.registry.add_invoice(InvoiceRegistryRecord::new(invoice, Decimal::ZERO)).await;
 
                     return Ok(OrderResponse::NewOrder(
                         self.order_status(order, order_info, invoice_id, String::new()),

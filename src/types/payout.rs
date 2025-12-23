@@ -22,6 +22,7 @@ use super::common::{
     TransferInfo,
     TransferInfoRow,
 };
+use super::invoice::Invoice;
 use crate::legacy_types::WithdrawalStatus;
 
 /// Payout status
@@ -91,6 +92,29 @@ pub struct Payout {
     pub transfer_info: TransferInfo,
     #[serde(flatten)]
     pub retry_meta: RetryMeta,
+}
+
+impl Payout {
+    pub fn from_invoice(invoice: Invoice, payout_address: String) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            invoice_id: invoice.id,
+            transfer_info: TransferInfo {
+                // TODO: replace it. Invoice's asset_id shouldn't be optional. Always a String.
+                asset_id: invoice.asset_id.unwrap_or_default().to_string(),
+                chain: invoice.chain,
+                source_address: invoice.payment_address,
+                destination_address: payout_address,
+                amount: invoice.amount,
+            },
+            initiator_type: InitiatorType::System,
+            initiator_id: None,
+            status: PayoutStatus::Waiting,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            retry_meta: RetryMeta::default(),
+        }
+    }
 }
 
 #[derive(FromRow)]

@@ -1,6 +1,7 @@
 pub mod definitions;
 mod executor;
 pub mod tracker;
+mod transfer_tracker;
 pub mod utils;
 
 use std::collections::HashMap;
@@ -37,6 +38,7 @@ use definitions::{
 use tracker::start_chain_watch;
 
 pub use executor::TransfersExecutor;
+pub use transfer_tracker::{TransfersTracker, InvoiceRegistry, InvoiceRegistryRecord};
 
 /// Wait this long before forgetting about stuck chain watcher
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(120_000);

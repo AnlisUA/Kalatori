@@ -18,11 +18,9 @@ use std::str::FromStr;
 
 use subxt::utils::AccountId32;
 use tokio::runtime::Runtime;
-use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 use tracing::Level;
 
-use chain::ChainManager;
 use chain_client::Keyring;
 use configs::{
     ChainConfig,
@@ -54,7 +52,7 @@ use utils::shutdown::{
 };
 use utils::task_tracker::TaskTracker;
 
-use crate::chain::TransfersExecutor;
+use crate::chain::{TransfersExecutor, TransfersTracker, InvoiceRegistry};
 use crate::chain_client::{
     AssetHubClient,
     BlockChainClient,
@@ -151,10 +149,10 @@ fn build_currencies_from_config(
         let properties = CurrencyProperties {
             chain_name: chain_config.name.clone(),
             kind: TokenKind::Asset,
-            decimals: 0, // Placeholder - not used during migration validation
+            decimals: 6, // Placeholder - not used during migration validation
             rpc_url: rpc_url.clone(),
             asset_id: Some(asset.id),
-            ss58: 0, // Placeholder - not used during migration
+            ss58: 2, // Placeholder - not used during migration
         };
 
         currencies.insert(asset.name.clone(), properties);
@@ -265,18 +263,18 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
         .await
         .map_err(error::DaoError::Sqlx)?;
 
+    let assets: Vec<_> = chain_config
+        .assets
+        .iter()
+        .map(|config| config.id)
+        .collect();
+
     let asset_hub_client = AssetHubClient::new(&chain_config)
         .await
         .map_err(|_| Error::Fatal)?;
 
     asset_hub_client
-        .init_asset_info(
-            &chain_config
-                .assets
-                .iter()
-                .map(|config| config.id)
-                .collect::<Vec<_>>(),
-        )
+        .init_asset_info(&assets)
         .await
         .map_err(|_| Error::Fatal)?;
 
@@ -285,11 +283,24 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
     // graceful shutdown working.
     let (keyring_handle, keyring_client) = keyring.ignite();
 
+    let invoice_registry = InvoiceRegistry::new();
+
     let expiration_detector = ExpirationDetector::new(
         dao.clone(),
+        invoice_registry.clone(),
     );
 
     let expiration_detector_handle = expiration_detector.ignite(shutdown_notification.token.clone());
+
+    let transfers_tracker = TransfersTracker::new(
+        asset_hub_client.clone(),
+        dao.clone(),
+        // TODO: fill registry with invoices from database
+        invoice_registry.clone(),
+        payments_config.clone(),
+    );
+
+    let transfers_tracker_handle = transfers_tracker.ignite(assets, shutdown_notification.token.clone());
 
     let transfer_executor = TransfersExecutor::new(
         asset_hub_client,
@@ -299,7 +310,7 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
 
     let transfer_executor_handle = transfer_executor.ignite(shutdown_notification.token.clone());
 
-    let (cm_tx, cm_rx) = oneshot::channel();
+    let currencies = build_currencies_from_config(&chain_config);
 
     let state = State::initialise(
         keyring_client,
@@ -309,20 +320,12 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
             account_lifetime: Timestamp(payments_config.account_lifetime_millis),
         },
         dao,
-        cm_rx,
+        invoice_registry,
+        currencies,
         instance_id,
         task_tracker.clone(),
         shutdown_notification.token.clone(),
     );
-
-    cm_tx
-        .send(ChainManager::ignite(
-            chain_config,
-            &state,
-            &task_tracker,
-            &shutdown_notification.token,
-        )?)
-        .map_err(|_| Error::Fatal)?;
 
     let server = server::new(
         shutdown_notification.token.clone(),
@@ -353,11 +356,13 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
                 _keyring_result,
                 _transfer_executor_result,
                 _expiration_detector_result,
+                _transfers_tracker_result,
             ) = tokio::join!(
                 shutdown_listener,
                 keyring_handle,
                 transfer_executor_handle,
                 expiration_detector_handle,
+                transfers_tracker_handle,
             );
 
             shutdown_result

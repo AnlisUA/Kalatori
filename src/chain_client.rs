@@ -16,6 +16,8 @@ use tracing::{
     instrument,
 };
 
+use crate::types::{GeneralTransactionId, TransferInfo};
+
 pub use asset_hub::{
     AssetHubChainConfig,
     AssetHubClient,
@@ -33,6 +35,8 @@ pub use keyring::{
 };
 #[cfg(test)]
 pub use keyring::default_keyring_client;
+
+pub type TransfersStream<T> = Pin<Box<dyn stream::Stream<Item = Result<Vec<ChainTransfer<T>>, SubscriptionError>> + Send>>;
 
 pub trait SignedTransactionUtils {
     /// Encode transaction bytes to hex string
@@ -66,23 +70,6 @@ pub struct AssetInfo<T: ChainConfig> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GeneralTransactionId {
-    pub block_number: Option<u32>,
-    pub position_in_block: Option<u32>,
-    pub hash: Option<String>,
-}
-
-impl GeneralTransactionId {
-    pub fn empty() -> Self {
-        Self {
-            block_number: None,
-            position_in_block: None,
-            hash: None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GeneralChainTransfer {
     pub chain: String,
     pub asset_id: String,
@@ -103,6 +90,16 @@ impl GeneralChainTransfer {
             hash: self.transaction_hash.clone(),
         }
     }
+
+    pub fn to_transfer_info(self) -> TransferInfo {
+        TransferInfo {
+            chain: self.chain,
+            asset_id: self.asset_id,
+            amount: self.amount,
+            source_address: self.sender,
+            destination_address: self.recipient,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -120,7 +117,8 @@ impl<T: ChainConfig> From<ChainTransfer<T>> for GeneralChainTransfer {
         let trans_id: GeneralTransactionId = transfer.transaction_id.into();
 
         Self {
-            chain: String::new(), // Chain name is not available here
+            // TODO: replace with enum, set it to const in ChainConfig trait
+            chain: "statemint".to_string(),
             asset_id: transfer.asset_id.to_string(),
             amount: transfer.amount,
             sender: transfer.sender.to_string(),
@@ -208,6 +206,10 @@ pub trait BlockChainClient<T: ChainConfig>: Sync {
     where
         Self: Sized;
 
+    async fn recreate(&self) -> Result<Self, ClientError>
+    where
+        Self: Sized;
+
     async fn fetch_asset_info(
         &self,
         asset_id: &T::AssetId,
@@ -223,7 +225,7 @@ pub trait BlockChainClient<T: ChainConfig>: Sync {
         &self,
         asset_ids: &[T::AssetId],
     ) -> Result<
-        Pin<Box<dyn stream::Stream<Item = Result<Vec<ChainTransfer<T>>, SubscriptionError>> + Send>>,
+        TransfersStream<T>,
         SubscriptionError,
     >;
 
