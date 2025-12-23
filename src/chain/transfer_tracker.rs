@@ -79,6 +79,7 @@ impl InvoiceRegistry {
         }
     }
 
+    #[expect(dead_code)]
     pub async fn get_invoice(&self, invoice_id: &Uuid) -> Option<InvoiceRegistryRecord> {
         let invoices = self.invoices.read().await;
         invoices.get(invoice_id).cloned()
@@ -110,6 +111,7 @@ impl InvoiceRegistry {
         }
     }
 
+    #[expect(dead_code)]
     pub async fn invoices_count(&self) -> usize {
         let invoices = self.invoices.read().await;
         invoices.len()
@@ -172,19 +174,19 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
         let dao_transaction = self.dao
             .begin_transaction()
             .await
-            .map_err(|e| ChainTransferTrackerError::DaoTransactionError)?;
+            .map_err(|_e| ChainTransferTrackerError::DaoTransactionError)?;
 
         let invoice_id = transaction.invoice_id;
 
         dao_transaction
             .create_transaction(transaction.into())
             .await
-            .map_err(|e| ChainTransferTrackerError::DaoTransactionError)?;
+            .map_err(|_e| ChainTransferTrackerError::DaoTransactionError)?;
 
         let invoice = dao_transaction
             .update_invoice_status(invoice_id, invoice_status)
             .await
-            .map_err(|e| ChainTransferTrackerError::DaoTransactionError)?;
+            .map_err(|_e| ChainTransferTrackerError::DaoTransactionError)?;
 
         if invoice_status == InvoiceStatus::Paid {
             let payout = Payout::from_invoice(invoice, self.config.recipient.clone());
@@ -192,7 +194,7 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
             dao_transaction
                 .create_payout(payout)
                 .await
-                .map_err(|e| ChainTransferTrackerError::DaoTransactionError)?;
+                .map_err(|_e| ChainTransferTrackerError::DaoTransactionError)?;
         }
 
         // TODO: handle overpayments
@@ -200,7 +202,7 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
         dao_transaction
             .commit()
             .await
-            .map_err(|e| ChainTransferTrackerError::DaoTransactionError)?;
+            .map_err(|_e| ChainTransferTrackerError::DaoTransactionError)?;
 
         Ok(())
     }

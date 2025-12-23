@@ -2,7 +2,6 @@ mod chain;
 mod chain_client;
 mod configs;
 mod dao;
-mod definitions;
 mod error;
 mod expiration_detector;
 mod handlers;

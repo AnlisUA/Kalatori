@@ -128,14 +128,6 @@ impl State {
 
                                 res.send(invoice).map_err(|_| Error::Fatal)?;
                             }
-                            StateAccessRequest::ConnectChain(assets) => {
-                                // it MUST be asserted in chain tracker that assets are those and only
-                                // those that user requested
-                                state.update_currencies(assets);
-
-                                // Restore active invoices now that currencies are populated
-                                state.restore_active_invoices().await;
-                            }
                             StateAccessRequest::GetInvoiceStatus(request) => {
                                 request
                                     .res
@@ -174,76 +166,6 @@ impl State {
                                 };
                                 res.send(server_health).map_err(|_| Error::Fatal)?;
                             }
-                            StateAccessRequest::OrderPaid(invoice_id) => {
-                                // Look up invoice to get order_id for legacy database
-                                match state.dao.get_invoice_by_id(invoice_id).await {
-                                    Ok(Some(invoice)) => {
-                                        // Only perform actions if the record is saved in ledger
-                                        let marked = state.dao.update_invoice_status(invoice_id, InvoiceStatus::Paid).await;
-                                        // let marked = state.db.mark_paid(invoice.order_id.clone()).await;
-
-                                        match marked {
-                                            Ok(order) => {
-                                                if !order.callback.is_empty() {
-                                                    let callback = order.callback.clone();
-                                                    tokio::spawn(async move {
-                                                        tracing::info!("Sending callback to: {}", callback);
-
-                                                        // fire and forget
-                                                        if let Err(e) = reqwest::Client::new().get(&callback).send().await {
-                                                            tracing::error!("Failed to send callback to {}: {:?}", callback, e);
-                                                        }
-                                                    });
-                                                }
-
-                                                let payout = Payout {
-                                                    id: Uuid::new_v4(),
-                                                    invoice_id: invoice.id,
-                                                    initiator_type: crate::types::InitiatorType::System,
-                                                    initiator_id: None,
-                                                    status: crate::types::PayoutStatus::Waiting,
-                                                    transfer_info: crate::types::TransferInfo {
-                                                        chain: invoice.chain.clone(),
-                                                        asset_id: invoice.asset_id.unwrap_or(0).to_string(),
-                                                        amount: invoice.amount,
-                                                        source_address: invoice.payment_address,
-                                                        destination_address: to_base58_string(state.recipient.0, 2),
-                                                    },
-                                                    created_at: Utc::now(),
-                                                    updated_at: Utc::now(),
-                                                    retry_meta: crate::types::RetryMeta::default(),
-                                                };
-
-                                                let result = state.dao.create_payout(payout).await;
-
-                                                if let Err(e) = result {
-                                                    tracing::error!("Failed to initiate payout for order {}: {e:?}", order.id);
-                                                }
-                                            }
-                                            Err(e) => {
-                                                tracing::error!(
-                                                    "Order was paid but this could not be recorded! {e:?}"
-                                                );
-                                            }
-                                        }
-                                    }
-                                    Ok(None) => {
-                                        tracing::error!("Invoice {invoice_id} not found in database");
-                                    }
-                                    Err(e) => {
-                                        tracing::error!("Failed to look up invoice {invoice_id}: {e:?}");
-                                    }
-                                }
-                            }
-                            StateAccessRequest::RecordTransactionV2 { invoice_id, transaction } => {
-                                let record = state.dao.create_transaction(transaction).await;
-
-                                if let Err(e) = record {
-                                    tracing::error!(
-                                        "Found a transaction related to invoice {invoice_id}, but this could not be recorded! {e:?}"
-                                    );
-                                }
-                            }
                             StateAccessRequest::ForceWithdrawal(order_id) => {
                                 // Look up invoice_id from order_id
                                 match state.dao.get_invoice_by_order_id(&order_id).await {
@@ -276,8 +198,6 @@ impl State {
 
                                                 match result {
                                                     Ok(_) => {
-                                                        // let marked = state.db.mark_forced(order_id.clone()).await;
-                                                        // TODO: do it later, on payout processing
                                                         let marked = state.dao.update_invoice_withdrawal_status(invoice.id, crate::legacy_types::WithdrawalStatus::Forced).await;
 
                                                         match marked {
@@ -304,24 +224,6 @@ impl State {
                                     }
                                     Err(e) => {
                                         tracing::error!("Failed to look up invoice for order_id {order_id}: {e:?}");
-                                    }
-                                }
-                            }
-                            StateAccessRequest::IsOrderPaid(invoice_id, res) => {
-                                // Look up invoice to get order_id for legacy database
-                                match state.dao.get_invoice_by_id(invoice_id).await {
-                                    Ok(Some(invoice)) => {
-                                        let is_marked_paid = invoice.status == InvoiceStatus::Paid;
-
-                                        res.send(is_marked_paid).map_err(|_| Error::Fatal)?;
-                                    }
-                                    Ok(None) => {
-                                        tracing::error!("Invoice {invoice_id} not found in database");
-                                        // Send false as invoice not found means not paid
-                                        res.send(false).map_err(|_| Error::Fatal)?;
-                                    }
-                                    Err(e) => {
-                                        tracing::error!("Failed to look up invoice {invoice_id}: {e:?}");
                                     }
                                 }
                             }
@@ -356,21 +258,6 @@ impl State {
         } else {
             Health::Critical
         }
-    }
-
-    pub async fn connect_chain(
-        &self,
-        assets: HashMap<String, CurrencyProperties>,
-    ) {
-        self.tx
-            .send(StateAccessRequest::ConnectChain(assets))
-            .await
-            .unwrap_or_else(|e| {
-                tracing::error!(
-                    "Failed to send ConnectChain request: {}",
-                    e
-                );
-            });
     }
 
     pub async fn order_status(
@@ -413,14 +300,6 @@ impl State {
         order_query: OrderQuery,
     ) -> Result<OrderResponse, Error> {
         let (res, rx) = oneshot::channel();
-        /*
-                Invoicee {
-                        callback: callback.clone(),
-                        amount: Balance::parse(amount, 6),
-                        paid: false,
-                        paym_acc: pay_acc.clone(),
-                    },
-        */
         self.tx
             .send(StateAccessRequest::CreateInvoice(
                 CreateInvoice {
@@ -450,36 +329,6 @@ impl State {
         rx.await.map_err(|_| Error::Fatal)
     }
 
-    pub async fn is_order_paid(
-        &self,
-        invoice_id: Uuid,
-    ) -> Result<bool, Error> {
-        let (res, rx) = oneshot::channel();
-        self.tx
-            .send(StateAccessRequest::IsOrderPaid(
-                invoice_id, res,
-            ))
-            .await
-            .map_err(|_| Error::Fatal)?;
-        rx.await.map_err(|_| Error::Fatal)
-    }
-
-    pub async fn order_paid(
-        &self,
-        invoice_id: Uuid,
-    ) {
-        if self
-            .tx
-            .send(StateAccessRequest::OrderPaid(
-                invoice_id,
-            ))
-            .await
-            .is_err()
-        {
-            tracing::warn!("Data race on shutdown; please restart the daemon for cleaning up");
-        }
-    }
-
     pub async fn force_withdrawal(
         &self,
         order: String,
@@ -503,22 +352,6 @@ impl State {
         }
     }
 
-    pub async fn record_transaction_v2(
-        &self,
-        invoice_id: Uuid,
-        transaction: Transaction,
-    ) -> Result<(), Error> {
-        self.tx
-            .send(
-                StateAccessRequest::RecordTransactionV2 {
-                    invoice_id,
-                    transaction,
-                },
-            )
-            .await
-            .map_err(|_| Error::Fatal)
-    }
-
     pub async fn get_invoice(
         &self,
         invoice_id: Uuid,
@@ -537,7 +370,6 @@ impl State {
 #[expect(clippy::large_enum_variant)]
 enum StateAccessRequest {
     GetInvoice(Uuid, oneshot::Sender<Result<Option<Invoice>, Error>>),
-    ConnectChain(HashMap<String, CurrencyProperties>),
     GetInvoiceStatus(GetInvoiceStatus),
     CreateInvoice(CreateInvoice),
     IsCurrencySupported {
@@ -546,12 +378,6 @@ enum StateAccessRequest {
     },
     ServerStatus(oneshot::Sender<ServerStatus>),
     ServerHealth(oneshot::Sender<ServerHealth>),
-    OrderPaid(Uuid),
-    IsOrderPaid(Uuid, oneshot::Sender<bool>),
-    RecordTransactionV2 {
-        invoice_id: Uuid,
-        transaction: Transaction,
-    },
     ForceWithdrawal(String),
 }
 
@@ -577,13 +403,6 @@ struct StateData {
 }
 
 impl StateData {
-    fn update_currencies(
-        &mut self,
-        currencies: HashMap<String, CurrencyProperties>,
-    ) {
-        self.currencies.extend(currencies);
-    }
-
     async fn restore_active_invoices(
         &mut self,
     ) {

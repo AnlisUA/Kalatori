@@ -215,6 +215,7 @@ pub trait BlockChainClient<T: ChainConfig>: Sync {
         asset_id: &T::AssetId,
     ) -> Result<AssetInfo<T>, QueryError>;
 
+    #[cfg_attr(not(test), expect(dead_code))]
     async fn fetch_asset_balance(
         &self,
         asset_id: &T::AssetId,
