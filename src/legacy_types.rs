@@ -21,12 +21,25 @@ use serde::{
     Serializer,
 };
 
+use crate::configs::ChainConfig;
+use crate::error::OrderError;
+use crate::types::{Invoice, Transaction, TransactionStatus};
+
 pub const AMOUNT: &str = "amount";
 pub const CURRENCY: &str = "currency";
 pub type AssetId = u32;
 pub type Decimals = u8;
 pub type BlockNumber = u32;
 pub type ExtrinsicIndex = u32;
+pub type CurrenciesMap = HashMap<String, CurrencyProperties>;
+
+#[derive(Clone)]
+pub struct LegacyApiData {
+    pub server_info: ServerInfo,
+    pub currencies: CurrenciesMap,
+    pub recipient: String,
+    pub rpc_endpoints: Vec<String>,
+}
 
 #[derive(Encode, Decode, Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Timestamp(pub u64);
@@ -37,6 +50,7 @@ pub struct InvalidParameter {
     pub message: String,
 }
 
+#[expect(dead_code)]
 #[derive(Debug, Clone)]
 pub struct OrderQuery {
     pub order: String,
@@ -307,19 +321,20 @@ pub enum TxStatus {
     Failed,
 }
 
+impl From<TransactionStatus> for TxStatus {
+    fn from(status: TransactionStatus) -> Self {
+        match status {
+            TransactionStatus::Completed => TxStatus::Finalized,
+            TransactionStatus::Failed => TxStatus::Failed,
+            TransactionStatus::Waiting | TransactionStatus::InProgress => TxStatus::Pending,
+        }
+    }
+}
+
 // ============================================================================
 // Legacy Database Types (from database.rs)
 // These types are used for sled database operations and migration
 // ============================================================================
-
-use subxt::utils::AccountId32;
-
-/// Configuration without chain-specific details
-pub struct ConfigWoChains {
-    pub recipient: AccountId32,
-    pub remark: Option<String>,
-    pub account_lifetime: Timestamp,
-}
 
 /// Transaction info as stored in sled database
 #[derive(Encode, Decode)]
@@ -379,4 +394,122 @@ impl From<TransactionInfoDb> for TransactionInfo {
             status: value.inner.status,
         }
     }
+}
+
+fn decimal_to_amount(amount: rust_decimal::Decimal) -> Amount {
+    // Convert Decimal to f64 for legacy API
+    // Note: This may lose precision for very large or very precise numbers
+    let amount_f64 = amount
+        .to_string()
+        .parse::<f64>()
+        .unwrap_or(0.0);
+    Amount::Exact(amount_f64)
+}
+
+fn asset_id_to_currency_name(asset_id: &Option<u32>) -> Result<&'static str, OrderError> {
+    match asset_id {
+        Some(1337) => Ok("USDC"),
+        Some(1984) => Ok("USDt"),
+        None => Ok("DOT"),
+        _ => Err(OrderError::UnknownCurrency),
+    }
+}
+
+pub fn transaction_to_transaction_info(
+    transaction: Transaction,
+    currencies: &CurrenciesMap,
+) -> Result<TransactionInfo, OrderError> {
+    let asset_name = asset_id_to_currency_name(&Some(transaction.asset_id))?;
+
+    let currency = currencies.get(asset_name)
+        .ok_or(OrderError::UnknownCurrency)?
+        .info(asset_name.to_string());
+
+    // Convert finalization data
+    let finalized_tx = if let (Some(block_number), Some(position_in_block)) = (
+        transaction.block_number,
+        transaction.position_in_block,
+    ) {
+        Some(FinalizedTx {
+            block_number,
+            position_in_block,
+            timestamp: transaction.created_at.to_rfc3339(),
+        })
+    } else {
+        None
+    };
+
+    Ok(TransactionInfo {
+        finalized_tx,
+        transaction_bytes: transaction
+            .transaction_bytes
+            .unwrap_or_default(),
+        sender: transaction.sender,
+        recipient: transaction.recipient,
+        amount: decimal_to_amount(transaction.amount),
+        currency,
+        status: transaction.status.into(),
+    })
+}
+
+pub fn invoice_to_order_info(
+    invoice: &Invoice,
+    currencies: &CurrenciesMap,
+) -> Result<OrderInfo, OrderError> {
+    let asset_name = asset_id_to_currency_name(&invoice.asset_id)?;
+
+    let currency = currencies
+        .get(asset_name)
+        .ok_or(OrderError::UnknownCurrency)?
+        .info(asset_name.to_string());
+
+    Ok(OrderInfo {
+        currency,
+        amount: invoice
+            .amount
+            .to_string()
+            .parse::<f64>()
+            .unwrap_or(0.0),
+        payment_account: invoice.payment_address.clone(),
+        payment_status: PaymentStatus::from(invoice.status),
+        withdrawal_status: invoice.withdrawal_status,
+        death: Timestamp(
+            #[expect(clippy::cast_sign_loss)]
+            {
+                invoice.valid_till.timestamp_millis() as u64
+            },
+        ),
+        callback: invoice.callback.clone(),
+        transactions: vec![], // Transactions would be loaded separately if needed
+    })
+}
+
+/// Build a simplified currencies `HashMap` from `ChainConfig` for migration
+/// purposes. Note: This uses placeholder values for decimals since we don't
+/// have blockchain connection yet. The actual decimals are fetched
+/// asynchronously by `ChainTracker` during normal operation.
+pub fn build_currencies_from_config(
+    chain_config: &ChainConfig
+) -> std::collections::HashMap<String, CurrencyProperties> {
+    let mut currencies = std::collections::HashMap::new();
+    let rpc_url = chain_config
+        .endpoints
+        .first()
+        .cloned()
+        .unwrap_or_default();
+
+    for asset in &chain_config.assets {
+        let properties = CurrencyProperties {
+            chain_name: chain_config.name.clone(),
+            kind: TokenKind::Asset,
+            decimals: 6, // Placeholder - not used during migration validation
+            rpc_url: rpc_url.clone(),
+            asset_id: Some(asset.id),
+            ss58: 2, // Placeholder - not used during migration
+        };
+
+        currencies.insert(asset.name.clone(), properties);
+    }
+
+    currencies
 }

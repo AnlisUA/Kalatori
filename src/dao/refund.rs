@@ -95,7 +95,6 @@ pub trait DaoRefundMethods: DaoExecutor + 'static {
 
         self.fetch_one(query)
             .await
-            .map(From::from)
             .map_err(|e| {
                 tracing::debug!(
                     error.category = "dao.refund",
@@ -137,7 +136,6 @@ pub trait DaoRefundMethods: DaoExecutor + 'static {
 
         self.fetch_optional(query)
             .await
-            .map(|opt| opt.map(From::from))
             .map_err(|e| {
                 tracing::debug!(
                     error.category = "dao.refund",
@@ -162,7 +160,6 @@ pub trait DaoRefundMethods: DaoExecutor + 'static {
 
         self.fetch_all(query)
             .await
-            .map(|rows| rows.into_iter().map(From::from).collect())
             .map_err(|e| {
                 tracing::debug!(
                     error.category = "dao.refund",
@@ -191,7 +188,6 @@ pub trait DaoRefundMethods: DaoExecutor + 'static {
 
         self.fetch_one(query)
             .await
-            .map(From::from)
             .map_err(|e| {
                 tracing::debug!(
                     error.category = "dao.refund",
@@ -241,7 +237,6 @@ pub trait DaoRefundMethods: DaoExecutor + 'static {
 
         self.fetch_one(query)
             .await
-            .map(From::from)
             .map_err(|e| {
                 tracing::debug!(
                     error.category = "dao.refund",

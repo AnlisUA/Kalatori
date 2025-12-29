@@ -111,6 +111,15 @@ impl TryFrom<Payout> for ChainPayoutRequestTyped {
     type Error = ();
 
     fn try_from(value: Payout) -> Result<Self, Self::Error> {
+        tracing::info!(
+            invoice_id = %value.invoice_id,
+            payout_id = %value.id,
+            source_address = %value.transfer_info.source_address,
+            destination_address = %value.transfer_info.destination_address,
+            asset_id = %value.transfer_info.asset_id,
+            amount = %value.transfer_info.amount,
+            "Preparing payout request for processing",
+        );
         let request = match value.transfer_info.chain.as_ref() {
             "statemint" => ChainPayoutRequestTyped::AssetHub(ChainPayoutRequest::new(
                 value.id,
@@ -165,6 +174,11 @@ async fn send_transfer_request<T: ChainConfig, C: BlockChainClient<T>>(
         Ok(transfer) => Ok(transfer.into()),
         Err(TransactionError::SubmissionStatusUnknown) => {
             // TODO: rework errors
+            tracing::warn!(
+                invoice_id = %request.invoice_id,
+                payout_id = %request.id,
+                "Transaction submission status is unknown, it may be retried",
+            );
             meta.increment_retry(String::new());
 
             Err(TransactionExecutionError {
@@ -177,6 +191,14 @@ async fn send_transfer_request<T: ChainConfig, C: BlockChainClient<T>>(
             transaction_id,
             error_code,
         }) => {
+            tracing::warn!(
+                invoice_id = %request.invoice_id,
+                payout_id = %request.id,
+                error_code = %error_code,
+                transaction_id = ?transaction_id,
+                "Transaction execution failed on chain",
+            );
+
             meta.increment_retry(error_code);
 
             Err(TransactionExecutionError {
@@ -188,7 +210,14 @@ async fn send_transfer_request<T: ChainConfig, C: BlockChainClient<T>>(
         Err(TransactionError::TransactionInfoFetchFailed {
             transaction_id,
         }) => {
-            meta.increment_retry(String::new());
+            tracing::warn!(
+                invoice_id = %request.invoice_id,
+                payout_id = %request.id,
+                transaction_id = ?transaction_id,
+                "Failed to fetch transaction info from chain, it may be retried",
+            );
+
+           meta.increment_retry(String::new());
 
             Err(TransactionExecutionError {
                 transaction_id: transaction_id.into(),
@@ -199,6 +228,13 @@ async fn send_transfer_request<T: ChainConfig, C: BlockChainClient<T>>(
         Err(TransactionError::InsufficientBalance {
             transaction_id,
         }) => {
+            tracing::warn!(
+                invoice_id = %request.invoice_id,
+                payout_id = %request.id,
+                transaction_id = ?transaction_id,
+                "Insufficient balance for transaction",
+            );
+
             meta.increment_retry(String::new());
 
             Err(TransactionExecutionError {
@@ -211,6 +247,14 @@ async fn send_transfer_request<T: ChainConfig, C: BlockChainClient<T>>(
             transaction_id,
             asset_id,
         }) => {
+            tracing::warn!(
+                invoice_id = %request.invoice_id,
+                payout_id = %request.id,
+                transaction_id = ?transaction_id,
+                asset_id = ?asset_id,
+                "Unknown asset for transaction",
+            );
+
             meta.increment_retry(asset_id.to_string());
 
             Err(TransactionExecutionError {

@@ -64,6 +64,9 @@ pub trait DaoInterface: Send + Sync {
     /// Get all active invoices (Waiting or PartiallyPaid status).
     async fn get_active_invoices(&self) -> Result<Vec<Invoice>, DaoInvoiceError>;
 
+    /// Get all active invoices (Waiting or PartiallyPaid status) along with their incoming amounts (sum amounts of related Incoming transaction).
+    async fn get_active_invoices_with_amounts(&self) -> Result<Vec<InvoiceWithIncomingAmount>, DaoInvoiceError>;
+
     /// Update an invoice's status.
     async fn update_invoice_status(
         &self,
@@ -270,6 +273,10 @@ impl DaoInterface for DAO {
 
     async fn get_active_invoices(&self) -> Result<Vec<Invoice>, DaoInvoiceError> {
         DaoInvoiceMethods::get_active_invoices(self).await
+    }
+
+    async fn get_active_invoices_with_amounts(&self) -> Result<Vec<InvoiceWithIncomingAmount>, DaoInvoiceError> {
+        DaoInvoiceMethods::get_active_invoices_with_amounts(self).await
     }
 
     async fn update_invoice_status(

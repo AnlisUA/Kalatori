@@ -22,6 +22,7 @@ use crate::types::{
     IncomingTransaction,
     Invoice,
     InvoiceStatus,
+    InvoiceWithIncomingAmount,
     Payout,
 };
 
@@ -37,6 +38,15 @@ impl InvoiceRegistryRecord {
         InvoiceRegistryRecord {
             invoice,
             filled_amount,
+        }
+    }
+}
+
+impl From<InvoiceWithIncomingAmount> for InvoiceRegistryRecord {
+    fn from(value: InvoiceWithIncomingAmount) -> Self {
+        InvoiceRegistryRecord {
+            invoice: value.invoice,
+            filled_amount: value.incoming_amount,
         }
     }
 }
@@ -209,7 +219,7 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
 
     async fn process_transfer(&self, transfer: GeneralChainTransfer) {
         // TODO: that's a temporary workaround, fix the types properly
-        let recipient = super::utils::to_base58_string(subxt::utils::AccountId32::from_str(&transfer.recipient).unwrap().0, 2);
+        let recipient = super::utils::to_base58_string(subxt::utils::AccountId32::from_str(&transfer.recipient).unwrap().0, 0);
 
         if let Some(InvoiceRegistryRecord { invoice, mut filled_amount }) = self.registry
             .find_invoice_by_address(&recipient, &transfer.chain, &transfer.asset_id)
@@ -220,6 +230,7 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
                 chain = %transfer.chain,
                 asset_id = %transfer.asset_id,
                 sender = %transfer.sender,
+                recipient = %recipient,
                 amount = %transfer.amount,
                 "Processing incoming transfer for invoice"
             );

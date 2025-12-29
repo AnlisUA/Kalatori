@@ -2,11 +2,14 @@ use std::net::{
     IpAddr,
     Ipv4Addr,
 };
+use std::str::FromStr;
 
 use config::Config;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use subxt_signer::SecretString;
+
+use crate::chain::utils::to_base58_string;
 
 const DEFAULT_CONFIG_DIR_PATH: &str = "configs";
 
@@ -100,6 +103,14 @@ pub struct ChainConfig {
     pub assets: Vec<AssetConfig>,
 }
 
+fn default_chain() -> String {
+    "statemint".to_string()
+}
+
+fn default_asset_id() -> String {
+    "1337".to_string() // USDC on statemint by default
+}
+
 // TODO: add some docs for fields, their purpose might be not obvious
 #[derive(Deserialize, Clone, Debug)]
 pub struct PaymentsConfig {
@@ -108,6 +119,10 @@ pub struct PaymentsConfig {
     /// 1 day by default
     #[serde(default = "default_account_lifetime_millis")]
     pub account_lifetime_millis: u64,
+    #[serde(default = "default_chain")]
+    pub default_chain: String,
+    #[serde(default = "default_asset_id")]
+    pub default_asset_id: String,
     pub remark: Option<String>,
 }
 
@@ -188,7 +203,9 @@ pub fn payments_config_with_prefix(
 ) -> PaymentsConfig {
     let config_path = format_config_path(config_dir_path, "payments.json");
     let env_prefix = format_prefix(prefix, "PAYMENTS");
-    config_from_file_or_env(&config_path, &env_prefix)
+    let mut config: PaymentsConfig = config_from_file_or_env(&config_path, &env_prefix);
+    config.recipient = to_base58_string(subxt::utils::AccountId32::from_str(&config.recipient).unwrap().0, 0);
+    config
 }
 
 pub fn web_server_config_with_prefix(

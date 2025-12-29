@@ -59,7 +59,7 @@ pub trait ChainConfig: Clone + std::fmt::Debug + Sync + Send + 'static {
     type BlockHash: FromStr + ToString + Sync + Send;
     type UnsignedTransaction: Send;
     type SignedTransaction: SignedTransactionUtils + Sync + Send;
-    type AccountId: FromStr + ToString + Sync + Send;
+    type AccountId: FromStr + ToString + std::fmt::Debug + Sync + Send;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

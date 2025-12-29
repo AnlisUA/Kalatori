@@ -376,12 +376,6 @@ pub enum DaoError {
 
     #[error("version conflict: invoice was modified by another request")]
     VersionConflict,
-
-    #[error("failed to convert amount from f64 to Decimal: {0}")]
-    AmountConversion(String),
-
-    #[error("max retry attempts reached for optimistic locking")]
-    MaxRetriesReached,
 }
 
 #[derive(Debug, Error)]

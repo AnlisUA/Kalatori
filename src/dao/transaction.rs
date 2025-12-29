@@ -99,7 +99,6 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
 
         self.fetch_one(query)
             .await
-            .map(From::from)
             .map_err(|e| {
                 tracing::debug!(
                     error.category = "dao.transaction",
@@ -155,7 +154,6 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
 
         self.fetch_one(query)
             .await
-            .map(From::from)
             .map_err(|e| {
                 tracing::debug!(
                     error.category = "dao.transaction",
@@ -207,7 +205,6 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
 
         self.fetch_one(query)
             .await
-            .map(From::from)
             .map_err(|e| {
                 tracing::debug!(
                     error.category = "dao.transaction",
@@ -260,7 +257,6 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
 
         self.fetch_one(query)
             .await
-            .map(From::from)
             .map_err(|e| {
                 tracing::debug!(
                     error.category = "dao.transaction",
@@ -303,7 +299,6 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
 
         self.fetch_all(query)
             .await
-            .map(|rows| rows.into_iter().map(From::from).collect())
             .map_err(|e| {
                 tracing::debug!(
                     error.category = "dao.transaction",

@@ -13,17 +13,13 @@ mod types;
 mod utils;
 
 use std::process::ExitCode;
-use std::str::FromStr;
 
-use subxt::utils::AccountId32;
 use tokio::runtime::Runtime;
 use tokio_util::sync::CancellationToken;
 use tracing::Level;
 
 use chain_client::Keyring;
 use configs::{
-    ChainConfig,
-    DatabaseConfig,
     chain_config_with_prefix,
     database_config_with_prefix,
     payments_config_with_prefix,
@@ -36,13 +32,6 @@ use error::{
     PrettyCause,
 };
 use expiration_detector::ExpirationDetector;
-use legacy_types::{
-    ConfigWoChains,
-    CurrencyProperties,
-    Timestamp,
-    TokenKind,
-};
-use state::State;
 use utils::logger;
 use utils::shutdown::{
     self,
@@ -50,12 +39,16 @@ use utils::shutdown::{
     ShutdownOutcome,
 };
 use utils::task_tracker::TaskTracker;
-
-use crate::chain::{TransfersExecutor, TransfersTracker, InvoiceRegistry};
-use crate::chain_client::{
+use chain::{TransfersExecutor, TransfersTracker, InvoiceRegistry};
+use chain_client::{
     AssetHubClient,
     BlockChainClient,
 };
+use legacy_types::{build_currencies_from_config, LegacyApiData, ServerInfo};
+use state::AppState;
+use sled_to_sqlite_migration::perform_sled_to_sqlite_migration;
+
+use crate::dao::DaoInterface;
 
 const DEFAULT_ENV_PREFIX: &str = "KALATORI";
 
@@ -130,93 +123,6 @@ fn try_main(shutdown_notification: ShutdownNotification) -> Result<(), Error> {
         .block_on(async_try_main(shutdown_notification))
 }
 
-/// Build a simplified currencies `HashMap` from `ChainConfig` for migration
-/// purposes. Note: This uses placeholder values for decimals since we don't
-/// have blockchain connection yet. The actual decimals are fetched
-/// asynchronously by `ChainTracker` during normal operation.
-fn build_currencies_from_config(
-    chain_config: &ChainConfig
-) -> std::collections::HashMap<String, CurrencyProperties> {
-    let mut currencies = std::collections::HashMap::new();
-    let rpc_url = chain_config
-        .endpoints
-        .first()
-        .cloned()
-        .unwrap_or_default();
-
-    for asset in &chain_config.assets {
-        let properties = CurrencyProperties {
-            chain_name: chain_config.name.clone(),
-            kind: TokenKind::Asset,
-            decimals: 6, // Placeholder - not used during migration validation
-            rpc_url: rpc_url.clone(),
-            asset_id: Some(asset.id),
-            ss58: 2, // Placeholder - not used during migration
-        };
-
-        currencies.insert(asset.name.clone(), properties);
-    }
-
-    currencies
-}
-
-async fn perform_sled_to_sqlite_migration(
-    database_config: &DatabaseConfig,
-    chain_config: &ChainConfig,
-    dao: &DAO,
-) -> Result<(), Error> {
-    // Run sled to SQLite migration if sled database exists
-    if !database_config.temporary {
-        let sled_path = std::path::PathBuf::from(&database_config.path);
-        if sled_path.exists() {
-            tracing::info!(
-                "Found sled database at {:?}, running migration to SQLite...",
-                sled_path
-            );
-
-            let currencies = build_currencies_from_config(chain_config);
-
-            match sled_to_sqlite_migration::migrate_sled_to_sqlite(sled_path, dao, &currencies)
-                .await
-            {
-                Ok(stats) => {
-                    tracing::info!(
-                        "Migration completed successfully: {} invoices ({} skipped as existing), \
-                            {} finalized transactions, {} pending transactions, {} duplicate transactions skipped, \
-                            server_info migrated: {}",
-                        stats.invoices_migrated,
-                        stats.invoices_skipped_existing,
-                        stats.finalized_transactions_migrated,
-                        stats.pending_transactions_migrated,
-                        stats.transactions_skipped_duplicates,
-                        stats.server_info_migrated
-                    );
-
-                    if !stats.warnings.is_empty() {
-                        tracing::warn!(
-                            "Migration completed with {} warnings:",
-                            stats.warnings.len()
-                        );
-                        for warning in &stats.warnings {
-                            tracing::warn!("  - {}", warning);
-                        }
-                    }
-                },
-                Err(e) => {
-                    return Err(Error::MigrationFailed(e));
-                },
-            }
-        } else {
-            tracing::debug!(
-                "No sled database found at {:?}, skipping migration",
-                sled_path
-            );
-        }
-    }
-
-    Ok(())
-}
-
 async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(), Error> {
     // Planned start order
     // 1. Load configs
@@ -244,9 +150,6 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
 
     // Start services
     let (task_tracker, error_rx) = TaskTracker::new();
-
-    // TODO: replace with expect?
-    let recipient = AccountId32::from_str(&payments_config.recipient).unwrap();
 
     // Initialize DAO for SQLite database operations
     let dao = DAO::new(database_config.clone())
@@ -284,6 +187,16 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
 
     let invoice_registry = InvoiceRegistry::new();
 
+    let restore_invoices = dao
+        .get_active_invoices_with_amounts()
+        .await
+        .map_err(|_| Error::Fatal)?
+        .into_iter()
+        .map(From::from)
+        .collect();
+
+    invoice_registry.add_invoices(restore_invoices).await;
+
     let expiration_detector = ExpirationDetector::new(
         dao.clone(),
         invoice_registry.clone(),
@@ -294,7 +207,6 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
     let transfers_tracker = TransfersTracker::new(
         asset_hub_client.clone(),
         dao.clone(),
-        // TODO: fill registry with invoices from database
         invoice_registry.clone(),
         payments_config.clone(),
     );
@@ -311,25 +223,29 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
 
     let currencies = build_currencies_from_config(&chain_config);
 
-    let state = State::initialise(
+    let app_state = AppState::new(
         keyring_client,
-        ConfigWoChains {
-            recipient,
-            remark: payments_config.remark,
-            account_lifetime: Timestamp(payments_config.account_lifetime_millis),
-        },
         dao,
         invoice_registry,
-        currencies,
-        instance_id,
-        task_tracker.clone(),
-        shutdown_notification.token.clone(),
+        payments_config.clone(),
     );
+
+    let legacy_api_data = LegacyApiData {
+        currencies,
+        server_info: ServerInfo {
+            instance_id,
+            kalatori_remark: payments_config.remark,
+            version: env!("CARGO_PKG_VERSION").to_string(),
+        },
+        recipient: payments_config.recipient,
+        rpc_endpoints: chain_config.endpoints,
+    };
 
     let server = server::new(
         shutdown_notification.token.clone(),
         web_server_config,
-        state.interface(),
+        app_state,
+        legacy_api_data,
     )
     .await?;
 

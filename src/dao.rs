@@ -46,28 +46,31 @@ pub use interface::{MockDaoInterface, MockDaoTransactionInterface};
 pub(crate) type DaoResult<T> = Result<T, sqlx::Error>;
 
 pub trait DaoExecutor: Send + Sync {
-    async fn fetch_optional<'a, O>(
+    async fn fetch_optional<'a, O, R>(
         &self,
         query: sqlx::query::QueryAs<'a, sqlx::Sqlite, O, sqlx::sqlite::SqliteArguments<'a>>,
-    ) -> Result<Option<O>, sqlx::Error>
+    ) -> Result<Option<R>, sqlx::Error>
     where
         O: for<'r> sqlx::FromRow<'r, sqlx::sqlite::SqliteRow> + Send + Unpin + 'static,
+        R: From<O>,
         Self: 'static;
 
-    async fn fetch_one<'a, O>(
+    async fn fetch_one<'a, O, R>(
         &self,
         query: sqlx::query::QueryAs<'a, sqlx::Sqlite, O, sqlx::sqlite::SqliteArguments<'a>>,
-    ) -> Result<O, sqlx::Error>
+    ) -> Result<R, sqlx::Error>
     where
         O: for<'r> sqlx::FromRow<'r, sqlx::sqlite::SqliteRow> + Send + Unpin + 'static,
+        R: From<O>,
         Self: 'static;
 
-    async fn fetch_all<'a, O>(
+    async fn fetch_all<'a, O, R>(
         &self,
         query: sqlx::query::QueryAs<'a, sqlx::Sqlite, O, sqlx::sqlite::SqliteArguments<'a>>,
-    ) -> Result<Vec<O>, sqlx::Error>
+    ) -> Result<Vec<R>, sqlx::Error>
     where
         O: for<'r> sqlx::FromRow<'r, sqlx::sqlite::SqliteRow> + Send + Unpin + 'static,
+        R: From<O>,
         Self: 'static;
 }
 
@@ -91,12 +94,13 @@ impl DaoTransaction {
 }
 
 impl DaoExecutor for DaoTransaction {
-    async fn fetch_optional<'a, O>(
+    async fn fetch_optional<'a, O, R>(
         &self,
         query: sqlx::query::QueryAs<'a, sqlx::Sqlite, O, sqlx::sqlite::SqliteArguments<'a>>,
-    ) -> Result<Option<O>, sqlx::Error>
+    ) -> Result<Option<R>, sqlx::Error>
     where
         O: for<'r> sqlx::FromRow<'r, sqlx::sqlite::SqliteRow> + Send + Unpin + 'static,
+        R: From<O>,
         Self: 'static,
     {
         let mut lock = self.transaction.lock().await;
@@ -105,33 +109,35 @@ impl DaoExecutor for DaoTransaction {
             .await?;
 
         if let Some(row) = result {
-            O::from_row(&row).map(Some)
+            O::from_row(&row).map(From::from).map(Some)
         } else {
             Ok(None)
         }
     }
 
-    async fn fetch_one<'a, O>(
+    async fn fetch_one<'a, O, R>(
         &self,
         query: sqlx::query::QueryAs<'a, sqlx::Sqlite, O, sqlx::sqlite::SqliteArguments<'a>>,
-    ) -> Result<O, sqlx::Error>
+    ) -> Result<R, sqlx::Error>
     where
         O: for<'r> sqlx::FromRow<'r, sqlx::sqlite::SqliteRow> + Send + Unpin + 'static,
+        R: From<O>,
         Self: 'static,
     {
         let mut lock = self.transaction.lock().await;
         (&mut **lock)
             .fetch_one(query)
             .await
-            .and_then(|row| O::from_row(&row))
+            .and_then(|row| O::from_row(&row).map(From::from))
     }
 
-    async fn fetch_all<'a, O>(
+    async fn fetch_all<'a, O, R>(
         &self,
         query: sqlx::query::QueryAs<'a, sqlx::Sqlite, O, sqlx::sqlite::SqliteArguments<'a>>,
-    ) -> Result<Vec<O>, sqlx::Error>
+    ) -> Result<Vec<R>, sqlx::Error>
     where
         O: for<'r> sqlx::FromRow<'r, sqlx::sqlite::SqliteRow> + Send + Unpin + 'static,
+        R: From<O>,
         Self: 'static,
     {
         let mut lock = self.transaction.lock().await;
@@ -139,7 +145,7 @@ impl DaoExecutor for DaoTransaction {
             .fetch_all(query)
             .await?
             .into_iter()
-            .map(|row| O::from_row(&row))
+            .map(|row| O::from_row(&row).map(From::from))
             .collect()
     }
 }
@@ -282,50 +288,53 @@ impl DAO {
 }
 
 impl DaoExecutor for DAO {
-    async fn fetch_optional<'a, O>(
+    async fn fetch_optional<'a, O, R>(
         &self,
         query: sqlx::query::QueryAs<'a, sqlx::Sqlite, O, sqlx::sqlite::SqliteArguments<'a>>,
-    ) -> Result<Option<O>, sqlx::Error>
+    ) -> Result<Option<R>, sqlx::Error>
     where
         O: for<'r> sqlx::FromRow<'r, sqlx::sqlite::SqliteRow> + Send + Unpin + 'static,
+        R: From<O>,
         Self: 'static,
     {
         let result = self.pool.fetch_optional(query).await?;
 
         if let Some(row) = result {
-            O::from_row(&row).map(Some)
+            O::from_row(&row).map(From::from).map(Some)
         } else {
             Ok(None)
         }
     }
 
-    async fn fetch_one<'a, O>(
+    async fn fetch_one<'a, O, R>(
         &self,
         query: sqlx::query::QueryAs<'a, sqlx::Sqlite, O, sqlx::sqlite::SqliteArguments<'a>>,
-    ) -> Result<O, sqlx::Error>
+    ) -> Result<R, sqlx::Error>
     where
         O: for<'r> sqlx::FromRow<'r, sqlx::sqlite::SqliteRow> + Send + Unpin + 'static,
+        R: From<O>,
         Self: 'static,
     {
         self.pool
             .fetch_one(query)
             .await
-            .and_then(|row| O::from_row(&row))
+            .and_then(|row| O::from_row(&row).map(From::from))
     }
 
-    async fn fetch_all<'a, O>(
+    async fn fetch_all<'a, O, R>(
         &self,
         query: sqlx::query::QueryAs<'a, sqlx::Sqlite, O, sqlx::sqlite::SqliteArguments<'a>>,
-    ) -> Result<Vec<O>, sqlx::Error>
+    ) -> Result<Vec<R>, sqlx::Error>
     where
         O: for<'r> sqlx::FromRow<'r, sqlx::sqlite::SqliteRow> + Send + Unpin + 'static,
+        R: From<O>,
         Self: 'static,
     {
         self.pool
             .fetch_all(query)
             .await?
             .into_iter()
-            .map(|row| O::from_row(&row))
+            .map(|row| O::from_row(&row).map(From::from))
             .collect()
     }
 }

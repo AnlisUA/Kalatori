@@ -56,12 +56,17 @@ use codec::Decode;
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
+use crate::configs::{
+    ChainConfig,
+    DatabaseConfig,
+};
 use crate::dao::{
     DAO,
     DaoInterface,
     DaoInvoiceError,
     DaoTransactionError as DaoTransactionError,
 };
+use crate::error::Error;
 use crate::legacy_types::{
     Amount,
     BlockNumber,
@@ -76,6 +81,7 @@ use crate::legacy_types::{
     TransactionInfoDbInner,
     TxKind,
     TxStatus,
+    build_currencies_from_config,
 };
 use crate::types::{
     Invoice,
@@ -219,7 +225,7 @@ impl std::fmt::Display for MigrationStats {
 /// # Errors
 ///
 /// Returns [`MigrationError`] if any step of the migration fails
-pub async fn migrate_sled_to_sqlite(
+async fn migrate_sled_to_sqlite(
     sled_path: PathBuf,
     dao: &DAO,
     currencies: &HashMap<String, CurrencyProperties>,
@@ -298,6 +304,63 @@ pub async fn migrate_sled_to_sqlite(
     Ok(stats)
 }
 
+
+pub async fn perform_sled_to_sqlite_migration(
+    database_config: &DatabaseConfig,
+    chain_config: &ChainConfig,
+    dao: &DAO,
+) -> Result<(), Error> {
+    // Run sled to SQLite migration if sled database exists
+    if !database_config.temporary {
+        let sled_path = std::path::PathBuf::from(&database_config.path);
+        if sled_path.exists() {
+            tracing::info!(
+                "Found sled database at {:?}, running migration to SQLite...",
+                sled_path
+            );
+
+            let currencies = build_currencies_from_config(chain_config);
+
+            match migrate_sled_to_sqlite(sled_path, dao, &currencies)
+                .await
+            {
+                Ok(stats) => {
+                    tracing::info!(
+                        "Migration completed successfully: {} invoices ({} skipped as existing), \
+                            {} finalized transactions, {} pending transactions, {} duplicate transactions skipped, \
+                            server_info migrated: {}",
+                        stats.invoices_migrated,
+                        stats.invoices_skipped_existing,
+                        stats.finalized_transactions_migrated,
+                        stats.pending_transactions_migrated,
+                        stats.transactions_skipped_duplicates,
+                        stats.server_info_migrated
+                    );
+
+                    if !stats.warnings.is_empty() {
+                        tracing::warn!(
+                            "Migration completed with {} warnings:",
+                            stats.warnings.len()
+                        );
+                        for warning in &stats.warnings {
+                            tracing::warn!("  - {}", warning);
+                        }
+                    }
+                },
+                Err(e) => {
+                    return Err(Error::MigrationFailed(e));
+                },
+            }
+        } else {
+            tracing::debug!(
+                "No sled database found at {:?}, skipping migration",
+                sled_path
+            );
+        }
+    }
+
+    Ok(())
+}
 /// Migrate `server_info` singleton record
 async fn migrate_server_info(
     sled_db: &sled::Db,

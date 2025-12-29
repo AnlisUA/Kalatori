@@ -6,7 +6,8 @@ use axum::extract::State as ExtractState;
 use uuid::Uuid;
 use serde::Deserialize;
 
-use crate::state::State;
+use crate::dao::DaoInterface;
+use crate::server::ApiState;
 
 #[derive(Debug, PartialEq, Eq, Deserialize)]
 struct Params {
@@ -21,11 +22,11 @@ async fn index(
     Html(html)
 }
 
-async fn invoice(
-    ExtractState(state): ExtractState<State>,
+async fn invoice<D: DaoInterface + Clone + 'static>(
+    ExtractState(state): ExtractState<ApiState<D>>,
     Query(payload): Query<Params>,
 ) -> Response {
-    let invoice = state.get_invoice(payload.invoice_id).await;
+    let invoice = state.state.get_invoice(payload.invoice_id).await;
 
     match invoice {
         Ok(Some(invoice)) => (
@@ -43,7 +44,7 @@ async fn invoice(
     }
 }
 
-pub fn public_routes() -> axum::Router<State> {
+pub fn public_routes<D: DaoInterface + Clone + 'static>() -> axum::Router<ApiState<D>> {
     axum::Router::new()
         .route("/v1", axum::routing::get(index))
         .route("/v1/invoice", axum::routing::get(invoice))

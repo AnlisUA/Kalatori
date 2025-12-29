@@ -1,15 +1,17 @@
 use axum::Json;
 use axum::extract::State as ExtractState;
-use axum::http::StatusCode;
 
+use crate::dao::DaoInterface;
+use crate::server::ApiState;
 use crate::legacy_types::{
     ServerHealth,
     ServerStatus,
+    RpcInfo,
+    Health,
 };
-use crate::state::State;
 
-pub async fn status(
-    ExtractState(state): ExtractState<State>
+pub async fn status<D: DaoInterface + Clone + 'static>(
+    ExtractState(state): ExtractState<ApiState<D>>
 ) -> (
     [(
         axum::http::header::HeaderName,
@@ -18,24 +20,38 @@ pub async fn status(
     Json<ServerStatus>,
 ) {
     #[expect(clippy::match_wild_err_arm)]
-    match state.server_status().await {
-        Ok(status) => (
-            [(
-                axum::http::header::CACHE_CONTROL,
-                "no-store",
-            )],
-            Json(status),
-        ),
-        // TODO: change panic to something else?
-        // Probably this handler should return some error status in response and k8s must make a
-        // decision about killing it. If we need behaviour of panic in case of db connection
-        // lost, it's better to do it in some background task, not in the status handler
-        Err(_) => panic!("db connection is down, state is lost"), // You can modify this as needed
+    let status = ServerStatus {
+        server_info: state.legacy_api_data.server_info.clone(),
+        supported_currencies: state.legacy_api_data.currencies.clone(),
+    };
+
+    (
+        [(
+            axum::http::header::CACHE_CONTROL,
+            "no-store",
+        )],
+        Json(status),
+    )
+}
+
+fn overall_health(connected_rpcs: &[RpcInfo]) -> Health {
+    if connected_rpcs
+        .iter()
+        .all(|rpc| rpc.status == Health::Ok)
+    {
+        Health::Ok
+    } else if connected_rpcs
+        .iter()
+        .any(|rpc| rpc.status == Health::Ok)
+    {
+        Health::Degraded
+    } else {
+        Health::Critical
     }
 }
 
-pub async fn health(
-    ExtractState(state): ExtractState<State>
+pub async fn health<D: DaoInterface + Clone + 'static>(
+    ExtractState(state): ExtractState<ApiState<D>>
 ) -> (
     [(
         axum::http::header::HeaderName,
@@ -43,20 +59,28 @@ pub async fn health(
     ); 1],
     Json<ServerHealth>,
 ) {
-    #[expect(clippy::match_wild_err_arm)]
-    match state.server_health().await {
-        Ok(status) => (
-            [(
-                axum::http::header::CACHE_CONTROL,
-                "no-store",
-            )],
-            Json(status),
-        ),
-        // TODO: same as for status handler
-        Err(_) => panic!("db connection is down, state is lost"),
-    }
-}
+    let connected_rpcs: Vec<_> = state.legacy_api_data.rpc_endpoints
+        .iter()
+        .map(|rpc_url| RpcInfo {
+            chain_name: "statemint".to_string(),
+            rpc_url: rpc_url.to_string(),
+            status: Health::Ok,
+        })
+        .collect();
 
-pub async fn audit(ExtractState(_state): ExtractState<State>) -> StatusCode {
-    StatusCode::NOT_IMPLEMENTED
+    let status = overall_health(&connected_rpcs);
+
+    let server_health = ServerHealth {
+        server_info: state.legacy_api_data.server_info.clone(),
+        connected_rpcs,
+        status,
+    };
+
+    (
+        [(
+            axum::http::header::CACHE_CONTROL,
+            "no-store",
+        )],
+        Json(server_health),
+    )
 }
