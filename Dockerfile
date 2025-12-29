@@ -1,6 +1,7 @@
-FROM rust:1.91-slim AS builder
+# Use Debian Bookworm for both stages to ensure glibc compatibility
+FROM debian:bookworm-slim AS builder
 
-# Install build dependencies
+# Install Rust and build dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
     clang \
@@ -11,8 +12,12 @@ RUN apt-get update && apt-get install -y \
     git \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Rust
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.91
+ENV PATH="/root/.cargo/bin:${PATH}"
+
 # Remove old sqlite3 if present
-RUN apt-get remove -y libsqlite3-0 libsqlite3-dev || true
+RUN apt-get update && apt-get remove -y libsqlite3-0 libsqlite3-dev || true && rm -rf /var/lib/apt/lists/*
 
 # Build and install SQLite 3.51.0 from source with required features for sqlx
 WORKDIR /tmp
@@ -72,12 +77,12 @@ RUN make download-node-metadata-ci
 # Copy actual source code
 COPY . .
 
-# Build the release binary (without stripping to avoid breaking the binary)
+# Build the release binary
 RUN CARGO_PROFILE_RELEASE_STRIP=false cargo build --release
 
 
-# Use the same rust base image for runtime to ensure glibc compatibility
-FROM debian:12-slim
+# Runtime stage - use the same debian:bookworm-slim to ensure glibc compatibility
+FROM debian:bookworm-slim
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
