@@ -68,7 +68,7 @@ pub struct OrderStatus {
 
 #[derive(Clone, Debug, Serialize, Encode, Decode)]
 pub struct OrderInfo {
-    pub order_id: String,
+    // pub order_id: String,
     pub withdrawal_status: WithdrawalStatus,
     pub payment_status: PaymentStatus,
     pub amount: f64,
@@ -88,7 +88,7 @@ impl OrderInfo {
         death: Timestamp,
     ) -> Self {
         OrderInfo {
-            order_id: query.order,
+            // order_id: query.order,
             withdrawal_status: WithdrawalStatus::Waiting,
             payment_status: PaymentStatus::Pending,
             amount: query.amount,
@@ -122,6 +122,34 @@ pub enum WithdrawalStatus {
     Failed,
     Forced,
     Completed,
+}
+
+impl std::fmt::Display for WithdrawalStatus {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        match self {
+            Self::Waiting => write!(f, "Waiting"),
+            Self::Failed => write!(f, "Failed"),
+            Self::Forced => write!(f, "Forced"),
+            Self::Completed => write!(f, "Completed"),
+        }
+    }
+}
+
+impl std::str::FromStr for WithdrawalStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Waiting" => Ok(Self::Waiting),
+            "Failed" => Ok(Self::Failed),
+            "Forced" => Ok(Self::Forced),
+            "Completed" => Ok(Self::Completed),
+            _ => Err(format!("Unknown withdrawal status: {s}")),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

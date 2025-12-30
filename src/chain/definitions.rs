@@ -23,9 +23,9 @@ use subxt::utils::AccountId32;
 use tokio::sync::oneshot;
 use uuid::Uuid;
 
+#[expect(clippy::large_enum_variant)]
 pub enum ChainRequest {
     WatchAccount(WatchAccount),
-    Reap(WatchAccount),
     Shutdown(oneshot::Sender<()>),
     GetConnectedRpcs(oneshot::Sender<Vec<RpcInfo>>),
 }
@@ -46,12 +46,13 @@ impl WatchAccount {
     pub fn new(
         id: Uuid,
         order: OrderInfo,
+        order_id: String,
         recipient: AccountId32,
         res: oneshot::Sender<Result<(), ChainError>>,
     ) -> Result<WatchAccount, ChainError> {
         Ok(WatchAccount {
             id,
-            order_id: order.order_id,
+            order_id,
             address: AccountId32::from_str(&order.payment_account)
                 .map_err(|e| ChainError::InvoiceAccount(e.to_string()))?,
             currency: order.currency,
@@ -66,12 +67,10 @@ impl WatchAccount {
 pub enum ChainTrackerRequest {
     WatchAccount(WatchAccount),
     Transfers(Vec<crate::chain_client::ChainTransfer<crate::chain_client::AssetHubChainConfig>>),
-    Reap(WatchAccount),
-    #[expect(dead_code)]
-    ForceReap(WatchAccount),
     Shutdown(oneshot::Sender<()>),
 }
 
+#[expect(dead_code)]
 #[derive(Clone, Debug)]
 pub struct Invoice {
     pub id: Uuid,

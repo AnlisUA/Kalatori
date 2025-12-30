@@ -21,6 +21,8 @@ use sqlx::{
 };
 use uuid::Uuid;
 
+use super::common::TransferInfo;
+
 /// Transaction type (incoming or outgoing)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub enum TransactionType {
@@ -103,8 +105,54 @@ pub struct TransactionOrigin {
     pub internal_transfer_id: Option<Uuid>,
 }
 
+pub enum TransactionOriginVariant {
+    Payout(Uuid),
+    #[expect(dead_code)]
+    Refund(Uuid),
+    #[expect(dead_code)]
+    InternalTransfer(Uuid),
+    None,
+}
+
+impl TransactionOrigin {
+    pub fn payout(payout_id: Uuid) -> Self {
+        Self {
+            payout_id: Some(payout_id),
+            ..Default::default()
+        }
+    }
+
+    #[expect(dead_code)]
+    pub fn refund(refund_id: Uuid) -> Self {
+        Self {
+            refund_id: Some(refund_id),
+            ..Default::default()
+        }
+    }
+
+    #[expect(dead_code)]
+    pub fn internal_transfer(internal_transfer_id: Uuid) -> Self {
+        Self {
+            internal_transfer_id: Some(internal_transfer_id),
+            ..Default::default()
+        }
+    }
+
+    pub fn variant(&self) -> TransactionOriginVariant {
+        if let Some(payout_id) = self.payout_id {
+            TransactionOriginVariant::Payout(payout_id)
+        } else if let Some(refund_id) = self.refund_id {
+            TransactionOriginVariant::Refund(refund_id)
+        } else if let Some(internal_transfer_id) = self.internal_transfer_id {
+            TransactionOriginVariant::InternalTransfer(internal_transfer_id)
+        } else {
+            TransactionOriginVariant::None
+        }
+    }
+}
+
 /// Metadata for outgoing transactions
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, FromRow)]
 pub struct OutgoingTransactionMeta {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extrinsic_bytes: Option<String>,
@@ -125,8 +173,9 @@ pub struct OutgoingTransactionMeta {
 pub struct Transaction {
     pub id: Uuid,
     pub invoice_id: Uuid,
-    pub asset_id: u32,
     pub chain: String,
+    // TODO: change to String for compatibility with different chains
+    pub asset_id: u32,
     pub amount: Decimal,
     pub sender: String,
     pub recipient: String,
@@ -205,5 +254,48 @@ pub fn default_transaction(invoice_id: Uuid) -> Transaction {
         outgoing_meta: OutgoingTransactionMeta::default(),
         created_at: Utc::now(),
         transaction_bytes: Some("0xabcdef123456".to_string()),
+    }
+}
+
+pub struct OutgoingTransaction {
+    pub id: Uuid,
+    pub invoice_id: Uuid,
+    pub transfer_info: TransferInfo,
+    pub tx_hash: String,
+    pub transaction_bytes: String,
+    pub origin: TransactionOrigin,
+}
+
+impl From<OutgoingTransaction> for Transaction {
+    fn from(value: OutgoingTransaction) -> Self {
+        Self {
+            id: value.id,
+            invoice_id: value.invoice_id,
+            chain: value.transfer_info.chain,
+            asset_id: value
+                .transfer_info
+                .asset_id
+                .parse()
+                .unwrap(),
+            amount: value.transfer_info.amount,
+            sender: value.transfer_info.source_address,
+            recipient: value.transfer_info.destination_address,
+            block_number: None,
+            position_in_block: None,
+            tx_hash: Some(value.tx_hash),
+            origin: value.origin,
+            status: TransactionStatus::InProgress,
+            transaction_type: TransactionType::Outgoing,
+            outgoing_meta: OutgoingTransactionMeta {
+                extrinsic_bytes: Some(value.transaction_bytes),
+                built_at: Some(Utc::now()),
+                sent_at: None,
+                confirmed_at: None,
+                failed_at: None,
+                failure_message: None,
+            },
+            created_at: Utc::now(),
+            transaction_bytes: None,
+        }
     }
 }

@@ -4,7 +4,6 @@ use chrono::{
     DateTime,
     Utc,
 };
-use rust_decimal::Decimal;
 use serde::{
     Deserialize,
     Serialize,
@@ -15,7 +14,12 @@ use sqlx::{
 };
 use uuid::Uuid;
 
-use super::common::InitiatorType;
+use super::common::{
+    InitiatorType,
+    RetryMeta,
+    TransferInfo,
+    TransferInfoRow,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub enum RefundStatus {
@@ -53,20 +57,71 @@ impl std::str::FromStr for RefundStatus {
     }
 }
 
-#[expect(dead_code)]
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, FromRow)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Refund {
     pub id: Uuid,
     pub invoice_id: Uuid,
-    pub asset_id: u32,
-    pub chain: String,
-    pub amount: Decimal,
-    pub source_address: String,
-    pub destination_address: String,
-    pub allow_transfer_all: bool,
     pub initiator_type: InitiatorType,
     pub initiator_id: Option<Uuid>,
     pub status: RefundStatus,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    #[serde(flatten)]
+    pub transfer_info: TransferInfo,
+    #[serde(flatten)]
+    pub retry_meta: RetryMeta,
+}
+
+#[derive(FromRow)]
+pub struct RefundRow {
+    pub id: Uuid,
+    pub invoice_id: Uuid,
+    pub initiator_type: InitiatorType,
+    pub initiator_id: Option<Uuid>,
+    pub status: RefundStatus,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    #[sqlx(flatten)]
+    pub transfer_info: TransferInfoRow,
+    #[sqlx(flatten)]
+    pub retry_meta: RetryMeta,
+}
+
+impl From<RefundRow> for Refund {
+    fn from(row: RefundRow) -> Self {
+        Self {
+            id: row.id,
+            invoice_id: row.invoice_id,
+            initiator_type: row.initiator_type,
+            initiator_id: row.initiator_id,
+            status: row.status,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            transfer_info: row.transfer_info.into(),
+            retry_meta: row.retry_meta,
+        }
+    }
+}
+
+#[cfg(test)]
+pub fn default_refund(invoice_id: Uuid) -> Refund {
+    let transfer_info = TransferInfo {
+        asset_id: 1984.to_string(),
+        chain: "statemint".to_string(),
+        amount: rust_decimal::Decimal::new(5000, 2), // 50.00
+        source_address: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string(),
+        destination_address: "5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty".to_string(),
+    };
+
+    Refund {
+        id: Uuid::new_v4(),
+        invoice_id,
+        transfer_info,
+        initiator_type: InitiatorType::Admin,
+        initiator_id: Some(Uuid::new_v4()),
+        status: RefundStatus::Waiting,
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+        retry_meta: RetryMeta::default(),
+    }
 }

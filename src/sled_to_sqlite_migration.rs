@@ -56,7 +56,12 @@ use codec::Decode;
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
-use crate::dao::DAO;
+use crate::dao::{
+    DAO,
+    DaoInterface,
+    DaoInvoiceError,
+    DaoTransactionError as DaoTransactionError,
+};
 use crate::legacy_types::{
     Amount,
     BlockNumber,
@@ -101,6 +106,12 @@ pub enum MigrationError {
 
     #[error("SQLite DAO error: {0}")]
     DaoError(#[from] sqlx::Error),
+
+    #[error("Invoice DAO error: {0}")]
+    InvoiceError(#[from] DaoInvoiceError),
+
+    #[error("Transaction DAO error: {0}")]
+    TransactionError(#[from] DaoTransactionError),
 
     #[expect(dead_code, reason = "Error variant for future use")]
     #[error("Amount conversion error: {0}")]
@@ -329,7 +340,8 @@ async fn migrate_orders(
 
         // Decode order_id and order_info
         let order_id = String::decode(&mut &key[..])?;
-        let order_info = OrderInfo::decode(&mut &value[..])?;
+        let order_info = OrderInfo::decode(&mut &value[..])
+            .inspect_err(|e| tracing::error!("ERROR HAPPENS HERE {:?}", e))?;
 
         // Validate currency exists
         validate_currency_exists(currencies, &order_info.currency)?;
@@ -871,7 +883,6 @@ mod tests {
         currency: &CurrencyInfo,
     ) -> OrderInfo {
         OrderInfo {
-            order_id: order_id.to_string(),
             withdrawal_status: WithdrawalStatus::Waiting,
             payment_status: PaymentStatus::Pending,
             amount,

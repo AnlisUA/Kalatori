@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use chrono::Utc;
 use subxt::utils::AccountId32;
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
@@ -8,12 +9,17 @@ use uuid::Uuid;
 use crate::chain::ChainManager;
 use crate::chain::utils::to_base58_string;
 use crate::chain_client::KeyringClient;
+use crate::dao::{
+    DAO,
+    DaoInterface,
+};
 use crate::error::{
     DaoError,
     Error,
     ForceWithdrawalError,
     OrderError,
 };
+use crate::dao::DaoInvoiceError;
 use crate::legacy_types::{
     Amount,
     ConfigWoChains,
@@ -35,6 +41,7 @@ use crate::types::{
     Invoice,
     InvoiceCart,
     InvoiceStatus,
+    Payout,
     Transaction,
     TransactionStatus,
     UpdateInvoiceData,
@@ -57,7 +64,7 @@ impl State {
             remark,
             account_lifetime,
         }: ConfigWoChains,
-        dao: crate::dao::DAO,
+        dao: DAO,
         chain_manager_receiver: oneshot::Receiver<ChainManager>,
         instance_id: String,
         task_tracker: TaskTracker,
@@ -176,9 +183,33 @@ impl State {
                                                     });
                                                 }
 
-                                                let currency = state.get_currency_info(&invoice.chain, invoice.asset_id)?;
-                                                let order_info = state.invoice_to_order_info(&order, &currency);
-                                                drop(state.chain_manager.reap(invoice_id, order_info, state.recipient.clone()).await);
+                                                let payout = Payout {
+                                                    id: Uuid::new_v4(),
+                                                    invoice_id: invoice.id,
+                                                    initiator_type: crate::types::InitiatorType::System,
+                                                    initiator_id: None,
+                                                    status: crate::types::PayoutStatus::Waiting,
+                                                    transfer_info: crate::types::TransferInfo {
+                                                        chain: invoice.chain.clone(),
+                                                        asset_id: invoice.asset_id.unwrap_or(0).to_string(),
+                                                        amount: invoice.amount,
+                                                        source_address: invoice.payment_address,
+                                                        destination_address: to_base58_string(state.recipient.0, 2),
+                                                    },
+                                                    created_at: Utc::now(),
+                                                    updated_at: Utc::now(),
+                                                    retry_meta: crate::types::RetryMeta::default(),
+                                                };
+
+                                                let result = state.dao.create_payout(payout).await;
+
+                                                if let Err(e) = result {
+                                                    tracing::error!("Failed to initiate payout for order {}: {e:?}", order.id);
+                                                }
+
+                                                // let currency = state.get_currency_info(&invoice.chain, invoice.asset_id)?;
+                                                // let order_info = state.invoice_to_order_info(&order, &currency);
+                                                // drop(state.chain_manager.reap(invoice_id, order_info, state.recipient.clone()).await);
                                             }
                                             Err(e) => {
                                                 tracing::error!(
@@ -204,28 +235,6 @@ impl State {
                                     );
                                 }
                             }
-                            StateAccessRequest::UpdateTransactionV2 { transaction } => {
-                                let update = state.dao.update_transaction(transaction.clone()).await;
-
-                                if let Err(e) = update {
-                                    tracing::error!(
-                                        "Failed to update transaction {}: {e:?}",
-                                        transaction.id
-                                    );
-                                }
-                            }
-                            StateAccessRequest::OrderWithdrawn(id) => {
-                                match state.dao.update_invoice_withdrawal_status(id, crate::legacy_types::WithdrawalStatus::Completed).await {
-                                    Ok(_order) => {
-                                        tracing::info!("Order {id} successfully marked as withdrawn");
-                                    }
-                                    Err(e) => {
-                                        tracing::error!(
-                                            "Order was withdrawn but this could not be recorded! {e:?}"
-                                        );
-                                    }
-                                }
-                            }
                             StateAccessRequest::ForceWithdrawal(order_id) => {
                                 // Look up invoice_id from order_id
                                 match state.dao.get_invoice_by_order_id(&order_id).await {
@@ -235,12 +244,31 @@ impl State {
                                         // let order = state.invoice_to_order_info(&invoice, &currency_info);
 
                                         match order {
-                                            Ok(order_info) => {
-                                                let result = state.chain_manager.reap(invoice.id, order_info, state.recipient.clone()).await;
+                                            Ok(_order_info) => {
+                                                let payout = Payout {
+                                                    id: Uuid::new_v4(),
+                                                    invoice_id: invoice.id,
+                                                    initiator_type: crate::types::InitiatorType::System,
+                                                    initiator_id: None,
+                                                    status: crate::types::PayoutStatus::Waiting,
+                                                    transfer_info: crate::types::TransferInfo {
+                                                        chain: invoice.chain.clone(),
+                                                        asset_id: invoice.asset_id.unwrap_or(0).to_string(),
+                                                        amount: invoice.amount,
+                                                        source_address: invoice.payment_address,
+                                                        destination_address: to_base58_string(state.recipient.0, 2),
+                                                    },
+                                                    created_at: Utc::now(),
+                                                    updated_at: Utc::now(),
+                                                    retry_meta: crate::types::RetryMeta::default(),
+                                                };
+
+                                                let result = state.dao.create_payout(payout).await;
 
                                                 match result {
-                                                    Ok(()) => {
+                                                    Ok(_) => {
                                                         // let marked = state.db.mark_forced(order_id.clone()).await;
+                                                        // TODO: do it later, on payout processing
                                                         let marked = state.dao.update_invoice_withdrawal_status(invoice.id, crate::legacy_types::WithdrawalStatus::Forced).await;
 
                                                         match marked {
@@ -449,22 +477,6 @@ impl State {
         }
     }
 
-    pub async fn order_withdrawn(
-        &self,
-        order: Uuid,
-    ) {
-        if self
-            .tx
-            .send(StateAccessRequest::OrderWithdrawn(
-                order,
-            ))
-            .await
-            .is_err()
-        {
-            tracing::warn!("Data race on shutdown; please restart the daemon for cleaning up");
-        }
-    }
-
     pub async fn force_withdrawal(
         &self,
         order: String,
@@ -503,22 +515,9 @@ impl State {
             .await
             .map_err(|_| Error::Fatal)
     }
-
-    pub async fn update_transaction_v2(
-        &self,
-        transaction: Transaction,
-    ) -> Result<(), Error> {
-        self.tx
-            .send(
-                StateAccessRequest::UpdateTransactionV2 {
-                    transaction,
-                },
-            )
-            .await
-            .map_err(|_| Error::Fatal)
-    }
 }
 
+#[expect(clippy::large_enum_variant)]
 enum StateAccessRequest {
     ConnectChain(HashMap<String, CurrencyProperties>),
     GetInvoiceStatus(GetInvoiceStatus),
@@ -535,10 +534,6 @@ enum StateAccessRequest {
         invoice_id: Uuid,
         transaction: Transaction,
     },
-    UpdateTransactionV2 {
-        transaction: Transaction,
-    },
-    OrderWithdrawn(Uuid),
     ForceWithdrawal(String),
 }
 
@@ -556,7 +551,7 @@ struct StateData {
     currencies: HashMap<String, CurrencyProperties>,
     recipient: AccountId32,
     server_info: ServerInfo,
-    dao: crate::dao::DAO,
+    dao: DAO,
     chain_manager: ChainManager,
     signer: KeyringClient,
     account_lifetime: crate::legacy_types::Timestamp,
@@ -630,6 +625,7 @@ impl StateData {
                     .add_invoice(
                         invoice_id,
                         order_info,
+                        order_id.clone(),
                         recipient_cloned.clone(),
                     )
                     .await
@@ -674,7 +670,7 @@ impl StateData {
             .dao
             .get_invoice_by_order_id(&order)
             .await
-            .map_err(DaoError::Sqlx)?
+            ?
         else {
             return Ok(OrderResponse::NotFound);
         };
@@ -684,7 +680,7 @@ impl StateData {
             .dao
             .get_invoice_transactions(invoice.id)
             .await
-            .map_err(DaoError::Sqlx)?;
+            ?;
 
         // Convert transactions to legacy format
         let legacy_transactions: Vec<TransactionInfo> = transactions
@@ -726,7 +722,7 @@ impl StateData {
             .ok_or(OrderError::UnknownCurrency)?;
         let currency = currency_properties.info(order_query.currency.clone());
 
-        let derivation_params = vec![order.clone()];
+        let derivation_params = vec![invoice_id.to_string()];
 
         let payment_account_id = self
             .signer
@@ -742,7 +738,7 @@ impl StateData {
                 .dao
                 .get_invoice_by_order_id(&order)
                 .await
-                .map_err(DaoError::Sqlx)?
+                ?
             {
                 None => {
                     // PHASE 2a: Create new invoice
@@ -756,10 +752,11 @@ impl StateData {
 
                     invoice.id = invoice_id;
 
-                    self.dao
+                    let invoice = self
+                        .dao
                         .create_invoice(invoice.clone())
                         .await
-                        .map_err(DaoError::Sqlx)?;
+                        ?;
 
                     // Convert Invoice back to OrderInfo for backward compatibility
                     let order_info = self.invoice_to_order_info(&invoice, &currency);
@@ -769,6 +766,7 @@ impl StateData {
                         .add_invoice(
                             invoice.id,
                             order_info.clone(),
+                            invoice.order_id.clone(),
                             self.recipient.clone(),
                         )
                         .await?;
@@ -796,11 +794,11 @@ impl StateData {
                             .await
                         {
                             Ok(invoice) => invoice,
-                            Err(sqlx::Error::RowNotFound) => {
-                                // Version conflict - retry
+                            Err(DaoInvoiceError::VersionConflict { .. }) | Err(DaoInvoiceError::StatusConstraintViolation { .. }) => {
+                                // Version conflict or status constraint - retry
                                 if attempt < MAX_RETRIES.saturating_sub(1) {
                                     tracing::warn!(
-                                        "Version conflict updating invoice {}, retrying... (attempt {}/{})",
+                                        "Version conflict or status constraint updating invoice {}, retrying... (attempt {}/{})",
                                         order,
                                         attempt.saturating_add(1),
                                         MAX_RETRIES
@@ -809,7 +807,7 @@ impl StateData {
                                 }
                                 return Err(DaoError::MaxRetriesReached.into());
                             },
-                            Err(e) => return Err(DaoError::Sqlx(e).into()),
+                            Err(e) => return Err(e.into()),
                         };
 
                         let order_info = self.invoice_to_order_info(&updated_invoice, &currency);
@@ -929,7 +927,6 @@ impl StateData {
         use crate::legacy_types::PaymentStatus;
 
         OrderInfo {
-            order_id: invoice.order_id.clone(),
             currency: currency.clone(),
             amount: invoice
                 .amount

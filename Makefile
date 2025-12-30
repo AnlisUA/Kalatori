@@ -94,7 +94,7 @@ cargo-clippy: # Run cargo clippy checks
 	cargo clippy --all-targets -- -D warnings -D clippy::pedantic -D clippy::correctness -D clippy::complexity -D clippy::perf
 
 cargo-fmt: # Run cargo fmt checks
-	cargo fmt --all -- --check
+	cargo +nightly fmt --all -- --check
 
 cargo-deny: # Run cargo deny checks
 	cargo deny -L error check
