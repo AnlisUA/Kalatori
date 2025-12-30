@@ -297,6 +297,6 @@ impl KeyringClient {
 
 #[cfg(test)]
 pub fn default_keyring_client() -> KeyringClient {
-    let (tx, rx) = mpsc::channel(KEYRING_CHANNEL_CAPACITY);
+    let (tx, _rx) = mpsc::channel(KEYRING_CHANNEL_CAPACITY);
     KeyringClient { tx }
 }

@@ -9,11 +9,11 @@ use sqlx::types::{
 use uuid::Uuid;
 use thiserror::Error;
 
-use crate::chain_client::GeneralTransactionId;
 use crate::types::{
     Transaction,
     TransactionRow,
     TransactionStatus,
+    GeneralTransactionId,
 };
 
 use super::DaoExecutor;

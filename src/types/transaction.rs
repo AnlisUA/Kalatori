@@ -21,6 +21,8 @@ use sqlx::{
 };
 use uuid::Uuid;
 
+use crate::chain_client::GeneralChainTransfer;
+
 use super::common::TransferInfo;
 
 /// Transaction type (incoming or outgoing)
@@ -50,6 +52,23 @@ impl std::str::FromStr for TransactionType {
             "Incoming" => Ok(Self::Incoming),
             "Outgoing" => Ok(Self::Outgoing),
             _ => Err(format!("Unknown transaction type: {s}")),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GeneralTransactionId {
+    pub block_number: Option<u32>,
+    pub position_in_block: Option<u32>,
+    pub hash: Option<String>,
+}
+
+impl GeneralTransactionId {
+    pub fn empty() -> Self {
+        Self {
+            block_number: None,
+            position_in_block: None,
+            hash: None,
         }
     }
 }
@@ -169,7 +188,7 @@ pub struct OutgoingTransactionMeta {
 }
 
 /// Transaction from `SQLite`
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, FromRow)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, FromRow)]
 pub struct Transaction {
     pub id: Uuid,
     pub invoice_id: Uuid,
@@ -257,6 +276,7 @@ pub fn default_transaction(invoice_id: Uuid) -> Transaction {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutgoingTransaction {
     pub id: Uuid,
     pub invoice_id: Uuid,
@@ -294,6 +314,55 @@ impl From<OutgoingTransaction> for Transaction {
                 failed_at: None,
                 failure_message: None,
             },
+            created_at: Utc::now(),
+            transaction_bytes: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IncomingTransaction {
+    pub id: Uuid,
+    pub invoice_id: Uuid,
+    pub transfer_info: TransferInfo,
+    pub transaction_id: GeneralTransactionId,
+}
+
+impl IncomingTransaction {
+    pub fn from_chain_transfer(invoice_id: Uuid, transfer: GeneralChainTransfer) -> Self {
+        let transaction_id = transfer.general_transaction_id();
+        let transfer_info = transfer.to_transfer_info();
+
+        Self {
+            id: Uuid::new_v4(),
+            invoice_id,
+            transfer_info,
+            transaction_id,
+        }
+    }
+}
+
+impl From<IncomingTransaction> for Transaction {
+    fn from(value: IncomingTransaction) -> Self {
+        Self {
+            id: value.id,
+            invoice_id: value.invoice_id,
+            chain: value.transfer_info.chain,
+            asset_id: value
+                .transfer_info
+                .asset_id
+                .parse()
+                .unwrap(),
+            amount: value.transfer_info.amount,
+            sender: value.transfer_info.source_address,
+            recipient: value.transfer_info.destination_address,
+            block_number: value.transaction_id.block_number,
+            position_in_block: value.transaction_id.position_in_block,
+            tx_hash: value.transaction_id.hash,
+            origin: TransactionOrigin::default(),
+            status: TransactionStatus::Completed,
+            transaction_type: TransactionType::Incoming,
+            outgoing_meta: OutgoingTransactionMeta::default(),
             created_at: Utc::now(),
             transaction_bytes: None,
         }

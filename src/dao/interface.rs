@@ -9,7 +9,6 @@
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-use crate::chain_client::GeneralTransactionId;
 use crate::legacy_types::WithdrawalStatus;
 use crate::types::*;
 
@@ -43,6 +42,7 @@ use super::{
 ///     // Use mock in your test
 /// }
 /// ```
+#[expect(dead_code)]
 #[cfg_attr(test, mockall::automock(type Transaction = MockDaoTransactionInterface;))]
 #[trait_variant::make(Send)]
 pub trait DaoInterface: Send + Sync {
@@ -164,6 +164,7 @@ pub trait DaoInterface: Send + Sync {
 /// tx.create_transaction(transaction).await?;
 /// tx.commit().await?;
 /// ```
+#[expect(dead_code)]
 #[cfg_attr(test, mockall::automock)]
 #[trait_variant::make(Send)]
 pub trait DaoTransactionInterface {

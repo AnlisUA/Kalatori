@@ -5,6 +5,7 @@ use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
 use futures::stream::{FuturesUnordered, StreamExt};
 
+use crate::chain::InvoiceRegistry;
 use crate::types::Invoice;
 use crate::dao::DaoInterface;
 
@@ -41,13 +42,15 @@ async fn send_webhook(client: reqwest::Client, invoice: Invoice) {
 pub struct ExpirationDetector<D: DaoInterface + 'static> {
     client: reqwest::Client,
     dao: D,
+    registry: InvoiceRegistry,
 }
 
 impl<D: DaoInterface + 'static> ExpirationDetector<D> {
-    pub fn new(dao: D) -> Self {
+    pub fn new(dao: D, registry: InvoiceRegistry) -> Self {
         ExpirationDetector {
             client: reqwest::Client::new(),
             dao,
+            registry,
         }
     }
 
@@ -95,6 +98,8 @@ impl<D: DaoInterface + 'static> ExpirationDetector<D> {
                 expired_count = expired_invoices_ids.len(),
                 "Marked invoices as expired"
             );
+
+            self.registry.remove_invoices(&expired_invoices_ids).await;
         }
 
         // TODO: later we'll build futures which will check balances one last time for partially paid invoices

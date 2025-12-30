@@ -101,7 +101,7 @@ pub struct ChainConfig {
 }
 
 // TODO: add some docs for fields, their purpose might be not obvious
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct PaymentsConfig {
     // TODO: can we validate it somehow on startup?
     pub recipient: String,
