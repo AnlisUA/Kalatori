@@ -1,7 +1,7 @@
 {
-    "recipient": "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
+    "recipient": "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
     "default_asset_id": "1337",
-    "default_chain": "statemint",,
+    "default_chain": "statemint",
     "account_lifetime_millis": 86400000,
     "remark": "test"
 }
