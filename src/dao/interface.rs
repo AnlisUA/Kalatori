@@ -85,6 +85,8 @@ pub trait DaoInterface: Send + Sync {
         status: WithdrawalStatus,
     ) -> Result<Invoice, DaoInvoiceError>;
 
+    async fn update_invoices_expired(&self) -> Result<Vec<Invoice>, DaoInvoiceError>;
+
     // === Transaction Methods ===
 
     /// Create a new transaction record.
@@ -168,23 +170,31 @@ pub trait DaoTransactionInterface {
     // === Invoice Methods ===
 
     async fn create_invoice(&self, invoice: Invoice) -> Result<Invoice, DaoInvoiceError>;
+
     async fn get_invoice_by_id(&self, invoice_id: Uuid) -> Result<Option<Invoice>, DaoInvoiceError>;
+
     async fn get_invoice_by_order_id(&self, order_id: &str) -> Result<Option<Invoice>, DaoInvoiceError>;
+
     async fn get_active_invoices(&self) -> Result<Vec<Invoice>, DaoInvoiceError>;
+
     async fn update_invoice_status(
         &self,
         invoice_id: Uuid,
         status: InvoiceStatus,
     ) -> Result<Invoice, DaoInvoiceError>;
+
     async fn update_invoice_data(
         &self,
         data: UpdateInvoiceData,
     ) -> Result<Invoice, DaoInvoiceError>;
+
     async fn update_invoice_withdrawal_status(
         &self,
         invoice_id: Uuid,
         status: WithdrawalStatus,
     ) -> Result<Invoice, DaoInvoiceError>;
+
+    async fn update_invoices_expired(&self) -> Result<Vec<Invoice>, DaoInvoiceError>;
 
     // === Transaction Methods ===
 
@@ -282,6 +292,10 @@ impl DaoInterface for DAO {
         status: WithdrawalStatus,
     ) -> Result<Invoice, DaoInvoiceError> {
         DaoInvoiceMethods::update_invoice_withdrawal_status(self, invoice_id, status).await
+    }
+
+    async fn update_invoices_expired(&self) -> Result<Vec<Invoice>, DaoInvoiceError> {
+        DaoInvoiceMethods::update_invoices_expired(self).await
     }
 
     async fn create_transaction(&self, transaction: Transaction) -> Result<Transaction, DaoTransactionError> {
@@ -405,6 +419,10 @@ impl DaoTransactionInterface for DaoTransaction {
         status: WithdrawalStatus,
     ) -> Result<Invoice, DaoInvoiceError> {
         DaoInvoiceMethods::update_invoice_withdrawal_status(self, invoice_id, status).await
+    }
+
+    async fn update_invoices_expired(&self) -> Result<Vec<Invoice>, DaoInvoiceError> {
+        DaoInvoiceMethods::update_invoices_expired(self).await
     }
 
     async fn create_transaction(&self, transaction: Transaction) -> Result<Transaction, DaoTransactionError> {

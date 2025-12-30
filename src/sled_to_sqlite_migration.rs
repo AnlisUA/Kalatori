@@ -559,6 +559,7 @@ fn convert_order_to_invoice(
         withdrawal_status: order_info.withdrawal_status,
         callback: order_info.callback,
         cart: InvoiceCart::empty(),
+        redirect_url: String::new(),
         valid_till,
         created_at,
         updated_at: Utc::now(),

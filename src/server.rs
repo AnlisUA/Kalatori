@@ -34,6 +34,7 @@ use crate::handlers::order::{
     order,
 };
 use crate::state::State;
+use crate::handlers::public::public_routes;
 
 pub async fn new(
     shutdown_notification: CancellationToken,
@@ -55,11 +56,13 @@ pub async fn new(
             "/order/:order_id/investigate",
             routing::post(investigate),
         );
+
     let app = Router::new()
         .route(
             "/public/v2/payment/:paymentAccount",
             routing::post(public_payment_account),
         )
+        .nest("/public", public_routes())
         .nest("/v2", v2)
         .with_state(state);
 

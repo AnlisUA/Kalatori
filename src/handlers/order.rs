@@ -30,6 +30,7 @@ pub struct OrderPayload {
     pub amount: Option<f64>,
     pub currency: Option<String>,
     pub callback: Option<String>,
+    pub redirect_url: Option<String>,
 }
 
 pub async fn process_order(
@@ -70,6 +71,7 @@ pub async fn process_order(
             .create_order(OrderQuery {
                 order: order_id,
                 callback: payload.callback.unwrap_or_default(),
+                redirect_url: payload.redirect_url.unwrap_or_default(),
                 amount,
                 currency,
             })

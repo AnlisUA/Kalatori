@@ -691,6 +691,11 @@ impl<D: DaoInterface + 'static, AH: BlockChainClient<AssetHubChainConfig> + 'sta
                     } else {
                         // TODO: log unexpected empty future result
                     }
+
+                    if shutdown_expected && futures_set.is_empty() {
+                        tracing::info!("All ongoing transfers completed, shutting down transfers executor.");
+                        break;
+                    }
                 },
                 () = token.cancelled() => {
                     tracing::info!("Transfers executor received shutdown signal, finishing ongoing transfers...");
@@ -705,6 +710,8 @@ impl<D: DaoInterface + 'static, AH: BlockChainClient<AssetHubChainConfig> + 'sta
                 }
             }
         }
+
+        tracing::info!("Transfers executor has been shut down.");
     }
 
     pub fn new(
