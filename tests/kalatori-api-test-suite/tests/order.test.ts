@@ -56,7 +56,7 @@ describe('Order Endpoint Blackbox Tests', () => {
     expect(Array.isArray(orderResponseObject.transactions)).toBe(true);
     expect(orderResponseObject).toHaveProperty('payment_account');
     expect(orderResponseObject).toHaveProperty('death');
-    // expect(orderResponseObject).toHaveProperty('payment_page', '');
+    expect(orderResponseObject).toHaveProperty('payment_page');
     expect(orderResponseObject).toHaveProperty('redirect_url', '');
 
     expect(orderResponseObject.server_info).toHaveProperty('version');
