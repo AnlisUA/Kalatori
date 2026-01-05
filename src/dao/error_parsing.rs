@@ -17,11 +17,14 @@ pub trait StatusTransitionError: FromStr<Err: std::fmt::Debug> {
     }
 }
 
-/// Parse SQLite trigger error message with generic status type
-/// Format: "ERROR_TYPE|old_status=VALUE|new_status=VALUE"
+/// Parse `SQLite` trigger error message with generic status type
+/// Format: "`ERROR_TYPE|old_status=VALUE|new_status=VALUE`"
 ///
-/// The status type S must implement FromStr to parse status strings
-pub(crate) fn parse_trigger_error<S: FromStr>(db_error: &sqlx::Error, prefix: &str) -> Option<TriggerError<S>>
+/// The status type S must implement `FromStr` to parse status strings
+pub(crate) fn parse_trigger_error<S>(
+    db_error: &sqlx::Error,
+    prefix: &str,
+) -> Option<TriggerError<S>>
 where
     S: FromStr,
     S::Err: std::fmt::Debug,

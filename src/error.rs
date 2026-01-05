@@ -99,8 +99,12 @@ impl From<crate::dao::DaoInvoiceError> for Error {
 
         // Map to appropriate DaoError variant
         let dao_error = match e {
-            crate::dao::DaoInvoiceError::NotFound { .. } => DaoError::InvoiceNotFound,
-            crate::dao::DaoInvoiceError::VersionConflict { .. } => DaoError::VersionConflict,
+            crate::dao::DaoInvoiceError::NotFound {
+                ..
+            } => DaoError::InvoiceNotFound,
+            crate::dao::DaoInvoiceError::VersionConflict {
+                ..
+            } => DaoError::VersionConflict,
             _ => DaoError::Sqlx(sqlx::Error::RowNotFound),
         };
 
@@ -376,12 +380,6 @@ pub enum DaoError {
 
     #[error("version conflict: invoice was modified by another request")]
     VersionConflict,
-
-    #[error("failed to convert amount from f64 to Decimal: {0}")]
-    AmountConversion(String),
-
-    #[error("max retry attempts reached for optimistic locking")]
-    MaxRetriesReached,
 }
 
 #[derive(Debug, Error)]

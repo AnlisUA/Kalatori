@@ -1,6 +1,6 @@
 use sqlx::types::Text;
-use uuid::Uuid;
 use thiserror::Error;
+use uuid::Uuid;
 
 use crate::types::{
     Refund,
@@ -10,8 +10,8 @@ use crate::types::{
 
 use super::DaoExecutor;
 use super::error_parsing::{
-    TriggerError,
     StatusTransitionError,
+    TriggerError,
 };
 
 // ============================================================================
@@ -22,15 +22,11 @@ use super::error_parsing::{
 pub enum DaoRefundError {
     /// Refund not found by ID
     #[error("Refund not found: {refund_id}")]
-    NotFound {
-        refund_id: Uuid,
-    },
+    NotFound { refund_id: Uuid },
 
     /// Referenced invoice doesn't exist (foreign key violation)
     #[error("Invoice not found: {invoice_id}")]
-    InvoiceNotFound {
-        invoice_id: Uuid,
-    },
+    InvoiceNotFound { invoice_id: Uuid },
 
     /// Status transition not allowed
     #[error("Cannot transition from {current_status} to {attempted_status}")]
@@ -95,7 +91,6 @@ pub trait DaoRefundMethods: DaoExecutor + 'static {
 
         self.fetch_one(query)
             .await
-            .map(From::from)
             .map_err(|e| {
                 tracing::debug!(
                     error.category = "dao.refund",
@@ -117,7 +112,7 @@ pub trait DaoRefundMethods: DaoExecutor + 'static {
                         }
 
                         DaoRefundError::DatabaseError
-                    }
+                    },
                     _ => DaoRefundError::DatabaseError,
                 }
             })
@@ -137,7 +132,6 @@ pub trait DaoRefundMethods: DaoExecutor + 'static {
 
         self.fetch_optional(query)
             .await
-            .map(|opt| opt.map(From::from))
             .map_err(|e| {
                 tracing::debug!(
                     error.category = "dao.refund",
@@ -162,7 +156,6 @@ pub trait DaoRefundMethods: DaoExecutor + 'static {
 
         self.fetch_all(query)
             .await
-            .map(|rows| rows.into_iter().map(From::from).collect())
             .map_err(|e| {
                 tracing::debug!(
                     error.category = "dao.refund",
@@ -191,7 +184,6 @@ pub trait DaoRefundMethods: DaoExecutor + 'static {
 
         self.fetch_one(query)
             .await
-            .map(From::from)
             .map_err(|e| {
                 tracing::debug!(
                     error.category = "dao.refund",
@@ -208,7 +200,9 @@ pub trait DaoRefundMethods: DaoExecutor + 'static {
                 }
 
                 match e {
-                    sqlx::Error::RowNotFound => DaoRefundError::NotFound { refund_id },
+                    sqlx::Error::RowNotFound => DaoRefundError::NotFound {
+                        refund_id,
+                    },
                     _ => DaoRefundError::DatabaseError,
                 }
             })
@@ -241,7 +235,6 @@ pub trait DaoRefundMethods: DaoExecutor + 'static {
 
         self.fetch_one(query)
             .await
-            .map(From::from)
             .map_err(|e| {
                 tracing::debug!(
                     error.category = "dao.refund",
@@ -258,9 +251,9 @@ pub trait DaoRefundMethods: DaoExecutor + 'static {
                 }
 
                 match e {
-                    sqlx::Error::RowNotFound => {
-                        DaoRefundError::NotFound { refund_id }
-                    }
+                    sqlx::Error::RowNotFound => DaoRefundError::NotFound {
+                        refund_id,
+                    },
                     _ => DaoRefundError::DatabaseError,
                 }
             })
@@ -476,7 +469,10 @@ mod tests {
             .update_refund_status(id2, RefundStatus::InProgress)
             .await
             .unwrap();
-        assert_eq!(updated1.status, RefundStatus::InProgress);
+        assert_eq!(
+            updated1.status,
+            RefundStatus::InProgress
+        );
 
         let updated2 = dao
             .update_refund_status(id2, RefundStatus::Completed)

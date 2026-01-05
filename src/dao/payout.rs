@@ -1,6 +1,6 @@
 use sqlx::types::Text;
-use uuid::Uuid;
 use thiserror::Error;
+use uuid::Uuid;
 
 use crate::types::{
     Payout,
@@ -10,7 +10,10 @@ use crate::types::{
 };
 
 use super::DaoExecutor;
-use super::error_parsing::{StatusTransitionError, TriggerError};
+use super::error_parsing::{
+    StatusTransitionError,
+    TriggerError,
+};
 
 // ============================================================================
 // Payout Domain Errors
@@ -20,15 +23,11 @@ use super::error_parsing::{StatusTransitionError, TriggerError};
 pub enum DaoPayoutError {
     /// Payout not found by ID
     #[error("Payout not found: {payout_id}")]
-    NotFound {
-        payout_id: Uuid,
-    },
+    NotFound { payout_id: Uuid },
 
     /// Referenced invoice doesn't exist (foreign key violation)
     #[error("Invoice not found: {invoice_id}")]
-    InvoiceNotFound {
-        invoice_id: Uuid,
-    },
+    InvoiceNotFound { invoice_id: Uuid },
 
     /// Status transition not allowed
     #[error("Cannot transition from {current_status} to {attempted_status}")]
@@ -92,7 +91,6 @@ pub trait DaoPayoutMethods: DaoExecutor + 'static {
 
         self.fetch_one(query)
             .await
-            .map(From::from)
             .map_err(|e| {
                 tracing::debug!(
                     error.category = "dao.payout",
@@ -114,7 +112,7 @@ pub trait DaoPayoutMethods: DaoExecutor + 'static {
                         }
 
                         DaoPayoutError::DatabaseError
-                    }
+                    },
                     _ => DaoPayoutError::DatabaseError,
                 }
             })
@@ -134,7 +132,6 @@ pub trait DaoPayoutMethods: DaoExecutor + 'static {
 
         self.fetch_optional(query)
             .await
-            .map(|opt| opt.map(From::from))
             .map_err(|e| {
                 tracing::debug!(
                     error.category = "dao.payout",
@@ -175,7 +172,6 @@ pub trait DaoPayoutMethods: DaoExecutor + 'static {
 
         self.fetch_all(query)
             .await
-            .map(|rows| rows.into_iter().map(From::from).collect())
             .map_err(|e| {
                 tracing::debug!(
                     error.category = "dao.payout",
@@ -204,7 +200,6 @@ pub trait DaoPayoutMethods: DaoExecutor + 'static {
 
         self.fetch_one(query)
             .await
-            .map(From::from)
             .map_err(|e| {
                 tracing::debug!(
                     error.category = "dao.payout",
@@ -221,7 +216,9 @@ pub trait DaoPayoutMethods: DaoExecutor + 'static {
                 }
 
                 match e {
-                    sqlx::Error::RowNotFound => DaoPayoutError::NotFound { payout_id },
+                    sqlx::Error::RowNotFound => DaoPayoutError::NotFound {
+                        payout_id,
+                    },
                     _ => DaoPayoutError::DatabaseError,
                 }
             })
@@ -259,7 +256,6 @@ pub trait DaoPayoutMethods: DaoExecutor + 'static {
 
         self.fetch_one(query)
             .await
-            .map(From::from)
             .map_err(|e| {
                 tracing::debug!(
                     error.category = "dao.payout",
@@ -276,9 +272,9 @@ pub trait DaoPayoutMethods: DaoExecutor + 'static {
                 }
 
                 match e {
-                    sqlx::Error::RowNotFound => {
-                        DaoPayoutError::NotFound { payout_id }
-                    }
+                    sqlx::Error::RowNotFound => DaoPayoutError::NotFound {
+                        payout_id,
+                    },
                     _ => DaoPayoutError::DatabaseError,
                 }
             })
@@ -518,7 +514,8 @@ mod tests {
             PayoutStatus::FailedRetriable
         );
 
-        // Second retry attempt - transition back to InProgress first, then fail permanently
+        // Second retry attempt - transition back to InProgress first, then fail
+        // permanently
         let now2 = Utc::now();
         let next_retry2 = now2 + chrono::Duration::minutes(5);
 
@@ -616,8 +613,14 @@ mod tests {
                 current_status,
                 attempted_status,
             } => {
-                assert_eq!(current_status, PayoutStatus::FailedRetriable);
-                assert_eq!(attempted_status, PayoutStatus::Completed);
+                assert_eq!(
+                    current_status,
+                    PayoutStatus::FailedRetriable
+                );
+                assert_eq!(
+                    attempted_status,
+                    PayoutStatus::Completed
+                );
             },
             err => panic!("Expected StatusConstraintViolation, got: {err:?}"),
         }

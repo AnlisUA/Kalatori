@@ -6,18 +6,21 @@ use sqlx::types::{
     Json,
     Text,
 };
-use uuid::Uuid;
 use thiserror::Error;
+use uuid::Uuid;
 
 use crate::types::{
+    GeneralTransactionId,
     Transaction,
     TransactionRow,
     TransactionStatus,
-    GeneralTransactionId,
 };
 
 use super::DaoExecutor;
-use super::error_parsing::{StatusTransitionError, TriggerError};
+use super::error_parsing::{
+    StatusTransitionError,
+    TriggerError,
+};
 
 // ============================================================================
 // Transaction Domain Errors
@@ -27,15 +30,11 @@ use super::error_parsing::{StatusTransitionError, TriggerError};
 pub enum DaoTransactionError {
     /// Transaction not found by ID
     #[error("Transaction not found: {transaction_id}")]
-    NotFound {
-        transaction_id: Uuid,
-    },
+    NotFound { transaction_id: Uuid },
 
     /// Referenced invoice doesn't exist (foreign key violation)
     #[error("Invoice not found: {invoice_id}")]
-    InvoiceNotFound {
-        invoice_id: Uuid,
-    },
+    InvoiceNotFound { invoice_id: Uuid },
 
     /// Status transition not allowed
     #[error("Cannot transition from {current_status} to {attempted_status}")]
@@ -99,7 +98,6 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
 
         self.fetch_one(query)
             .await
-            .map(From::from)
             .map_err(|e| {
                 tracing::debug!(
                     error.category = "dao.transaction",
@@ -121,7 +119,7 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
                         }
 
                         DaoTransactionError::DatabaseError
-                    }
+                    },
                     _ => DaoTransactionError::DatabaseError,
                 }
             })
@@ -155,7 +153,6 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
 
         self.fetch_one(query)
             .await
-            .map(From::from)
             .map_err(|e| {
                 tracing::debug!(
                     error.category = "dao.transaction",
@@ -171,7 +168,9 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
                 }
 
                 match e {
-                    sqlx::Error::RowNotFound => DaoTransactionError::NotFound { transaction_id },
+                    sqlx::Error::RowNotFound => DaoTransactionError::NotFound {
+                        transaction_id,
+                    },
                     _ => DaoTransactionError::DatabaseError,
                 }
             })
@@ -207,7 +206,6 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
 
         self.fetch_one(query)
             .await
-            .map(From::from)
             .map_err(|e| {
                 tracing::debug!(
                     error.category = "dao.transaction",
@@ -223,7 +221,9 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
                 }
 
                 match e {
-                    sqlx::Error::RowNotFound => DaoTransactionError::NotFound { transaction_id },
+                    sqlx::Error::RowNotFound => DaoTransactionError::NotFound {
+                        transaction_id,
+                    },
                     _ => DaoTransactionError::DatabaseError,
                 }
             })
@@ -260,7 +260,6 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
 
         self.fetch_one(query)
             .await
-            .map(From::from)
             .map_err(|e| {
                 tracing::debug!(
                     error.category = "dao.transaction",
@@ -303,7 +302,6 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
 
         self.fetch_all(query)
             .await
-            .map(|rows| rows.into_iter().map(From::from).collect())
             .map_err(|e| {
                 tracing::debug!(
                     error.category = "dao.transaction",
@@ -454,7 +452,9 @@ mod tests {
         // Should fail with InvoiceNotFound error
         assert!(result.is_err());
         match result.unwrap_err() {
-            DaoTransactionError::InvoiceNotFound { invoice_id } => {
+            DaoTransactionError::InvoiceNotFound {
+                invoice_id,
+            } => {
                 assert_eq!(invoice_id, fake_invoice_id);
             },
             err => panic!("Expected InvoiceNotFound, got: {err:?}"),
@@ -740,7 +740,9 @@ mod tests {
         // Should fail with NotFound
         assert!(result.is_err());
         match result.unwrap_err() {
-            DaoTransactionError::NotFound { .. } => { /* Expected */ },
+            DaoTransactionError::NotFound {
+                ..
+            } => { /* Expected */ },
             err => panic!("Expected NotFound, got: {err:?}"),
         }
     }
@@ -818,7 +820,10 @@ mod tests {
         // Should succeed (idempotent update)
         assert!(result.is_ok());
         let updated = result.unwrap();
-        assert_eq!(updated.status, TransactionStatus::Completed);
+        assert_eq!(
+            updated.status,
+            TransactionStatus::Completed
+        );
         assert_eq!(updated.block_number, Some(100));
         assert_eq!(updated.position_in_block, Some(1));
 
@@ -837,7 +842,10 @@ mod tests {
             .update_transaction_successful(id2, chain_tx_id, Utc::now())
             .await
             .unwrap();
-        assert_eq!(updated.status, TransactionStatus::Completed);
+        assert_eq!(
+            updated.status,
+            TransactionStatus::Completed
+        );
 
         // Scenario 3: Valid transition Waiting -> InProgress -> Completed
         let tx3 = Transaction {
@@ -856,7 +864,10 @@ mod tests {
             .update_transaction(tx3_inprogress)
             .await
             .unwrap();
-        assert_eq!(updated1.status, TransactionStatus::InProgress);
+        assert_eq!(
+            updated1.status,
+            TransactionStatus::InProgress
+        );
 
         // Then to Completed
         let chain_tx_id2 = GeneralTransactionId {
@@ -868,6 +879,9 @@ mod tests {
             .update_transaction_successful(id3, chain_tx_id2, Utc::now())
             .await
             .unwrap();
-        assert_eq!(updated2.status, TransactionStatus::Completed);
+        assert_eq!(
+            updated2.status,
+            TransactionStatus::Completed
+        );
     }
 }

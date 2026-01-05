@@ -2,19 +2,23 @@ use sqlx::types::{
     Json,
     Text,
 };
-use uuid::Uuid;
 use thiserror::Error;
+use uuid::Uuid;
 
 use crate::legacy_types::WithdrawalStatus;
 use crate::types::{
     Invoice,
     InvoiceRow,
     InvoiceStatus,
+    InvoiceWithIncomingAmount,
     UpdateInvoiceData,
 };
 
 use super::DaoExecutor;
-use super::error_parsing::{TriggerError, StatusTransitionError};
+use super::error_parsing::{
+    StatusTransitionError,
+    TriggerError,
+};
 
 // ============================================================================
 // Invoice Domain Errors
@@ -22,7 +26,7 @@ use super::error_parsing::{TriggerError, StatusTransitionError};
 
 #[derive(Debug, Error)]
 pub enum DaoInvoiceError {
-    /// Invoice not found by ID or order_id
+    /// Invoice not found by ID or `order_id`
     #[error("Invoice not found: {identifier}")]
     NotFound {
         identifier: String, // Can be UUID string or order_id
@@ -49,11 +53,9 @@ pub enum DaoInvoiceError {
         attempted_status: WithdrawalStatus,
     },
 
-    /// Duplicate order_id (UNIQUE constraint violation)
+    /// Duplicate `order_id` (UNIQUE constraint violation)
     #[error("Order ID '{order_id}' already exists")]
-    DuplicateOrderId {
-        order_id: String,
-    },
+    DuplicateOrderId { order_id: String },
 
     /// Database operation failed
     #[error("Database error during invoice operation")]
@@ -98,6 +100,33 @@ impl StatusTransitionError for WithdrawalStatus {
     const ERROR_TYPE_PREFIX: &'static str = "INVOICE_WITHDRAWAL_TRANSITION|";
 }
 
+#[derive(sqlx::FromRow)]
+struct InvoiceWithAmountsRow {
+    #[sqlx(flatten)]
+    invoice: InvoiceRow,
+    amounts: sqlx::types::Json<Vec<String>>,
+}
+
+impl From<InvoiceWithAmountsRow> for InvoiceWithIncomingAmount {
+    fn from(row: InvoiceWithAmountsRow) -> Self {
+        let incoming_amount = row
+            .amounts
+            .0
+            .into_iter()
+            .filter_map(|amt_str| {
+                amt_str
+                    .parse::<rust_decimal::Decimal>()
+                    .ok()
+            })
+            .sum();
+
+        Self {
+            invoice: row.invoice.into(),
+            incoming_amount,
+        }
+    }
+}
+
 pub trait DaoInvoiceMethods: DaoExecutor + 'static {
     async fn create_invoice(
         &self,
@@ -126,7 +155,6 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
 
         self.fetch_one(query)
             .await
-            .map(From::from)
             .map_err(|e| {
                 tracing::debug!(
                     error.category = "dao.invoice",
@@ -148,7 +176,7 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
                         }
 
                         DaoInvoiceError::DatabaseError
-                    }
+                    },
                     _ => DaoInvoiceError::DatabaseError,
                 }
             })
@@ -167,7 +195,6 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
 
         self.fetch_optional(query)
             .await
-            .map(|opt| opt.map(From::from))
             .map_err(|e| {
                 tracing::debug!(
                     error.category = "dao.invoice",
@@ -193,7 +220,6 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
 
         self.fetch_optional(query)
             .await
-            .map(|opt| opt.map(From::from))
             .map_err(|e| {
                 tracing::debug!(
                     error.category = "dao.invoice",
@@ -206,25 +232,38 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
             })
     }
 
-    /// Get all active invoices that need to be monitored
+    /// Get all active invoices that need to be monitored and total amount of
+    /// received incoming transactions. We suppose that invoices with status
+    /// 'Waiting' or '`PartiallyPaid`' don't have outgoing transactions,
+    /// so they are not included in calculations.
     /// Returns invoices with status 'Waiting' or '`PartiallyPaid`'
-    async fn get_active_invoices(&self) -> Result<Vec<Invoice>, DaoInvoiceError> {
-        let query = sqlx::query_as::<_, InvoiceRow>(
-            "SELECT *
-            FROM invoices
-            WHERE status IN ('Waiting', 'PartiallyPaid')
-            ORDER BY created_at ASC",
+    async fn get_active_invoices_with_amounts(
+        &self
+    ) -> Result<Vec<InvoiceWithIncomingAmount>, DaoInvoiceError> {
+        let query = sqlx::query_as::<_, InvoiceWithAmountsRow>(
+            "SELECT
+                i.*,
+                CASE
+                    WHEN COUNT(t.amount) = 0 THEN '[]'
+                    ELSE json_group_array(t.amount)
+                END as amounts
+            FROM invoices i
+            LEFT JOIN transactions t
+                ON i.id = t.invoice_id
+                AND t.transaction_type = 'Incoming'
+            WHERE i.status IN ('Waiting', 'PartiallyPaid')
+            GROUP BY i.id
+            ORDER BY i.created_at ASC",
         );
 
         self.fetch_all(query)
             .await
-            .map(|rows| rows.into_iter().map(From::from).collect())
             .map_err(|e| {
                 tracing::debug!(
                     error.category = "dao.invoice",
-                    error.operation = "get_active_invoices",
+                    error.operation = "get_invoices_paid_amount",
                     error.source = ?e,
-                    "Failed to fetch active invoices"
+                    "Failed to fetch paid amounts for invoices"
                 );
                 DaoInvoiceError::DatabaseError
             })
@@ -248,7 +287,6 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
 
         self.fetch_one(query)
             .await
-            .map(From::from)
             .map_err(|e| {
                 tracing::debug!(
                     error.category = "dao.invoice",
@@ -265,11 +303,9 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
                 }
 
                 match e {
-                    sqlx::Error::RowNotFound => {
-                        DaoInvoiceError::NotFound {
-                            identifier: invoice_id.to_string(),
-                        }
-                    }
+                    sqlx::Error::RowNotFound => DaoInvoiceError::NotFound {
+                        identifier: invoice_id.to_string(),
+                    },
                     _ => DaoInvoiceError::DatabaseError,
                 }
             })
@@ -296,7 +332,7 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
         .bind(data.version);
 
         match self.fetch_one(query).await {
-            Ok(row) => Ok(row.into()),
+            Ok(row) => Ok(row),
             Err(e) => {
                 tracing::debug!(
                     error.category = "dao.invoice",
@@ -320,7 +356,10 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
                     )
                     .bind(data.id);
 
-                    match self.fetch_optional(diagnostic_query).await {
+                    match self
+                        .fetch_optional(diagnostic_query)
+                        .await
+                    {
                         Ok(Some((_current_version, _current_status))) => {
                             // Invoice exists but version mismatch
                             // (status check was in WHERE clause, trigger would have fired if
@@ -368,7 +407,7 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
         .bind(invoice_id);
 
         match self.fetch_one(query).await {
-            Ok(row) => Ok(row.into()),
+            Ok(row) => Ok(row),
             Err(e) => {
                 tracing::debug!(
                     error.category = "dao.invoice",
@@ -407,7 +446,6 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
 
         self.fetch_all(query)
             .await
-            .map(|rows| rows.into_iter().map(From::from).collect())
             .map_err(|e| {
                 tracing::debug!(
                     error.category = "dao.invoice",
@@ -424,13 +462,207 @@ impl<T: DaoExecutor + 'static> DaoInvoiceMethods for T {}
 
 #[cfg(test)]
 mod tests {
+    use rust_decimal::Decimal;
+
     use crate::dao::create_test_dao;
+    use crate::dao::transaction::DaoTransactionMethods;
     use crate::types::{
+        Transaction,
+        TransactionType,
         default_invoice,
+        default_transaction,
         default_update_invoice_data,
     };
 
     use super::*;
+
+    #[expect(clippy::too_many_lines)]
+    #[tokio::test]
+    async fn test_get_active_invoices_with_amounts() {
+        let dao = create_test_dao().await;
+
+        // Create invoice 1 with Waiting status (will have 2 incoming transactions)
+        let invoice1 = default_invoice();
+        let invoice1_id = invoice1.id;
+        dao.create_invoice(invoice1)
+            .await
+            .unwrap();
+
+        // Create 2 incoming transactions for invoice1
+        let tx1_amount = Decimal::new(10050, 2); // 100.50
+        let tx1 = Transaction {
+            id: Uuid::new_v4(),
+            invoice_id: invoice1_id,
+            amount: tx1_amount,
+            transaction_type: TransactionType::Incoming,
+            ..default_transaction(invoice1_id)
+        };
+        dao.create_transaction(tx1)
+            .await
+            .unwrap();
+
+        let tx2_amount = Decimal::new(5025, 2); // 50.25
+        let tx2 = Transaction {
+            id: Uuid::new_v4(),
+            invoice_id: invoice1_id,
+            amount: tx2_amount,
+            transaction_type: TransactionType::Incoming,
+            ..default_transaction(invoice1_id)
+        };
+        dao.create_transaction(tx2)
+            .await
+            .unwrap();
+
+        // Create invoice 2 with PartiallyPaid status (will have 1 incoming transaction)
+        let invoice2 = Invoice {
+            status: InvoiceStatus::PartiallyPaid,
+            ..default_invoice()
+        };
+        let invoice2_id = invoice2.id;
+        dao.create_invoice(invoice2)
+            .await
+            .unwrap();
+
+        let tx3_amount = Decimal::new(7599, 2); // 75.99
+        let tx3 = Transaction {
+            id: Uuid::new_v4(),
+            invoice_id: invoice2_id,
+            amount: tx3_amount,
+            transaction_type: TransactionType::Incoming,
+            ..default_transaction(invoice2_id)
+        };
+        dao.create_transaction(tx3)
+            .await
+            .unwrap();
+
+        // Create invoice 3 with Waiting status (no transactions)
+        let invoice3 = default_invoice();
+        let invoice3_id = invoice3.id;
+        dao.create_invoice(invoice3)
+            .await
+            .unwrap();
+
+        // Create invoice 4 with Waiting status and an Outgoing transaction (should not
+        // be counted)
+        let invoice4 = default_invoice();
+        let invoice4_id = invoice4.id;
+        dao.create_invoice(invoice4)
+            .await
+            .unwrap();
+
+        let tx4_outgoing = Transaction {
+            id: Uuid::new_v4(),
+            invoice_id: invoice4_id,
+            amount: Decimal::new(10000, 2),
+            transaction_type: TransactionType::Outgoing,
+            ..default_transaction(invoice4_id)
+        };
+        dao.create_transaction(tx4_outgoing)
+            .await
+            .unwrap();
+
+        // Create invoice 5 with Paid status (should not be in results)
+        let invoice5 = Invoice {
+            status: InvoiceStatus::Paid,
+            ..default_invoice()
+        };
+        let invoice5_id = invoice5.id;
+        dao.create_invoice(invoice5)
+            .await
+            .unwrap();
+
+        let tx5_amount = Decimal::new(10000, 2);
+        let tx5 = Transaction {
+            id: Uuid::new_v4(),
+            invoice_id: invoice5_id,
+            amount: tx5_amount,
+            transaction_type: TransactionType::Incoming,
+            ..default_transaction(invoice5_id)
+        };
+        dao.create_transaction(tx5)
+            .await
+            .unwrap();
+
+        // Execute the test
+        let results = dao
+            .get_active_invoices_with_amounts()
+            .await
+            .unwrap();
+
+        // Should return 4 active invoices (Waiting and PartiallyPaid only)
+        assert_eq!(results.len(), 4);
+
+        // Find each invoice in results
+        let invoice1_result = results
+            .iter()
+            .find(|r| r.invoice.id == invoice1_id)
+            .expect("Invoice 1 should be in results");
+
+        let invoice2_result = results
+            .iter()
+            .find(|r| r.invoice.id == invoice2_id)
+            .expect("Invoice 2 should be in results");
+
+        let invoice3_result = results
+            .iter()
+            .find(|r| r.invoice.id == invoice3_id)
+            .expect("Invoice 3 should be in results");
+
+        let invoice4_result = results
+            .iter()
+            .find(|r| r.invoice.id == invoice4_id)
+            .expect("Invoice 4 should be in results");
+
+        // Verify amounts are summed correctly with full precision
+        let expected_invoice1_total = tx1_amount + tx2_amount; // 100.50 + 50.25 = 150.75
+        assert_eq!(
+            invoice1_result.incoming_amount, expected_invoice1_total,
+            "Invoice 1 should have sum of 2 incoming transactions"
+        );
+
+        assert_eq!(
+            invoice2_result.incoming_amount, tx3_amount,
+            "Invoice 2 should have amount from single incoming transaction"
+        );
+
+        assert_eq!(
+            invoice3_result.incoming_amount,
+            Decimal::ZERO,
+            "Invoice 3 should have zero incoming amount (no transactions)"
+        );
+
+        assert_eq!(
+            invoice4_result.incoming_amount,
+            Decimal::ZERO,
+            "Invoice 4 should have zero incoming amount (only outgoing transaction)"
+        );
+
+        // Verify invoice 5 (Paid status) is NOT in results
+        assert!(
+            results
+                .iter()
+                .all(|r| r.invoice.id != invoice5_id),
+            "Paid invoice should not be in active invoices results"
+        );
+
+        // Verify ordering (should be by created_at ASC)
+        assert_eq!(
+            results[0].invoice.id, invoice1_id,
+            "First invoice should be invoice1"
+        );
+        assert_eq!(
+            results[1].invoice.id, invoice2_id,
+            "Second invoice should be invoice2"
+        );
+        assert_eq!(
+            results[2].invoice.id, invoice3_id,
+            "Third invoice should be invoice3"
+        );
+        assert_eq!(
+            results[3].invoice.id, invoice4_id,
+            "Fourth invoice should be invoice4"
+        );
+    }
 
     #[tokio::test]
     async fn test_invoice_crud_operations() {
@@ -509,131 +741,13 @@ mod tests {
         // Should fail with DuplicateOrderId error
         assert!(result.is_err());
         match result.unwrap_err() {
-            DaoInvoiceError::DuplicateOrderId { order_id: oid } => {
+            DaoInvoiceError::DuplicateOrderId {
+                order_id: oid,
+            } => {
                 assert_eq!(oid, order_id);
             },
             err => panic!("Expected DuplicateOrderId error, got: {err:?}"),
         }
-    }
-
-    #[tokio::test]
-    async fn test_get_active_invoices_filtering() {
-        let dao = create_test_dao().await;
-
-        // Create invoice with Waiting status (default)
-        let invoice_waiting = default_invoice();
-        dao.create_invoice(invoice_waiting)
-            .await
-            .unwrap();
-
-        // Create invoice with PartiallyPaid status
-        let invoice_partial = Invoice {
-            status: InvoiceStatus::PartiallyPaid,
-            ..default_invoice()
-        };
-        dao.create_invoice(invoice_partial)
-            .await
-            .unwrap();
-
-        // Create invoice with Paid status
-        let invoice_paid = Invoice {
-            status: InvoiceStatus::Paid,
-            ..default_invoice()
-        };
-        dao.create_invoice(invoice_paid)
-            .await
-            .unwrap();
-
-        // Create invoice with UnpaidExpired status
-        let invoice_expired = Invoice {
-            status: InvoiceStatus::UnpaidExpired,
-            ..default_invoice()
-        };
-        dao.create_invoice(invoice_expired)
-            .await
-            .unwrap();
-
-        // Get active invoices
-        let active = dao.get_active_invoices().await.unwrap();
-
-        // Should only return Waiting and PartiallyPaid
-        assert_eq!(active.len(), 2);
-        assert!(
-            active
-                .iter()
-                .all(|inv| inv.status.is_active())
-        );
-
-        // Verify we have one Waiting and one PartiallyPaid
-        let waiting_count = active
-            .iter()
-            .filter(|inv| inv.status == InvoiceStatus::Waiting)
-            .count();
-        let partial_count = active
-            .iter()
-            .filter(|inv| inv.status == InvoiceStatus::PartiallyPaid)
-            .count();
-        assert_eq!(waiting_count, 1);
-        assert_eq!(partial_count, 1);
-    }
-
-    #[tokio::test]
-    async fn test_get_active_invoices_ordering() {
-        let dao = create_test_dao().await;
-
-        // Create 3 invoices with Waiting status at different times
-        let invoice1 = default_invoice();
-        let id1 = invoice1.id;
-        dao.create_invoice(invoice1)
-            .await
-            .unwrap();
-
-        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-
-        let invoice2 = default_invoice();
-        let id2 = invoice2.id;
-        dao.create_invoice(invoice2)
-            .await
-            .unwrap();
-
-        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-
-        let invoice3 = default_invoice();
-        let id3 = invoice3.id;
-        dao.create_invoice(invoice3)
-            .await
-            .unwrap();
-
-        // Get active invoices
-        let active = dao.get_active_invoices().await.unwrap();
-
-        // Should be ordered by created_at ASC (oldest first)
-        assert_eq!(active.len(), 3);
-        assert_eq!(active[0].id, id1);
-        assert_eq!(active[1].id, id2);
-        assert_eq!(active[2].id, id3);
-    }
-
-    #[tokio::test]
-    async fn test_get_active_invoices_empty() {
-        let dao = create_test_dao().await;
-
-        // Query empty database
-        let active = dao.get_active_invoices().await.unwrap();
-        assert!(active.is_empty());
-
-        // Create invoice with Paid status (not active)
-        let invoice_paid = Invoice {
-            status: InvoiceStatus::Paid,
-            ..default_invoice()
-        };
-        dao.create_invoice(invoice_paid)
-            .await
-            .unwrap();
-
-        // Query again - should still be empty
-        let active = dao.get_active_invoices().await.unwrap();
-        assert!(active.is_empty());
     }
 
     #[tokio::test]
@@ -678,7 +792,9 @@ mod tests {
         // Should fail with NotFound
         assert!(result.is_err());
         match result.unwrap_err() {
-            DaoInvoiceError::NotFound { .. } => { /* Expected */ },
+            DaoInvoiceError::NotFound {
+                ..
+            } => { /* Expected */ },
             err => panic!("Expected NotFound, got: {err:?}"),
         }
     }
@@ -768,7 +884,8 @@ mod tests {
             .await;
 
         // Should fail with VersionConflict (invoice exists but version/status mismatch)
-        // Since status is PartiallyPaid (not Waiting), WHERE clause fails -> RowNotFound -> diagnostic -> VersionConflict
+        // Since status is PartiallyPaid (not Waiting), WHERE clause fails ->
+        // RowNotFound -> diagnostic -> VersionConflict
         assert!(result.is_err());
         match result.unwrap_err() {
             DaoInvoiceError::VersionConflict {
@@ -807,8 +924,9 @@ mod tests {
             .update_invoice_data(update_data2)
             .await;
 
-        // Should fail with VersionConflict (status='Paid' doesn't match WHERE clause requirement of 'Waiting')
-        // This gets reported as VersionConflict because the invoice exists but WHERE clause doesn't match
+        // Should fail with VersionConflict (status='Paid' doesn't match WHERE clause
+        // requirement of 'Waiting') This gets reported as VersionConflict
+        // because the invoice exists but WHERE clause doesn't match
         assert!(result2.is_err());
         match result2.unwrap_err() {
             DaoInvoiceError::VersionConflict {
@@ -830,7 +948,9 @@ mod tests {
         // Should fail with NotFound
         assert!(result3.is_err());
         match result3.unwrap_err() {
-            DaoInvoiceError::NotFound { .. } => { /* Expected */ },
+            DaoInvoiceError::NotFound {
+                ..
+            } => { /* Expected */ },
             err => panic!("Expected NotFound, got: {err:?}"),
         }
     }
@@ -932,8 +1052,14 @@ mod tests {
                 current_status,
                 attempted_status,
             } => {
-                assert_eq!(current_status, WithdrawalStatus::Completed);
-                assert_eq!(attempted_status, WithdrawalStatus::Failed);
+                assert_eq!(
+                    current_status,
+                    WithdrawalStatus::Completed
+                );
+                assert_eq!(
+                    attempted_status,
+                    WithdrawalStatus::Failed
+                );
             },
             err => panic!("Expected WithdrawalConstraintViolation, got: {err:?}"),
         }
@@ -960,7 +1086,9 @@ mod tests {
         // Should fail with NotFound
         assert!(result2.is_err());
         match result2.unwrap_err() {
-            DaoInvoiceError::NotFound { .. } => { /* Expected */ },
+            DaoInvoiceError::NotFound {
+                ..
+            } => { /* Expected */ },
             err => panic!("Expected NotFound, got: {err:?}"),
         }
     }
@@ -1027,7 +1155,10 @@ mod tests {
                 current_status,
                 attempted_status,
             } => {
-                assert_eq!(current_status, InvoiceStatus::PartiallyPaid);
+                assert_eq!(
+                    current_status,
+                    InvoiceStatus::PartiallyPaid
+                );
                 assert_eq!(attempted_status, InvoiceStatus::Waiting);
             },
             err => panic!("Expected StatusConstraintViolation, got: {err:?}"),

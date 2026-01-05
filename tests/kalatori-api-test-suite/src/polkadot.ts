@@ -1,6 +1,7 @@
 import { ApiPromise, WsProvider, Keyring } from '@polkadot/api';
 import { cryptoWaitReady, decodeAddress } from '@polkadot/util-crypto';
 import { u32 } from '@polkadot/types';
+import { log } from 'console';
 
 export async function connectPolkadot(rpcUrl: string): Promise<ApiPromise> {
   const provider = new WsProvider(rpcUrl);
@@ -30,6 +31,7 @@ export async function getAssetBalance(rpcUrl: string, paymentAccount: string, as
 }
 
 export async function transferFunds(rpcUrl: string, paymentAccount: string, amount: number, assetId: number) {
+  log(`Transferring ${amount} of asset ID ${assetId} to ${paymentAccount} on ${rpcUrl}`);
   const provider = new WsProvider(rpcUrl);
   const api = await ApiPromise.create({ provider });
   const keyring = new Keyring({ type: 'sr25519' });

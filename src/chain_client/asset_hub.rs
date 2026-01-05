@@ -490,10 +490,7 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
     async fn subscribe_transfers(
         &self,
         asset_ids: &[u32],
-    ) -> Result<
-        TransfersStream<AssetHubChainConfig>,
-        SubscriptionError,
-    > {
+    ) -> Result<TransfersStream<AssetHubChainConfig>, SubscriptionError> {
         let client = self.clone();
 
         let assets = self
@@ -903,7 +900,8 @@ mod tests {
 
         println!("Result: {amount:?}");
 
-        // let mut transfer_stream = client.subscribe_transfers(&assets).await.unwrap();
+        // let mut transfer_stream =
+        // client.subscribe_transfers(&assets).await.unwrap();
 
         // println!("Got stream");
 

@@ -187,7 +187,8 @@ describe('Order Endpoint Blackbox Tests', () => {
     const updatedOrder = await createOrder(orderId, usdcOrderData, 200);
 
     expect(updatedOrder).toHaveProperty('currency');
-    expect(updatedOrder.currency).toHaveProperty('currency', usdcOrderData.currency);
+    // Currency should remain as USDT even after update attempt to USDC, we do not allow currency change on update anymore
+    expect(updatedOrder.currency).toHaveProperty('currency', usdtOrderData.currency);
     expect(updatedOrder.currency).toHaveProperty('chain_name', 'statemint');
     expect(updatedOrder.currency).toHaveProperty('kind', 'asset');
     expect(updatedOrder.currency).toHaveProperty('decimals', 6);

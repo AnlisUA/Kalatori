@@ -2,7 +2,6 @@ use std::fmt;
 
 use chrono::{
     DateTime,
-    Duration,
     Utc,
 };
 use rust_decimal::Decimal;
@@ -21,10 +20,7 @@ use sqlx::{
 use uuid::Uuid;
 
 use crate::legacy_types::{
-    CurrencyInfo,
-    OrderQuery,
     PaymentStatus,
-    Timestamp,
     WithdrawalStatus,
 };
 
@@ -165,14 +161,16 @@ impl InvoiceCart {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Invoice {
     pub id: Uuid,
-    pub order_id: String, // Merchant-provided order ID
+    // Merchant-provided order ID
+    pub order_id: String,
     // TODO: make it non-optional, for native asset use asset_id = 0
     pub asset_id: Option<u32>,
     pub chain: String,
     pub amount: Decimal,
     pub payment_address: String,
     pub status: InvoiceStatus,
-    pub withdrawal_status: WithdrawalStatus, // Temporary backward compat field
+    // Temporary backward compat field
+    pub withdrawal_status: WithdrawalStatus,
     pub callback: String,
     pub cart: InvoiceCart,
     pub redirect_url: String,
@@ -180,6 +178,13 @@ pub struct Invoice {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub version: u16, // Optimistic locking version, auto-incremented on updates
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InvoiceWithIncomingAmount {
+    #[serde(flatten)]
+    pub invoice: Invoice,
+    pub incoming_amount: Decimal,
 }
 
 #[derive(FromRow)]
@@ -223,18 +228,43 @@ impl From<InvoiceRow> for Invoice {
     }
 }
 
-#[expect(dead_code)]
 #[derive(Debug)]
 pub struct CreateInvoiceData {
+    pub id: Uuid,
     pub order_id: String,
     pub asset_id: u32,
     pub chain: String,
     pub amount: Decimal,
     pub payment_address: String,
-    pub callback: String,
     pub cart: InvoiceCart,
     pub redirect_url: String,
+    pub callback_url: Option<String>,
     pub valid_till: DateTime<Utc>,
+}
+
+impl From<CreateInvoiceData> for Invoice {
+    fn from(data: CreateInvoiceData) -> Self {
+        let now = Utc::now();
+
+        Self {
+            id: data.id,
+            order_id: data.order_id,
+            asset_id: Some(data.asset_id),
+            chain: data.chain,
+            amount: data.amount,
+            payment_address: data.payment_address,
+            status: InvoiceStatus::Waiting,
+            withdrawal_status: WithdrawalStatus::Waiting,
+            // TODO: make it optional in DB as well
+            callback: data.callback_url.unwrap_or_default(),
+            cart: data.cart,
+            redirect_url: data.redirect_url,
+            valid_till: data.valid_till,
+            created_at: now,
+            updated_at: now,
+            version: 1,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -244,63 +274,6 @@ pub struct UpdateInvoiceData {
     pub cart: InvoiceCart,
     pub valid_till: DateTime<Utc>,
     pub version: u16, // Current version for optimistic locking
-}
-
-// Conversion utilities for backward compatibility with V2 API
-
-impl Invoice {
-    /// Create a new Invoice from `OrderQuery` (V2 API input)
-    ///
-    /// # Errors
-    /// Returns error if amount conversion from f64 to Decimal fails
-    pub fn from_order_query(
-        order_query: OrderQuery,
-        currency_info: CurrencyInfo,
-        payment_address: String,
-        account_lifetime: Timestamp,
-    ) -> Result<Self, String> {
-        let now = Utc::now();
-        let valid_till = calculate_valid_till(account_lifetime);
-        let amount = f64_to_decimal(order_query.amount)?;
-
-        Ok(Self {
-            id: Uuid::new_v4(),
-            order_id: order_query.order,
-            asset_id: currency_info.asset_id,
-            chain: currency_info.chain_name,
-            amount,
-            payment_address,
-            status: InvoiceStatus::Waiting,
-            withdrawal_status: WithdrawalStatus::Waiting,
-            callback: order_query.callback,
-            cart: InvoiceCart::empty(),
-            redirect_url: order_query.redirect_url,
-            valid_till,
-            created_at: now,
-            updated_at: now,
-            version: 1,
-        })
-    }
-}
-
-/// Convert f64 amount to Decimal
-///
-/// # Errors
-/// Returns error if the f64 value cannot be represented as Decimal
-fn f64_to_decimal(amount: f64) -> Result<Decimal, String> {
-    Decimal::try_from(amount)
-        .map_err(|e| format!("Failed to convert amount {amount} to Decimal: {e}"))
-}
-
-/// Calculate `valid_till` timestamp from `account_lifetime`
-pub fn calculate_valid_till(account_lifetime: Timestamp) -> DateTime<Utc> {
-    let lifetime_ms = account_lifetime.0;
-    #[expect(clippy::cast_possible_wrap)]
-    let duration = Duration::milliseconds(lifetime_ms as i64);
-    #[expect(clippy::arithmetic_side_effects)]
-    {
-        Utc::now() + duration
-    }
 }
 
 #[cfg(test)]
@@ -321,7 +294,7 @@ pub fn default_invoice() -> Invoice {
         cart: InvoiceCart::empty(),
         redirect_url: "http://localhost:8080/thankyou".to_string(),
         #[expect(clippy::arithmetic_side_effects)]
-        valid_till: now + Duration::hours(24),
+        valid_till: now + chrono::Duration::hours(24),
         created_at: now,
         updated_at: now,
         version: 1,
@@ -337,7 +310,7 @@ pub fn default_update_invoice_data(invoice_id: Uuid) -> UpdateInvoiceData {
         amount: Decimal::new(15000, 2),
         cart: InvoiceCart::empty(),
         #[expect(clippy::arithmetic_side_effects)]
-        valid_till: now + Duration::hours(24),
+        valid_till: now + chrono::Duration::hours(24),
         version: 1,
     }
 }
