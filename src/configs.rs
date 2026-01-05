@@ -299,7 +299,8 @@ mod tests {
 
             assert_eq!(
                 config.recipient,
-                "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
+                // It's base58 representation of Alice address with prefix 0 (Polkadot)
+                "15oF4uVJwmo4TdGW7VfQxNLavjCXviqxT9S1MgbjMNHr6Sp5"
             );
 
             assert_eq!(config.remark, Some("test".to_string()));
@@ -308,8 +309,10 @@ mod tests {
         // override config dir and set `recipient` in env var
         {
             unsafe {
-                // we don't validate it currenlty so can set any value
-                std::env::set_var("PAYMENTS_RECIPIENT", "test_recipient");
+                // Recipient must be a valid address
+                std::env::set_var("PAYMENTS_RECIPIENT", "14E5nqKAp3oAJcmzgZhUD2RcptBeUBScxKHgJKU4HPNcKVf3");
+                std::env::set_var("PAYMENTS_DEFAULT_CHAIN", "statemint");
+                std::env::set_var("PAYMENTS_DEFAULT_ASSET_ID", "1337");
             }
 
             let config = payments_config_with_prefix("somewhere-nowhere", "");
@@ -319,7 +322,9 @@ mod tests {
                 default_account_lifetime_millis()
             );
 
-            assert_eq!(config.recipient, "test_recipient");
+            assert_eq!(config.recipient, "14E5nqKAp3oAJcmzgZhUD2RcptBeUBScxKHgJKU4HPNcKVf3");
+            assert_eq!(config.default_chain, "statemint");
+            assert_eq!(config.default_asset_id, "1337");
             assert!(config.remark.is_none());
         }
 
@@ -338,7 +343,8 @@ mod tests {
 
             assert_eq!(
                 config.recipient,
-                "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
+                // It's base58 representation of Alice address with prefix 0 (Polkadot)
+                "15oF4uVJwmo4TdGW7VfQxNLavjCXviqxT9S1MgbjMNHr6Sp5"
             );
 
             assert_eq!(config.remark, Some("test".to_string()));
