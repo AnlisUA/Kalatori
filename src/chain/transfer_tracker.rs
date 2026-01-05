@@ -1,15 +1,13 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::str::FromStr;
+use std::sync::Arc;
 
-use tokio_util::sync::CancellationToken;
-use uuid::Uuid;
-use tokio::sync::RwLock;
 use futures::StreamExt;
 use rust_decimal::Decimal;
+use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
 
-use crate::configs::PaymentsConfig;
-use crate::dao::{DaoInterface, DaoTransactionInterface};
 use crate::chain_client::{
     BlockChainClient,
     ChainConfig,
@@ -17,6 +15,11 @@ use crate::chain_client::{
     GeneralChainTransfer,
     SubscriptionError,
     TransfersStream,
+};
+use crate::configs::PaymentsConfig;
+use crate::dao::{
+    DaoInterface,
+    DaoTransactionInterface,
 };
 use crate::types::{
     IncomingTransaction,
@@ -34,7 +37,10 @@ pub struct InvoiceRegistryRecord {
 }
 
 impl InvoiceRegistryRecord {
-    pub fn new(invoice: Invoice, filled_amount: Decimal) -> Self {
+    pub fn new(
+        invoice: Invoice,
+        filled_amount: Decimal,
+    ) -> Self {
         InvoiceRegistryRecord {
             invoice,
             filled_amount,
@@ -63,12 +69,18 @@ impl InvoiceRegistry {
         }
     }
 
-    pub async fn add_invoice(&self, record: InvoiceRegistryRecord) {
+    pub async fn add_invoice(
+        &self,
+        record: InvoiceRegistryRecord,
+    ) {
         let mut invoices = self.invoices.write().await;
         invoices.insert(record.invoice.id, record);
     }
 
-    pub async fn add_invoices(&self, records: Vec<InvoiceRegistryRecord>) {
+    pub async fn add_invoices(
+        &self,
+        records: Vec<InvoiceRegistryRecord>,
+    ) {
         let mut invoices_map = self.invoices.write().await;
 
         for record in records {
@@ -76,12 +88,18 @@ impl InvoiceRegistry {
         }
     }
 
-    pub async fn remove_invoice(&self, invoice_id: &Uuid) {
+    pub async fn remove_invoice(
+        &self,
+        invoice_id: &Uuid,
+    ) {
         let mut invoices = self.invoices.write().await;
         invoices.remove(invoice_id);
     }
 
-    pub async fn remove_invoices(&self, invoices_ids: &[Uuid]) {
+    pub async fn remove_invoices(
+        &self,
+        invoices_ids: &[Uuid],
+    ) {
         let mut invoices = self.invoices.write().await;
 
         for invoice_id in invoices_ids {
@@ -90,7 +108,10 @@ impl InvoiceRegistry {
     }
 
     #[expect(dead_code)]
-    pub async fn get_invoice(&self, invoice_id: &Uuid) -> Option<InvoiceRegistryRecord> {
+    pub async fn get_invoice(
+        &self,
+        invoice_id: &Uuid,
+    ) -> Option<InvoiceRegistryRecord> {
         let invoices = self.invoices.read().await;
         invoices.get(invoice_id).cloned()
     }
@@ -105,15 +126,22 @@ impl InvoiceRegistry {
 
         invoices
             .values()
-            .find(|inv|
+            .find(|inv| {
                 inv.invoice.chain == chain
-                && inv.invoice.payment_address == address
-                && inv.invoice.asset_id.is_some_and(|id| id.to_string() == asset_id)
-            )
+                    && inv.invoice.payment_address == address
+                    && inv
+                        .invoice
+                        .asset_id
+                        .is_some_and(|id| id.to_string() == asset_id)
+            })
             .cloned()
     }
 
-    pub async fn update_filled_amount(&self, invoice_id: &Uuid, new_filled_amount: Decimal) {
+    pub async fn update_filled_amount(
+        &self,
+        invoice_id: &Uuid,
+        new_filled_amount: Decimal,
+    ) {
         let mut invoices = self.invoices.write().await;
 
         if let Some(record) = invoices.get_mut(invoice_id) {
@@ -134,7 +162,11 @@ enum ChainTransferTrackerError {
     DaoTransactionError,
 }
 
-pub struct TransfersTracker<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static> {
+pub struct TransfersTracker<
+    T: ChainConfig,
+    C: BlockChainClient<T> + 'static,
+    D: DaoInterface + 'static,
+> {
     client: C,
     dao: D,
     registry: InvoiceRegistry,
@@ -142,8 +174,15 @@ pub struct TransfersTracker<T: ChainConfig, C: BlockChainClient<T> + 'static, D:
     phantom: std::marker::PhantomData<T>,
 }
 
-impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static> TransfersTracker<T, C, D> {
-    pub fn new(client: C, dao: D, registry: InvoiceRegistry, config: PaymentsConfig) -> Self {
+impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static>
+    TransfersTracker<T, C, D>
+{
+    pub fn new(
+        client: C,
+        dao: D,
+        registry: InvoiceRegistry,
+        config: PaymentsConfig,
+    ) -> Self {
         TransfersTracker {
             client,
             dao,
@@ -181,7 +220,8 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
         transaction: IncomingTransaction,
         invoice_status: InvoiceStatus,
     ) -> Result<(), ChainTransferTrackerError> {
-        let dao_transaction = self.dao
+        let dao_transaction = self
+            .dao
             .begin_transaction()
             .await
             .map_err(|_e| ChainTransferTrackerError::DaoTransactionError)?;
@@ -217,12 +257,29 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
         Ok(())
     }
 
-    async fn process_transfer(&self, transfer: GeneralChainTransfer) {
+    #[expect(clippy::arithmetic_side_effects)]
+    async fn process_transfer(
+        &self,
+        transfer: GeneralChainTransfer,
+    ) {
         // TODO: that's a temporary workaround, fix the types properly
-        let recipient = super::utils::to_base58_string(subxt::utils::AccountId32::from_str(&transfer.recipient).unwrap().0, 0);
+        let recipient = super::utils::to_base58_string(
+            subxt::utils::AccountId32::from_str(&transfer.recipient)
+                .unwrap()
+                .0,
+            0,
+        );
 
-        if let Some(InvoiceRegistryRecord { invoice, mut filled_amount }) = self.registry
-            .find_invoice_by_address(&recipient, &transfer.chain, &transfer.asset_id)
+        if let Some(InvoiceRegistryRecord {
+            invoice,
+            mut filled_amount,
+        }) = self
+            .registry
+            .find_invoice_by_address(
+                &recipient,
+                &transfer.chain,
+                &transfer.asset_id,
+            )
             .await
         {
             tracing::info!(
@@ -245,14 +302,19 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
                 InvoiceStatus::PartiallyPaid
             };
 
-            match self.store_transaction(transaction, updated_status).await {
+            match self
+                .store_transaction(transaction, updated_status)
+                .await
+            {
                 Ok(()) if updated_status == InvoiceStatus::Paid => {
                     tracing::info!(
                         invoice_id = %invoice.id,
                         "Invoice has been fully paid, removing from registry"
                     );
 
-                    self.registry.remove_invoice(&invoice.id).await;
+                    self.registry
+                        .remove_invoice(&invoice.id)
+                        .await;
                 },
                 Ok(()) if updated_status == InvoiceStatus::PartiallyPaid => {
                     tracing::info!(
@@ -261,7 +323,9 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
                         "Invoice has been partially paid, updating filled amount in registry"
                     );
 
-                    self.registry.update_filled_amount(&invoice.id, filled_amount).await;
+                    self.registry
+                        .update_filled_amount(&invoice.id, filled_amount)
+                        .await;
                 },
                 Ok(()) => {
                     // This should not happen
@@ -272,7 +336,9 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
                         "Unexpected invoice status after storing transaction"
                     );
 
-                    self.registry.update_filled_amount(&invoice.id, filled_amount).await;
+                    self.registry
+                        .update_filled_amount(&invoice.id, filled_amount)
+                        .await;
                 },
                 // TODO: handle different errors separately. Behavior may differ based on the error
                 Err(e) => {
@@ -284,17 +350,23 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
                         "Error storing transaction for invoice"
                     );
 
-                    self.registry.update_filled_amount(&invoice.id, filled_amount).await;
-                }
+                    self.registry
+                        .update_filled_amount(&invoice.id, filled_amount)
+                        .await;
+                },
             }
         }
     }
 
-    async fn handle_subscription_event(&self, event: Option<Result<Vec<ChainTransfer<T>>, SubscriptionError>>) -> Result<(), SubscriptionError> {
+    async fn handle_subscription_event(
+        &self,
+        event: Option<Result<Vec<ChainTransfer<T>>, SubscriptionError>>,
+    ) -> Result<(), SubscriptionError> {
         match event {
             Some(Ok(transfers)) => {
                 for transfer in transfers {
-                    self.process_transfer(transfer.into()).await;
+                    self.process_transfer(transfer.into())
+                        .await;
                 }
 
                 Ok(())
@@ -309,15 +381,17 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
                 Err(e)
             },
             None => {
-                tracing::warn!(
-                    "Transfer event subscription ended"
-                );
+                tracing::warn!("Transfer event subscription ended");
                 Err(SubscriptionError::StreamClosed)
-            }
+            },
         }
     }
 
-    async fn perform(mut self, assets: Vec<T::AssetId>, token: CancellationToken) {
+    async fn perform(
+        mut self,
+        assets: Vec<T::AssetId>,
+        token: CancellationToken,
+    ) {
         tracing::info!(
             "Starting transfers tracker for chain for {}",
             self.client.chain_name()
@@ -326,10 +400,13 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
         let mut subscription = None;
 
         loop {
-            subscription = self.get_or_create_subscription(subscription, &assets).await;
+            subscription = self
+                .get_or_create_subscription(subscription, &assets)
+                .await;
 
             let Some(poll_subscription) = &mut subscription else {
-                // If we couldn't create a subscription, try to recreate the client with another RPC endpoint
+                // If we couldn't create a subscription, try to recreate the client with another
+                // RPC endpoint
                 match self.client.recreate().await {
                     Ok(new_client) => {
                         self.client = new_client;
@@ -346,7 +423,7 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
                             error.source = ?e,
                             "Error recreating blockchain client"
                         );
-                    }
+                    },
                 }
 
                 continue;
@@ -354,7 +431,7 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
 
             tokio::select! {
                 subscription_event = poll_subscription.next() => {
-                    if let Err(_) = self.handle_subscription_event(subscription_event).await {
+                    if self.handle_subscription_event(subscription_event).await.is_err() {
                         subscription = None;
                     }
                 },
@@ -368,7 +445,11 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
         }
     }
 
-    pub fn ignite(self, assets: Vec<T::AssetId>, token: CancellationToken) -> tokio::task::JoinHandle<()> {
+    pub fn ignite(
+        self,
+        assets: Vec<T::AssetId>,
+        token: CancellationToken,
+    ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             self.perform(assets, token).await;
         })

@@ -329,9 +329,12 @@ pub struct IncomingTransaction {
 }
 
 impl IncomingTransaction {
-    pub fn from_chain_transfer(invoice_id: Uuid, transfer: GeneralChainTransfer) -> Self {
+    pub fn from_chain_transfer(
+        invoice_id: Uuid,
+        transfer: GeneralChainTransfer,
+    ) -> Self {
         let transaction_id = transfer.general_transaction_id();
-        let transfer_info = transfer.to_transfer_info();
+        let transfer_info = transfer.into_transfer_info();
 
         Self {
             id: Uuid::new_v4(),

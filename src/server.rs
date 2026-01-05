@@ -23,9 +23,9 @@ use crate::handlers::order::{
     force_withdrawal,
     order,
 };
-use crate::state::AppState;
 use crate::handlers::public::public_routes;
 use crate::legacy_types::LegacyApiData;
+use crate::state::AppState;
 
 #[derive(Clone)]
 pub struct ApiState<D: DaoInterface + Clone + 'static> {
@@ -36,11 +36,11 @@ pub struct ApiState<D: DaoInterface + Clone + 'static> {
 pub async fn new<D: DaoInterface + Clone + 'static>(
     shutdown_notification: CancellationToken,
     config: WebServerConfig,
-    app_state: AppState<D>,
+    state: AppState<D>,
     legacy_api_data: LegacyApiData,
 ) -> Result<impl Future<Output = Result<Cow<'static, str>, Error>>, ServerError> {
     let api_state = ApiState {
-        state: app_state,
+        state,
         legacy_api_data,
     };
 

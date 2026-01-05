@@ -204,7 +204,12 @@ pub fn payments_config_with_prefix(
     let config_path = format_config_path(config_dir_path, "payments.json");
     let env_prefix = format_prefix(prefix, "PAYMENTS");
     let mut config: PaymentsConfig = config_from_file_or_env(&config_path, &env_prefix);
-    config.recipient = to_base58_string(subxt::utils::AccountId32::from_str(&config.recipient).unwrap().0, 0);
+    config.recipient = to_base58_string(
+        subxt::utils::AccountId32::from_str(&config.recipient)
+            .unwrap()
+            .0,
+        0,
+    );
     config
 }
 
@@ -310,7 +315,10 @@ mod tests {
         {
             unsafe {
                 // Recipient must be a valid address
-                std::env::set_var("PAYMENTS_RECIPIENT", "14E5nqKAp3oAJcmzgZhUD2RcptBeUBScxKHgJKU4HPNcKVf3");
+                std::env::set_var(
+                    "PAYMENTS_RECIPIENT",
+                    "14E5nqKAp3oAJcmzgZhUD2RcptBeUBScxKHgJKU4HPNcKVf3",
+                );
                 std::env::set_var("PAYMENTS_DEFAULT_CHAIN", "statemint");
                 std::env::set_var("PAYMENTS_DEFAULT_ASSET_ID", "1337");
             }
@@ -322,7 +330,10 @@ mod tests {
                 default_account_lifetime_millis()
             );
 
-            assert_eq!(config.recipient, "14E5nqKAp3oAJcmzgZhUD2RcptBeUBScxKHgJKU4HPNcKVf3");
+            assert_eq!(
+                config.recipient,
+                "14E5nqKAp3oAJcmzgZhUD2RcptBeUBScxKHgJKU4HPNcKVf3"
+            );
             assert_eq!(config.default_chain, "statemint");
             assert_eq!(config.default_asset_id, "1337");
             assert!(config.remark.is_none());

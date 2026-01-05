@@ -2,13 +2,13 @@ use axum::Json;
 use axum::extract::State as ExtractState;
 
 use crate::dao::DaoInterface;
-use crate::server::ApiState;
 use crate::legacy_types::{
+    Health,
+    RpcInfo,
     ServerHealth,
     ServerStatus,
-    RpcInfo,
-    Health,
 };
+use crate::server::ApiState;
 
 pub async fn status<D: DaoInterface + Clone + 'static>(
     ExtractState(state): ExtractState<ApiState<D>>
@@ -19,9 +19,11 @@ pub async fn status<D: DaoInterface + Clone + 'static>(
     ); 1],
     Json<ServerStatus>,
 ) {
-    #[expect(clippy::match_wild_err_arm)]
     let status = ServerStatus {
-        server_info: state.legacy_api_data.server_info.clone(),
+        server_info: state
+            .legacy_api_data
+            .server_info
+            .clone(),
         supported_currencies: state.legacy_api_data.currencies.clone(),
     };
 
@@ -59,11 +61,13 @@ pub async fn health<D: DaoInterface + Clone + 'static>(
     ); 1],
     Json<ServerHealth>,
 ) {
-    let connected_rpcs: Vec<_> = state.legacy_api_data.rpc_endpoints
+    let connected_rpcs: Vec<_> = state
+        .legacy_api_data
+        .rpc_endpoints
         .iter()
         .map(|rpc_url| RpcInfo {
             chain_name: "statemint".to_string(),
-            rpc_url: rpc_url.to_string(),
+            rpc_url: rpc_url.clone(),
             status: Health::Ok,
         })
         .collect();
@@ -71,7 +75,10 @@ pub async fn health<D: DaoInterface + Clone + 'static>(
     let status = overall_health(&connected_rpcs);
 
     let server_health = ServerHealth {
-        server_info: state.legacy_api_data.server_info.clone(),
+        server_info: state
+            .legacy_api_data
+            .server_info
+            .clone(),
         connected_rpcs,
         status,
     };

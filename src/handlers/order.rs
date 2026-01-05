@@ -8,30 +8,40 @@ use axum::response::{
     IntoResponse,
     Response,
 };
-use serde::Deserialize;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive;
+use serde::Deserialize;
 
+use crate::dao::{
+    DaoInterface,
+    DaoInvoiceError,
+};
 use crate::error::{
     ForceWithdrawalError,
     OrderError,
 };
-use crate::server::ApiState;
-use crate::dao::{DaoInterface, DaoInvoiceError};
 use crate::legacy_types::{
     AMOUNT,
     CURRENCY,
     InvalidParameter,
     LegacyApiData,
-    OrderStatus,
     OrderResponse,
-    transaction_to_transaction_info,
+    OrderStatus,
     invoice_to_order_info,
+    transaction_to_transaction_info,
 };
+use crate::server::ApiState;
 use crate::state::AppState;
-use crate::types::{Invoice, InvoiceCart, InvoiceStatus};
+use crate::types::{
+    Invoice,
+    InvoiceCart,
+    InvoiceStatus,
+};
 
-use super::types::{CreateInvoiceParams, UpdateInvoiceParams};
+use super::types::{
+    CreateInvoiceParams,
+    UpdateInvoiceParams,
+};
 
 const EXISTENTIAL_DEPOSIT: f64 = 0.07;
 
@@ -51,12 +61,15 @@ fn build_order_status(
     let order_info = invoice_to_order_info(&invoice, &api_data.currencies)?;
 
     Ok(OrderStatus {
-        order: invoice.order_id.clone(),
+        order: invoice.order_id,
         message,
         recipient: api_data.recipient.clone(),
         server_info: api_data.server_info.clone(),
         order_info,
-        payment_page: format!("http://localhost:16726/public/v1?invoice_id={}", invoice.id),
+        payment_page: format!(
+            "http://localhost:16726/public/v1?invoice_id={}",
+            invoice.id
+        ),
         redirect_url: String::new(),
     })
 }
@@ -70,16 +83,20 @@ async fn create_or_update_invoice<D: DaoInterface + Clone + 'static>(
     callback_url: Option<String>,
     redirect_url: Option<String>,
 ) -> Result<OrderResponse, OrderError> {
-    // We actually perform duplicated work here, as we first check for existing invoice and in case of update
-    // we again fetch the invoice by invoice_id. It is made in order to keep backward compatibility but not
-    // complicate the new interface with "get by order_id" functionality.
-    if let Some(invoice) = state.get_invoice_by_order_id(&order_id)
+    // We actually perform duplicated work here, as we first check for existing
+    // invoice and in case of update we again fetch the invoice by invoice_id.
+    // It is made in order to keep backward compatibility but not complicate the
+    // new interface with "get by order_id" functionality.
+    if let Some(invoice) = state
+        .get_invoice_by_order_id(&order_id)
         .await
         .map_err(|_| OrderError::InternalError)?
     {
         if invoice.status != InvoiceStatus::Waiting {
             let order_status = build_order_status(invoice, api_data, String::new())?;
-            return Ok(OrderResponse::CollidedOrder(order_status));
+            return Ok(OrderResponse::CollidedOrder(
+                order_status,
+            ));
         }
 
         let params = UpdateInvoiceParams {
@@ -95,7 +112,9 @@ async fn create_or_update_invoice<D: DaoInterface + Clone + 'static>(
 
         let order_status = build_order_status(updated, api_data, String::new())?;
 
-        Ok(OrderResponse::ModifiedOrder(order_status))
+        Ok(OrderResponse::ModifiedOrder(
+            order_status,
+        ))
     } else {
         let params = CreateInvoiceParams {
             order_id,
@@ -144,7 +163,8 @@ async fn process_order<D: DaoInterface + Clone + 'static>(
             ));
         };
 
-        api_data.currencies
+        api_data
+            .currencies
             .get(&currency)
             .ok_or(OrderError::UnknownCurrency)?;
 
@@ -152,7 +172,8 @@ async fn process_order<D: DaoInterface + Clone + 'static>(
             "usdc" => 1337,
             "usdt" => 1984,
             _ => return Err(OrderError::UnknownCurrency),
-        }.to_string();
+        }
+        .to_string();
 
         let amount = Decimal::from_f64(amount).unwrap();
 
@@ -164,7 +185,8 @@ async fn process_order<D: DaoInterface + Clone + 'static>(
             asset_id,
             payload.callback,
             payload.redirect_url,
-        ).await
+        )
+        .await
     } else {
         let invoice = state
             .get_invoice_by_order_id(&order_id)
@@ -173,7 +195,8 @@ async fn process_order<D: DaoInterface + Clone + 'static>(
 
         match invoice {
             Some(invoice) => {
-                let transactions = state.get_invoice_transactions(invoice.id)
+                let transactions = state
+                    .get_invoice_transactions(invoice.id)
                     .await
                     .map_err(|_| OrderError::InternalError)?
                     .into_iter()
@@ -248,19 +271,27 @@ pub async fn process_force_withdrawal<D: DaoInterface + Clone + 'static>(
     state: &ApiState<D>,
     order_id: String,
 ) -> Result<OrderResponse, ForceWithdrawalError> {
-    match state.state.force_withdrawal(order_id).await {
+    match state
+        .state
+        .force_withdrawal(order_id)
+        .await
+    {
         Ok(invoice) => {
             let order_status = build_order_status(
                 invoice,
                 &state.legacy_api_data,
                 "Force withdrawal initiated".to_string(),
             )
-                .map_err(|_| ForceWithdrawalError::WithdrawalError(String::new()))?;
+            .map_err(|_| ForceWithdrawalError::WithdrawalError(String::new()))?;
 
             Ok(OrderResponse::FoundOrder(order_status))
         },
-        Err(DaoInvoiceError::NotFound { .. }) => Ok(OrderResponse::NotFound),
-        Err(other) => Err(ForceWithdrawalError::WithdrawalError(other.to_string())),
+        Err(DaoInvoiceError::NotFound {
+            ..
+        }) => Ok(OrderResponse::NotFound),
+        Err(other) => Err(ForceWithdrawalError::WithdrawalError(
+            other.to_string(),
+        )),
     }
 }
 

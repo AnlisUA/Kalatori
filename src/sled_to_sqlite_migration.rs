@@ -64,7 +64,7 @@ use crate::dao::{
     DAO,
     DaoInterface,
     DaoInvoiceError,
-    DaoTransactionError as DaoTransactionError,
+    DaoTransactionError,
 };
 use crate::error::Error;
 use crate::legacy_types::{
@@ -304,7 +304,6 @@ async fn migrate_sled_to_sqlite(
     Ok(stats)
 }
 
-
 pub async fn perform_sled_to_sqlite_migration(
     database_config: &DatabaseConfig,
     chain_config: &ChainConfig,
@@ -321,9 +320,7 @@ pub async fn perform_sled_to_sqlite_migration(
 
             let currencies = build_currencies_from_config(chain_config);
 
-            match migrate_sled_to_sqlite(sled_path, dao, &currencies)
-                .await
-            {
+            match migrate_sled_to_sqlite(sled_path, dao, &currencies).await {
                 Ok(stats) => {
                     tracing::info!(
                         "Migration completed successfully: {} invoices ({} skipped as existing), \

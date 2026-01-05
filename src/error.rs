@@ -99,8 +99,12 @@ impl From<crate::dao::DaoInvoiceError> for Error {
 
         // Map to appropriate DaoError variant
         let dao_error = match e {
-            crate::dao::DaoInvoiceError::NotFound { .. } => DaoError::InvoiceNotFound,
-            crate::dao::DaoInvoiceError::VersionConflict { .. } => DaoError::VersionConflict,
+            crate::dao::DaoInvoiceError::NotFound {
+                ..
+            } => DaoError::InvoiceNotFound,
+            crate::dao::DaoInvoiceError::VersionConflict {
+                ..
+            } => DaoError::VersionConflict,
             _ => DaoError::Sqlx(sqlx::Error::RowNotFound),
         };
 

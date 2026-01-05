@@ -23,7 +23,11 @@ use serde::{
 
 use crate::configs::ChainConfig;
 use crate::error::OrderError;
-use crate::types::{Invoice, Transaction, TransactionStatus};
+use crate::types::{
+    Invoice,
+    Transaction,
+    TransactionStatus,
+};
 
 pub const AMOUNT: &str = "amount";
 pub const CURRENCY: &str = "currency";
@@ -160,7 +164,9 @@ impl std::str::FromStr for WithdrawalStatus {
             "Failed" => Ok(Self::Failed),
             "Forced" => Ok(Self::Forced),
             "Completed" => Ok(Self::Completed),
-            _ => Err(format!("Unknown withdrawal status: {s}")),
+            _ => Err(format!(
+                "Unknown withdrawal status: {s}"
+            )),
         }
     }
 }
@@ -406,7 +412,7 @@ fn decimal_to_amount(amount: rust_decimal::Decimal) -> Amount {
     Amount::Exact(amount_f64)
 }
 
-fn asset_id_to_currency_name(asset_id: &Option<u32>) -> Result<&'static str, OrderError> {
+fn asset_id_to_currency_name(asset_id: Option<u32>) -> Result<&'static str, OrderError> {
     match asset_id {
         Some(1337) => Ok("USDC"),
         Some(1984) => Ok("USDt"),
@@ -419,9 +425,10 @@ pub fn transaction_to_transaction_info(
     transaction: Transaction,
     currencies: &CurrenciesMap,
 ) -> Result<TransactionInfo, OrderError> {
-    let asset_name = asset_id_to_currency_name(&Some(transaction.asset_id))?;
+    let asset_name = asset_id_to_currency_name(Some(transaction.asset_id))?;
 
-    let currency = currencies.get(asset_name)
+    let currency = currencies
+        .get(asset_name)
         .ok_or(OrderError::UnknownCurrency)?
         .info(asset_name.to_string());
 
@@ -456,7 +463,7 @@ pub fn invoice_to_order_info(
     invoice: &Invoice,
     currencies: &CurrenciesMap,
 ) -> Result<OrderInfo, OrderError> {
-    let asset_name = asset_id_to_currency_name(&invoice.asset_id)?;
+    let asset_name = asset_id_to_currency_name(invoice.asset_id)?;
 
     let currency = currencies
         .get(asset_name)

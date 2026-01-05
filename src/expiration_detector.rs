@@ -1,17 +1,23 @@
-use std::time::Duration;
 use std::pin::Pin;
+use std::time::Duration;
 
+use futures::stream::{
+    FuturesUnordered,
+    StreamExt,
+};
 use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
-use futures::stream::{FuturesUnordered, StreamExt};
 
 use crate::chain::InvoiceRegistry;
-use crate::types::Invoice;
 use crate::dao::DaoInterface;
+use crate::types::Invoice;
 
 const EXPIRATION_CHECK_INTERVAL_MILLIS: u64 = 1000;
 
-async fn send_webhook(client: reqwest::Client, invoice: Invoice) {
+async fn send_webhook(
+    client: reqwest::Client,
+    invoice: Invoice,
+) {
     if invoice.callback.is_empty() {
         tracing::warn!(
             invoice_id = %invoice.id,
@@ -23,7 +29,11 @@ async fn send_webhook(client: reqwest::Client, invoice: Invoice) {
         return;
     }
 
-    if let Err(e) = client.get(invoice.callback).send().await {
+    if let Err(e) = client
+        .get(invoice.callback)
+        .send()
+        .await
+    {
         tracing::warn!(
             invoice_id = %invoice.id,
             error.category = "expiration_detector",
@@ -35,7 +45,7 @@ async fn send_webhook(client: reqwest::Client, invoice: Invoice) {
         tracing::info!(
             invoice_id = %invoice.id,
             "Sent expiration webhook for invoice"
-        )
+        );
     }
 }
 
@@ -46,7 +56,10 @@ pub struct ExpirationDetector<D: DaoInterface + 'static> {
 }
 
 impl<D: DaoInterface + 'static> ExpirationDetector<D> {
-    pub fn new(dao: D, registry: InvoiceRegistry) -> Self {
+    pub fn new(
+        dao: D,
+        registry: InvoiceRegistry,
+    ) -> Self {
         ExpirationDetector {
             client: reqwest::Client::new(),
             dao,
@@ -55,7 +68,9 @@ impl<D: DaoInterface + 'static> ExpirationDetector<D> {
     }
 
     async fn fetch_expired_invoices(&self) -> Vec<Invoice> {
-        let expired_unpaid = self.dao
+        // TODO: fetch partially paid expired invoices as well and return them together
+
+        self.dao
             .update_invoices_expired()
             .await
             .inspect_err(|_| {
@@ -65,21 +80,22 @@ impl<D: DaoInterface + 'static> ExpirationDetector<D> {
                     "Failed to fetch expired invoices from database"
                 );
             })
-            .unwrap_or_default();
-
-        // TODO: fetch partially paid expired invoices as well and return them together
-
-        expired_unpaid
+            .unwrap_or_default()
     }
 
-    fn build_future(&self, invoice: Invoice) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
+    fn build_future(
+        &self,
+        invoice: Invoice,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
         let client = self.client.clone();
         Box::pin(send_webhook(client, invoice))
     }
 
-    // 1. Update statuses in the database for expired and partially paid expired invoices
+    // 1. Update statuses in the database for expired and partially paid expired
+    //    invoices
     // 2. Notify tracker, it should remove them from tracking
-    // 3. TODO: Check balances one last time (ensure that we didn't miss any transfers)
+    // 3. TODO: Check balances one last time (ensure that we didn't miss any
+    //    transfers)
     // 4. Schedule webhooks for expired invoices
     async fn handle_expirations(&self) -> Vec<Pin<Box<dyn Future<Output = ()> + Send + 'static>>> {
         let expired_invoices = self.fetch_expired_invoices().await;
@@ -89,8 +105,9 @@ impl<D: DaoInterface + 'static> ExpirationDetector<D> {
             .map(|inv| inv.id)
             .collect();
 
-        // TODO: send notification to remove expired invoices to tracker after it's refactoring.
-        // For now it's not necessary cause tracker will check if invoice is expired on each balance check.
+        // TODO: send notification to remove expired invoices to tracker after it's
+        // refactoring. For now it's not necessary cause tracker will check if
+        // invoice is expired on each balance check.
 
         if !expired_invoices_ids.is_empty() {
             tracing::info!(
@@ -99,13 +116,17 @@ impl<D: DaoInterface + 'static> ExpirationDetector<D> {
                 "Marked invoices as expired"
             );
 
-            self.registry.remove_invoices(&expired_invoices_ids).await;
+            self.registry
+                .remove_invoices(&expired_invoices_ids)
+                .await;
         }
 
-        // TODO: later we'll build futures which will check balances one last time for partially paid invoices
-        // and return them from this function. Also we'll have to schedule webhooks for expired invoices here
-        // using transactional outbox pattern. But for now, as we don't have time for that, we'll just return
-        // futures which actually send webhooks for the updated invoices.
+        // TODO: later we'll build futures which will check balances one last time for
+        // partially paid invoices and return them from this function. Also
+        // we'll have to schedule webhooks for expired invoices here
+        // using transactional outbox pattern. But for now, as we don't have time for
+        // that, we'll just return futures which actually send webhooks for the
+        // updated invoices.
         expired_invoices
             .into_iter()
             .map(|invoice| self.build_future(invoice))
@@ -116,7 +137,9 @@ impl<D: DaoInterface + 'static> ExpirationDetector<D> {
         self,
         token: CancellationToken,
     ) {
-        let mut interval = interval(Duration::from_millis(EXPIRATION_CHECK_INTERVAL_MILLIS));
+        let mut interval = interval(Duration::from_millis(
+            EXPIRATION_CHECK_INTERVAL_MILLIS,
+        ));
 
         let mut shutdown_expected = false;
         let mut futures_set = FuturesUnordered::new();
@@ -135,7 +158,7 @@ impl<D: DaoInterface + 'static> ExpirationDetector<D> {
                         break;
                     }
                 }
-                _ = token.cancelled() => {
+                () = token.cancelled() => {
                     tracing::info!(
                         "Expiration detector received shutdown signal, finishing pending tasks before shutting down"
                     );
@@ -154,7 +177,10 @@ impl<D: DaoInterface + 'static> ExpirationDetector<D> {
         }
     }
 
-    pub fn ignite(self, token: CancellationToken) -> tokio::task::JoinHandle<()> {
+    pub fn ignite(
+        self,
+        token: CancellationToken,
+    ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             self.perform(token).await;
         })

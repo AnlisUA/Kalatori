@@ -1,5 +1,5 @@
-use serde::Deserialize;
 use rust_decimal::Decimal;
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::types::InvoiceCart;

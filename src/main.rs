@@ -18,7 +18,16 @@ use tokio::runtime::Runtime;
 use tokio_util::sync::CancellationToken;
 use tracing::Level;
 
-use chain_client::Keyring;
+use chain::{
+    InvoiceRegistry,
+    TransfersExecutor,
+    TransfersTracker,
+};
+use chain_client::{
+    AssetHubClient,
+    BlockChainClient,
+    Keyring,
+};
 use configs::{
     chain_config_with_prefix,
     database_config_with_prefix,
@@ -32,6 +41,13 @@ use error::{
     PrettyCause,
 };
 use expiration_detector::ExpirationDetector;
+use legacy_types::{
+    LegacyApiData,
+    ServerInfo,
+    build_currencies_from_config,
+};
+use sled_to_sqlite_migration::perform_sled_to_sqlite_migration;
+use state::AppState;
 use utils::logger;
 use utils::shutdown::{
     self,
@@ -39,14 +55,6 @@ use utils::shutdown::{
     ShutdownOutcome,
 };
 use utils::task_tracker::TaskTracker;
-use chain::{TransfersExecutor, TransfersTracker, InvoiceRegistry};
-use chain_client::{
-    AssetHubClient,
-    BlockChainClient,
-};
-use legacy_types::{build_currencies_from_config, LegacyApiData, ServerInfo};
-use state::AppState;
-use sled_to_sqlite_migration::perform_sled_to_sqlite_migration;
 
 use crate::dao::DaoInterface;
 
@@ -123,6 +131,7 @@ fn try_main(shutdown_notification: ShutdownNotification) -> Result<(), Error> {
         .block_on(async_try_main(shutdown_notification))
 }
 
+#[expect(clippy::too_many_lines)]
 async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(), Error> {
     // Planned start order
     // 1. Load configs
@@ -181,8 +190,8 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
         .map_err(|_| Error::Fatal)?;
 
     let keyring = Keyring::new(seed_config.seed);
-    // Please don't keep keyring_client in this scope, it must be moved in order to keep
-    // graceful shutdown working.
+    // Please don't keep keyring_client in this scope, it must be moved in order to
+    // keep graceful shutdown working.
     let (keyring_handle, keyring_client) = keyring.ignite();
 
     let invoice_registry = InvoiceRegistry::new();
@@ -195,14 +204,14 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
         .map(From::from)
         .collect();
 
-    invoice_registry.add_invoices(restore_invoices).await;
+    invoice_registry
+        .add_invoices(restore_invoices)
+        .await;
 
-    let expiration_detector = ExpirationDetector::new(
-        dao.clone(),
-        invoice_registry.clone(),
-    );
+    let expiration_detector = ExpirationDetector::new(dao.clone(), invoice_registry.clone());
 
-    let expiration_detector_handle = expiration_detector.ignite(shutdown_notification.token.clone());
+    let expiration_detector_handle =
+        expiration_detector.ignite(shutdown_notification.token.clone());
 
     let transfers_tracker = TransfersTracker::new(
         asset_hub_client.clone(),
@@ -211,7 +220,10 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
         payments_config.clone(),
     );
 
-    let transfers_tracker_handle = transfers_tracker.ignite(assets, shutdown_notification.token.clone());
+    let transfers_tracker_handle = transfers_tracker.ignite(
+        assets,
+        shutdown_notification.token.clone(),
+    );
 
     let transfer_executor = TransfersExecutor::new(
         asset_hub_client,
@@ -284,5 +296,5 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
         }
         shutdown_listener_result = &mut shutdown_listener => shutdown_listener_result
     }
-        .expect("shutdown listener shouldn't panic")
+    .expect("shutdown listener shouldn't panic")
 }

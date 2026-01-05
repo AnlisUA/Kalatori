@@ -35,12 +35,18 @@ pub use refund::DaoRefundError;
 pub use transaction::DaoTransactionError;
 
 // Export high-level interface traits
-pub use interface::{DaoInterface, DaoTransactionInterface};
+pub use interface::{
+    DaoInterface,
+    DaoTransactionInterface,
+};
 
 // Export mocks only in test builds
 #[cfg(test)]
 #[cfg_attr(test, expect(unused_imports))]
-pub use interface::{MockDaoInterface, MockDaoTransactionInterface};
+pub use interface::{
+    MockDaoInterface,
+    MockDaoTransactionInterface,
+};
 
 // Keep DaoResult for internal use (DaoExecutor trait methods)
 pub(crate) type DaoResult<T> = Result<T, sqlx::Error>;
@@ -109,7 +115,9 @@ impl DaoExecutor for DaoTransaction {
             .await?;
 
         if let Some(row) = result {
-            O::from_row(&row).map(From::from).map(Some)
+            O::from_row(&row)
+                .map(From::from)
+                .map(Some)
         } else {
             Ok(None)
         }
@@ -300,7 +308,9 @@ impl DaoExecutor for DAO {
         let result = self.pool.fetch_optional(query).await?;
 
         if let Some(row) = result {
-            O::from_row(&row).map(From::from).map(Some)
+            O::from_row(&row)
+                .map(From::from)
+                .map(Some)
         } else {
             Ok(None)
         }
@@ -371,7 +381,7 @@ mod tests {
     async fn print_sqlite_version() {
         let dao = create_test_dao().await;
         let version = dao.sqlite_version().await.unwrap();
-        println!("SQLite version: {}", version);
+        println!("SQLite version: {version}");
     }
 
     #[tokio::test]

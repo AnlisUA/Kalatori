@@ -6,26 +6,48 @@
 //!
 //! Both traits can be easily mocked using mockall's `#[automock]` attribute.
 
-use chrono::{DateTime, Utc};
+use chrono::{
+    DateTime,
+    Utc,
+};
 use uuid::Uuid;
 
 use crate::legacy_types::WithdrawalStatus;
-use crate::types::*;
+use crate::types::{
+    GeneralTransactionId,
+    Invoice,
+    InvoiceStatus,
+    InvoiceWithIncomingAmount,
+    Payout,
+    PayoutStatus,
+    RetryMeta,
+    Transaction,
+    UpdateInvoiceData,
+};
 
-use super::invoice::{DaoInvoiceError, DaoInvoiceMethods};
-use super::payout::{DaoPayoutError, DaoPayoutMethods};
-use super::transaction::{DaoTransactionError, DaoTransactionMethods};
+use super::invoice::{
+    DaoInvoiceError,
+    DaoInvoiceMethods,
+};
+use super::payout::{
+    DaoPayoutError,
+    DaoPayoutMethods,
+};
+use super::transaction::{
+    DaoTransactionError,
+    DaoTransactionMethods,
+};
 
 use super::{
-    DaoResult,
     DAO,
+    DaoResult,
     DaoTransaction,
 };
 
 /// High-level interface for database operations.
 ///
-/// This trait defines the public API for the DAO and can be easily mocked for testing.
-/// All methods delegate to the existing trait implementations.
+/// This trait defines the public API for the DAO and can be easily mocked for
+/// testing. All methods delegate to the existing trait implementations.
 ///
 /// # Example
 ///
@@ -53,19 +75,28 @@ pub trait DaoInterface: Send + Sync {
     // === Invoice Methods ===
 
     /// Create a new invoice in the database.
-    async fn create_invoice(&self, invoice: Invoice) -> Result<Invoice, DaoInvoiceError>;
+    async fn create_invoice(
+        &self,
+        invoice: Invoice,
+    ) -> Result<Invoice, DaoInvoiceError>;
 
     /// Get an invoice by its unique ID.
-    async fn get_invoice_by_id(&self, invoice_id: Uuid) -> Result<Option<Invoice>, DaoInvoiceError>;
+    async fn get_invoice_by_id(
+        &self,
+        invoice_id: Uuid,
+    ) -> Result<Option<Invoice>, DaoInvoiceError>;
 
     /// Get an invoice by its order ID (external identifier).
-    async fn get_invoice_by_order_id(&self, order_id: &str) -> Result<Option<Invoice>, DaoInvoiceError>;
+    async fn get_invoice_by_order_id(
+        &self,
+        order_id: &str,
+    ) -> Result<Option<Invoice>, DaoInvoiceError>;
 
-    /// Get all active invoices (Waiting or PartiallyPaid status).
-    async fn get_active_invoices(&self) -> Result<Vec<Invoice>, DaoInvoiceError>;
-
-    /// Get all active invoices (Waiting or PartiallyPaid status) along with their incoming amounts (sum amounts of related Incoming transaction).
-    async fn get_active_invoices_with_amounts(&self) -> Result<Vec<InvoiceWithIncomingAmount>, DaoInvoiceError>;
+    /// Get all active invoices (Waiting or `PartiallyPaid` status) along with
+    /// their incoming amounts (sum amounts of related Incoming transaction).
+    async fn get_active_invoices_with_amounts(
+        &self
+    ) -> Result<Vec<InvoiceWithIncomingAmount>, DaoInvoiceError>;
 
     /// Update an invoice's status.
     async fn update_invoice_status(
@@ -74,7 +105,7 @@ pub trait DaoInterface: Send + Sync {
         status: InvoiceStatus,
     ) -> Result<Invoice, DaoInvoiceError>;
 
-    /// Update invoice data (amount, cart, valid_till).
+    /// Update invoice data (amount, cart, `valid_till`).
     /// Requires expected version for optimistic locking.
     async fn update_invoice_data(
         &self,
@@ -93,7 +124,10 @@ pub trait DaoInterface: Send + Sync {
     // === Transaction Methods ===
 
     /// Create a new transaction record.
-    async fn create_transaction(&self, transaction: Transaction) -> Result<Transaction, DaoTransactionError>;
+    async fn create_transaction(
+        &self,
+        transaction: Transaction,
+    ) -> Result<Transaction, DaoTransactionError>;
 
     /// Mark a transaction as successful with blockchain coordinates.
     async fn update_transaction_successful(
@@ -119,19 +153,31 @@ pub trait DaoInterface: Send + Sync {
     ) -> Result<Transaction, DaoTransactionError>;
 
     /// Get all transactions for a specific invoice.
-    async fn get_invoice_transactions(&self, invoice_id: Uuid) -> Result<Vec<Transaction>, DaoTransactionError>;
+    async fn get_invoice_transactions(
+        &self,
+        invoice_id: Uuid,
+    ) -> Result<Vec<Transaction>, DaoTransactionError>;
 
     // === Payout Methods ===
 
     /// Create a new payout record.
-    async fn create_payout(&self, payout: Payout) -> Result<Payout, DaoPayoutError>;
+    async fn create_payout(
+        &self,
+        payout: Payout,
+    ) -> Result<Payout, DaoPayoutError>;
 
     /// Get a payout by its ID.
-    async fn get_payout_by_id(&self, payout_id: Uuid) -> Result<Option<Payout>, DaoPayoutError>;
+    async fn get_payout_by_id(
+        &self,
+        payout_id: Uuid,
+    ) -> Result<Option<Payout>, DaoPayoutError>;
 
-    /// Get all pending payouts (Waiting status) and mark them as InProgress.
+    /// Get all pending payouts (Waiting status) and mark them as `InProgress`.
     /// Returns up to `limit` payouts.
-    async fn get_pending_payouts(&self, limit: u32) -> Result<Vec<Payout>, DaoPayoutError>;
+    async fn get_pending_payouts(
+        &self,
+        limit: u32,
+    ) -> Result<Vec<Payout>, DaoPayoutError>;
 
     /// Update a payout's status.
     async fn update_payout_status(
@@ -151,13 +197,16 @@ pub trait DaoInterface: Send + Sync {
     // === Utility Methods ===
 
     /// Check if a transaction with given bytes already exists.
-    async fn transaction_exists_by_bytes(&self, transaction_bytes: &str) -> DaoResult<bool>;
+    async fn transaction_exists_by_bytes(
+        &self,
+        transaction_bytes: &str,
+    ) -> DaoResult<bool>;
 }
 
 /// Interface for database transaction operations.
 ///
-/// Provides the same high-level methods as DaoInterface but within a transaction context.
-/// Must be committed or rolled back explicitly.
+/// Provides the same high-level methods as `DaoInterface` but within a
+/// transaction context. Must be committed or rolled back explicitly.
 ///
 /// # Example
 ///
@@ -173,13 +222,20 @@ pub trait DaoInterface: Send + Sync {
 pub trait DaoTransactionInterface {
     // === Invoice Methods ===
 
-    async fn create_invoice(&self, invoice: Invoice) -> Result<Invoice, DaoInvoiceError>;
+    async fn create_invoice(
+        &self,
+        invoice: Invoice,
+    ) -> Result<Invoice, DaoInvoiceError>;
 
-    async fn get_invoice_by_id(&self, invoice_id: Uuid) -> Result<Option<Invoice>, DaoInvoiceError>;
+    async fn get_invoice_by_id(
+        &self,
+        invoice_id: Uuid,
+    ) -> Result<Option<Invoice>, DaoInvoiceError>;
 
-    async fn get_invoice_by_order_id(&self, order_id: &str) -> Result<Option<Invoice>, DaoInvoiceError>;
-
-    async fn get_active_invoices(&self) -> Result<Vec<Invoice>, DaoInvoiceError>;
+    async fn get_invoice_by_order_id(
+        &self,
+        order_id: &str,
+    ) -> Result<Option<Invoice>, DaoInvoiceError>;
 
     async fn update_invoice_status(
         &self,
@@ -202,7 +258,10 @@ pub trait DaoTransactionInterface {
 
     // === Transaction Methods ===
 
-    async fn create_transaction(&self, transaction: Transaction) -> Result<Transaction, DaoTransactionError>;
+    async fn create_transaction(
+        &self,
+        transaction: Transaction,
+    ) -> Result<Transaction, DaoTransactionError>;
     async fn update_transaction_successful(
         &self,
         transaction_id: Uuid,
@@ -220,13 +279,25 @@ pub trait DaoTransactionInterface {
         &self,
         transaction: Transaction,
     ) -> Result<Transaction, DaoTransactionError>;
-    async fn get_invoice_transactions(&self, invoice_id: Uuid) -> Result<Vec<Transaction>, DaoTransactionError>;
+    async fn get_invoice_transactions(
+        &self,
+        invoice_id: Uuid,
+    ) -> Result<Vec<Transaction>, DaoTransactionError>;
 
     // === Payout Methods ===
 
-    async fn create_payout(&self, payout: Payout) -> Result<Payout, DaoPayoutError>;
-    async fn get_payout_by_id(&self, payout_id: Uuid) -> Result<Option<Payout>, DaoPayoutError>;
-    async fn get_pending_payouts(&self, limit: u32) -> Result<Vec<Payout>, DaoPayoutError>;
+    async fn create_payout(
+        &self,
+        payout: Payout,
+    ) -> Result<Payout, DaoPayoutError>;
+    async fn get_payout_by_id(
+        &self,
+        payout_id: Uuid,
+    ) -> Result<Option<Payout>, DaoPayoutError>;
+    async fn get_pending_payouts(
+        &self,
+        limit: u32,
+    ) -> Result<Vec<Payout>, DaoPayoutError>;
     async fn update_payout_status(
         &self,
         payout_id: Uuid,
@@ -259,23 +330,30 @@ impl DaoInterface for DAO {
         DAO::begin_transaction(self).await
     }
 
-    async fn create_invoice(&self, invoice: Invoice) -> Result<Invoice, DaoInvoiceError> {
+    async fn create_invoice(
+        &self,
+        invoice: Invoice,
+    ) -> Result<Invoice, DaoInvoiceError> {
         DaoInvoiceMethods::create_invoice(self, invoice).await
     }
 
-    async fn get_invoice_by_id(&self, invoice_id: Uuid) -> Result<Option<Invoice>, DaoInvoiceError> {
+    async fn get_invoice_by_id(
+        &self,
+        invoice_id: Uuid,
+    ) -> Result<Option<Invoice>, DaoInvoiceError> {
         DaoInvoiceMethods::get_invoice_by_id(self, invoice_id).await
     }
 
-    async fn get_invoice_by_order_id(&self, order_id: &str) -> Result<Option<Invoice>, DaoInvoiceError> {
+    async fn get_invoice_by_order_id(
+        &self,
+        order_id: &str,
+    ) -> Result<Option<Invoice>, DaoInvoiceError> {
         DaoInvoiceMethods::get_invoice_by_order_id(self, order_id).await
     }
 
-    async fn get_active_invoices(&self) -> Result<Vec<Invoice>, DaoInvoiceError> {
-        DaoInvoiceMethods::get_active_invoices(self).await
-    }
-
-    async fn get_active_invoices_with_amounts(&self) -> Result<Vec<InvoiceWithIncomingAmount>, DaoInvoiceError> {
+    async fn get_active_invoices_with_amounts(
+        &self
+    ) -> Result<Vec<InvoiceWithIncomingAmount>, DaoInvoiceError> {
         DaoInvoiceMethods::get_active_invoices_with_amounts(self).await
     }
 
@@ -306,7 +384,10 @@ impl DaoInterface for DAO {
         DaoInvoiceMethods::update_invoices_expired(self).await
     }
 
-    async fn create_transaction(&self, transaction: Transaction) -> Result<Transaction, DaoTransactionError> {
+    async fn create_transaction(
+        &self,
+        transaction: Transaction,
+    ) -> Result<Transaction, DaoTransactionError> {
         DaoTransactionMethods::create_transaction(self, transaction).await
     }
 
@@ -321,7 +402,8 @@ impl DaoInterface for DAO {
             transaction_id,
             chain_transaction_id,
             confirmed_at,
-        ).await
+        )
+        .await
     }
 
     async fn update_transaction_failed(
@@ -337,7 +419,8 @@ impl DaoInterface for DAO {
             chain_transaction_id,
             failure_message,
             failed_at,
-        ).await
+        )
+        .await
     }
 
     async fn update_transaction(
@@ -347,19 +430,31 @@ impl DaoInterface for DAO {
         DaoTransactionMethods::update_transaction(self, transaction).await
     }
 
-    async fn get_invoice_transactions(&self, invoice_id: Uuid) -> Result<Vec<Transaction>, DaoTransactionError> {
+    async fn get_invoice_transactions(
+        &self,
+        invoice_id: Uuid,
+    ) -> Result<Vec<Transaction>, DaoTransactionError> {
         DaoTransactionMethods::get_invoice_transactions(self, invoice_id).await
     }
 
-    async fn create_payout(&self, payout: Payout) -> Result<Payout, DaoPayoutError> {
+    async fn create_payout(
+        &self,
+        payout: Payout,
+    ) -> Result<Payout, DaoPayoutError> {
         DaoPayoutMethods::create_payout(self, payout).await
     }
 
-    async fn get_payout_by_id(&self, payout_id: Uuid) -> Result<Option<Payout>, DaoPayoutError> {
+    async fn get_payout_by_id(
+        &self,
+        payout_id: Uuid,
+    ) -> Result<Option<Payout>, DaoPayoutError> {
         DaoPayoutMethods::get_payout_by_id(self, payout_id).await
     }
 
-    async fn get_pending_payouts(&self, limit: u32) -> Result<Vec<Payout>, DaoPayoutError> {
+    async fn get_pending_payouts(
+        &self,
+        limit: u32,
+    ) -> Result<Vec<Payout>, DaoPayoutError> {
         DaoPayoutMethods::get_pending_payouts(self, limit).await
     }
 
@@ -377,10 +472,19 @@ impl DaoInterface for DAO {
         retry_meta: RetryMeta,
         is_retriable: bool,
     ) -> Result<Payout, DaoPayoutError> {
-        DaoPayoutMethods::update_payout_retry(self, payout_id, retry_meta, is_retriable).await
+        DaoPayoutMethods::update_payout_retry(
+            self,
+            payout_id,
+            retry_meta,
+            is_retriable,
+        )
+        .await
     }
 
-    async fn transaction_exists_by_bytes(&self, transaction_bytes: &str) -> DaoResult<bool> {
+    async fn transaction_exists_by_bytes(
+        &self,
+        transaction_bytes: &str,
+    ) -> DaoResult<bool> {
         DAO::transaction_exists_by_bytes(self, transaction_bytes).await
     }
 }
@@ -390,20 +494,25 @@ impl DaoInterface for DAO {
 // ============================================================================
 
 impl DaoTransactionInterface for DaoTransaction {
-    async fn create_invoice(&self, invoice: Invoice) -> Result<Invoice, DaoInvoiceError> {
+    async fn create_invoice(
+        &self,
+        invoice: Invoice,
+    ) -> Result<Invoice, DaoInvoiceError> {
         DaoInvoiceMethods::create_invoice(self, invoice).await
     }
 
-    async fn get_invoice_by_id(&self, invoice_id: Uuid) -> Result<Option<Invoice>, DaoInvoiceError> {
+    async fn get_invoice_by_id(
+        &self,
+        invoice_id: Uuid,
+    ) -> Result<Option<Invoice>, DaoInvoiceError> {
         DaoInvoiceMethods::get_invoice_by_id(self, invoice_id).await
     }
 
-    async fn get_invoice_by_order_id(&self, order_id: &str) -> Result<Option<Invoice>, DaoInvoiceError> {
+    async fn get_invoice_by_order_id(
+        &self,
+        order_id: &str,
+    ) -> Result<Option<Invoice>, DaoInvoiceError> {
         DaoInvoiceMethods::get_invoice_by_order_id(self, order_id).await
-    }
-
-    async fn get_active_invoices(&self) -> Result<Vec<Invoice>, DaoInvoiceError> {
-        DaoInvoiceMethods::get_active_invoices(self).await
     }
 
     async fn update_invoice_status(
@@ -433,7 +542,10 @@ impl DaoTransactionInterface for DaoTransaction {
         DaoInvoiceMethods::update_invoices_expired(self).await
     }
 
-    async fn create_transaction(&self, transaction: Transaction) -> Result<Transaction, DaoTransactionError> {
+    async fn create_transaction(
+        &self,
+        transaction: Transaction,
+    ) -> Result<Transaction, DaoTransactionError> {
         DaoTransactionMethods::create_transaction(self, transaction).await
     }
 
@@ -448,7 +560,8 @@ impl DaoTransactionInterface for DaoTransaction {
             transaction_id,
             chain_transaction_id,
             confirmed_at,
-        ).await
+        )
+        .await
     }
 
     async fn update_transaction_failed(
@@ -464,7 +577,8 @@ impl DaoTransactionInterface for DaoTransaction {
             chain_transaction_id,
             failure_message,
             failed_at,
-        ).await
+        )
+        .await
     }
 
     async fn update_transaction(
@@ -474,19 +588,31 @@ impl DaoTransactionInterface for DaoTransaction {
         DaoTransactionMethods::update_transaction(self, transaction).await
     }
 
-    async fn get_invoice_transactions(&self, invoice_id: Uuid) -> Result<Vec<Transaction>, DaoTransactionError> {
+    async fn get_invoice_transactions(
+        &self,
+        invoice_id: Uuid,
+    ) -> Result<Vec<Transaction>, DaoTransactionError> {
         DaoTransactionMethods::get_invoice_transactions(self, invoice_id).await
     }
 
-    async fn create_payout(&self, payout: Payout) -> Result<Payout, DaoPayoutError> {
+    async fn create_payout(
+        &self,
+        payout: Payout,
+    ) -> Result<Payout, DaoPayoutError> {
         DaoPayoutMethods::create_payout(self, payout).await
     }
 
-    async fn get_payout_by_id(&self, payout_id: Uuid) -> Result<Option<Payout>, DaoPayoutError> {
+    async fn get_payout_by_id(
+        &self,
+        payout_id: Uuid,
+    ) -> Result<Option<Payout>, DaoPayoutError> {
         DaoPayoutMethods::get_payout_by_id(self, payout_id).await
     }
 
-    async fn get_pending_payouts(&self, limit: u32) -> Result<Vec<Payout>, DaoPayoutError> {
+    async fn get_pending_payouts(
+        &self,
+        limit: u32,
+    ) -> Result<Vec<Payout>, DaoPayoutError> {
         DaoPayoutMethods::get_pending_payouts(self, limit).await
     }
 
@@ -504,7 +630,13 @@ impl DaoTransactionInterface for DaoTransaction {
         retry_meta: RetryMeta,
         is_retriable: bool,
     ) -> Result<Payout, DaoPayoutError> {
-        DaoPayoutMethods::update_payout_retry(self, payout_id, retry_meta, is_retriable).await
+        DaoPayoutMethods::update_payout_retry(
+            self,
+            payout_id,
+            retry_meta,
+            is_retriable,
+        )
+        .await
     }
 
     async fn commit(self) -> DaoResult<()> {

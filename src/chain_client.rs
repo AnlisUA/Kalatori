@@ -16,7 +16,10 @@ use tracing::{
     instrument,
 };
 
-use crate::types::{GeneralTransactionId, TransferInfo};
+use crate::types::{
+    GeneralTransactionId,
+    TransferInfo,
+};
 
 pub use asset_hub::{
     AssetHubChainConfig,
@@ -28,15 +31,16 @@ pub use errors::{
     SubscriptionError,
     TransactionError,
 };
+#[cfg(test)]
+pub use keyring::default_keyring_client;
 pub use keyring::{
     Keyring,
     KeyringClient,
     KeyringError,
 };
-#[cfg(test)]
-pub use keyring::default_keyring_client;
 
-pub type TransfersStream<T> = Pin<Box<dyn stream::Stream<Item = Result<Vec<ChainTransfer<T>>, SubscriptionError>> + Send>>;
+pub type TransfersStream<T> =
+    Pin<Box<dyn stream::Stream<Item = Result<Vec<ChainTransfer<T>>, SubscriptionError>> + Send>>;
 
 pub trait SignedTransactionUtils {
     /// Encode transaction bytes to hex string
@@ -91,7 +95,7 @@ impl GeneralChainTransfer {
         }
     }
 
-    pub fn to_transfer_info(self) -> TransferInfo {
+    pub fn into_transfer_info(self) -> TransferInfo {
         TransferInfo {
             chain: self.chain,
             asset_id: self.asset_id,
@@ -225,10 +229,7 @@ pub trait BlockChainClient<T: ChainConfig>: Sync {
     async fn subscribe_transfers(
         &self,
         asset_ids: &[T::AssetId],
-    ) -> Result<
-        TransfersStream<T>,
-        SubscriptionError,
-    >;
+    ) -> Result<TransfersStream<T>, SubscriptionError>;
 
     #[expect(dead_code)]
     /// Build transaction to transfer exact amount to recipient
@@ -298,5 +299,22 @@ pub trait BlockChainClientExt<T: ChainConfig>: BlockChainClient<T> {
     }
 }
 
-// Blanket implementation: all BlockChainClient implementations automatically get BlockChainClientExt
+// Blanket implementation: all BlockChainClient implementations automatically
+// get BlockChainClientExt
 impl<T: ChainConfig, C: BlockChainClient<T>> BlockChainClientExt<T> for C {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // This test is just to satisfy clippy until we actually use `build_transfer`
+    // method in real code
+    #[tokio::test]
+    async fn test_dummy() {
+        let mut client = MockBlockChainClient::<AssetHubChainConfig>::default();
+        client
+            .expect_build_transfer()
+            .returning(|_, _, _, _| panic!("Unexpected"))
+            .times(0);
+    }
+}
