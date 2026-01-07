@@ -16,16 +16,19 @@ use crate::dao::DaoInterface;
 use crate::server::ApiState;
 
 #[derive(Debug, PartialEq, Eq, Deserialize)]
+struct IndexParams {
+    #[serde(default)]
+    invoice_id: String,
+}
+
+#[derive(Debug, PartialEq, Eq, Deserialize)]
 struct Params {
     invoice_id: Uuid,
 }
 
-async fn index(Query(params): Query<Params>) -> Html<String> {
+async fn index(Query(params): Query<IndexParams>) -> Html<String> {
     let raw_html = include_str!("../../static/index.html");
-    let html = raw_html.replace(
-        "{{INVOICE_ID}}",
-        &params.invoice_id.to_string(),
-    );
+    let html = raw_html.replace("{{INVOICE_ID}}", &params.invoice_id);
     Html(html)
 }
 
@@ -39,8 +42,12 @@ async fn invoice<D: DaoInterface + Clone + 'static>(
         .await;
 
     match invoice {
-        Ok(Some(invoice)) => (StatusCode::OK, Json(invoice)).into_response(),
-        Ok(None) => (
+        // If the invoice exists and is active, return it
+        Ok(Some(invoice)) if invoice.status.is_active() => {
+            (StatusCode::OK, Json(invoice)).into_response()
+        },
+        // If the invoice does not exist or is not active, return 404
+        Ok(Some(_) | None) => (
             StatusCode::NOT_FOUND,
             Json(serde_json::json!({"error": "Invoice not found"})),
         )
@@ -55,9 +62,6 @@ async fn invoice<D: DaoInterface + Clone + 'static>(
 
 pub fn public_routes<D: DaoInterface + Clone + 'static>() -> axum::Router<ApiState<D>> {
     axum::Router::new()
-        .route("/v1", axum::routing::get(index))
-        .route(
-            "/v1/invoice",
-            axum::routing::get(invoice),
-        )
+        .route("/", axum::routing::get(index))
+        .route("/invoice", axum::routing::get(invoice))
 }

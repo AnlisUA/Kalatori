@@ -103,11 +103,7 @@ impl Payout {
             id: Uuid::new_v4(),
             invoice_id: invoice.id,
             transfer_info: TransferInfo {
-                // TODO: replace it. Invoice's asset_id shouldn't be optional. Always a String.
-                asset_id: invoice
-                    .asset_id
-                    .unwrap_or_default()
-                    .to_string(),
+                asset_id: invoice.asset_id,
                 chain: invoice.chain,
                 source_address: invoice.payment_address,
                 destination_address: payout_address,

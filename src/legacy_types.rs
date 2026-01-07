@@ -412,11 +412,11 @@ fn decimal_to_amount(amount: rust_decimal::Decimal) -> Amount {
     Amount::Exact(amount_f64)
 }
 
-fn asset_id_to_currency_name(asset_id: Option<u32>) -> Result<&'static str, OrderError> {
+fn asset_id_to_currency_name(asset_id: &str) -> Result<&'static str, OrderError> {
     match asset_id {
-        Some(1337) => Ok("USDC"),
-        Some(1984) => Ok("USDt"),
-        None => Ok("DOT"),
+        "1337" => Ok("USDC"),
+        "1984" => Ok("USDt"),
+        "0" => Ok("DOT"),
         _ => Err(OrderError::UnknownCurrency),
     }
 }
@@ -425,7 +425,7 @@ pub fn transaction_to_transaction_info(
     transaction: Transaction,
     currencies: &CurrenciesMap,
 ) -> Result<TransactionInfo, OrderError> {
-    let asset_name = asset_id_to_currency_name(Some(transaction.asset_id))?;
+    let asset_name = asset_id_to_currency_name(&transaction.transfer_info.asset_id)?;
 
     let currency = currencies
         .get(asset_name)
@@ -434,8 +434,10 @@ pub fn transaction_to_transaction_info(
 
     // Convert finalization data
     let finalized_tx = if let (Some(block_number), Some(position_in_block)) = (
-        transaction.block_number,
-        transaction.position_in_block,
+        transaction.transaction_id.block_number,
+        transaction
+            .transaction_id
+            .position_in_block,
     ) {
         Some(FinalizedTx {
             block_number,
@@ -451,9 +453,11 @@ pub fn transaction_to_transaction_info(
         transaction_bytes: transaction
             .transaction_bytes
             .unwrap_or_default(),
-        sender: transaction.sender,
-        recipient: transaction.recipient,
-        amount: decimal_to_amount(transaction.amount),
+        sender: transaction.transfer_info.source_address,
+        recipient: transaction
+            .transfer_info
+            .destination_address,
+        amount: decimal_to_amount(transaction.transfer_info.amount),
         currency,
         status: transaction.status.into(),
     })
@@ -463,7 +467,7 @@ pub fn invoice_to_order_info(
     invoice: &Invoice,
     currencies: &CurrenciesMap,
 ) -> Result<OrderInfo, OrderError> {
-    let asset_name = asset_id_to_currency_name(invoice.asset_id)?;
+    let asset_name = asset_id_to_currency_name(&invoice.asset_id)?;
 
     let currency = currencies
         .get(asset_name)

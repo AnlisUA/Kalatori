@@ -75,25 +75,26 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
         transaction: Transaction,
     ) -> Result<Transaction, DaoTransactionError> {
         let query = sqlx::query_as::<_, TransactionRow>(
-        "INSERT INTO transactions (id, invoice_id, asset_id, chain, amount, sender, recipient, block_number, position_in_block, tx_hash, origin, status, transaction_type, outgoing_meta, created_at, transaction_bytes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        "INSERT INTO transactions (id, invoice_id, asset_id, chain, amount, source_address, destination_address, block_number, position_in_block, tx_hash, origin, status, transaction_type, outgoing_meta, created_at, updated_at, transaction_bytes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING *"
         )
             .bind(transaction.id)
             .bind(transaction.invoice_id)
-            .bind(transaction.asset_id)
-            .bind(&transaction.chain)
-            .bind(Text(transaction.amount))
-            .bind(&transaction.sender)
-            .bind(&transaction.recipient)
-            .bind(transaction.block_number)
-            .bind(transaction.position_in_block)
-            .bind(&transaction.tx_hash)
+            .bind(transaction.transfer_info.asset_id)
+            .bind(&transaction.transfer_info.chain)
+            .bind(Text(transaction.transfer_info.amount))
+            .bind(&transaction.transfer_info.source_address)
+            .bind(&transaction.transfer_info.destination_address)
+            .bind(transaction.transaction_id.block_number)
+            .bind(transaction.transaction_id.position_in_block)
+            .bind(&transaction.transaction_id.tx_hash)
             .bind(Json(&transaction.origin))
             .bind(transaction.status)
             .bind(transaction.transaction_type)
             .bind(Json(&transaction.outgoing_meta))
             .bind(transaction.created_at)
+            .bind(transaction.updated_at)
             .bind(&transaction.transaction_bytes);
 
         self.fetch_one(query)
@@ -135,7 +136,7 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
         // TODO: add updated_at field?
         let query = sqlx::query_as::<_, TransactionRow>(
             "UPDATE transactions
-            SET block_number = ?, position_in_block = ?, tx_hash = ?, status = 'Completed',
+            SET block_number = ?, position_in_block = ?, tx_hash = ?, updated_at = ?, status = 'Completed',
                 outgoing_meta = json_set(
                     outgoing_meta,
                     '$.confirmed_at', ?
@@ -145,7 +146,8 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
         )
         .bind(chain_transaction_id.block_number)
         .bind(chain_transaction_id.position_in_block)
-        .bind(chain_transaction_id.hash)
+        .bind(chain_transaction_id.tx_hash)
+        .bind(confirmed_at)
         // TODO: Naive datetime does not work here for some reason, using rfc3339 string
         // It doesn't seem to be critical for now but it's quite inconsistent with other places
         .bind(confirmed_at.to_rfc3339())
@@ -186,7 +188,7 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
         // TODO: add additional check that transaction is `Outgoing`? Check it's status?
         let query = sqlx::query_as::<_, TransactionRow>(
             "UPDATE transactions
-            SET block_number = ?, position_in_block = ?, tx_hash = ?, status = 'Failed',
+            SET block_number = ?, position_in_block = ?, tx_hash = ?, updated_at = ?, status = 'Failed',
                 outgoing_meta = json_set(
                     outgoing_meta,
                     '$.failed_at', ?,
@@ -197,7 +199,8 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
         )
         .bind(chain_transaction_id.block_number)
         .bind(chain_transaction_id.position_in_block)
-        .bind(chain_transaction_id.hash)
+        .bind(chain_transaction_id.tx_hash)
+        .bind(failed_at)
         // TODO: Naive datetime does not work here for some reason, using rfc3339 string
         // It doesn't seem to be critical for now but it's quite inconsistent with other places
         .bind(failed_at.to_rfc3339())
@@ -229,28 +232,30 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
             })
     }
 
-    #[cfg_attr(not(test), expect(dead_code))]
+    // This method updates all fields of the transaction, it shouldn't be used in
+    // real code except for tests
+    #[cfg(test)]
     async fn update_transaction(
         &self,
         transaction: Transaction,
     ) -> Result<Transaction, DaoTransactionError> {
         let query = sqlx::query_as::<_, TransactionRow>(
             "UPDATE transactions
-            SET invoice_id = ?, asset_id = ?, chain = ?, amount = ?, sender = ?, recipient = ?,
+            SET invoice_id = ?, asset_id = ?, chain = ?, amount = ?, source_address = ?, destination_address = ?,
                 block_number = ?, position_in_block = ?, tx_hash = ?, origin = ?, status = ?,
                 transaction_type = ?, outgoing_meta = ?, transaction_bytes = ?
             WHERE id = ?
             RETURNING *",
         )
         .bind(transaction.invoice_id)
-        .bind(transaction.asset_id)
-        .bind(&transaction.chain)
-        .bind(Text(transaction.amount))
-        .bind(&transaction.sender)
-        .bind(&transaction.recipient)
-        .bind(transaction.block_number)
-        .bind(transaction.position_in_block)
-        .bind(&transaction.tx_hash)
+        .bind(transaction.transfer_info.asset_id)
+        .bind(&transaction.transfer_info.chain)
+        .bind(Text(transaction.transfer_info.amount))
+        .bind(&transaction.transfer_info.source_address)
+        .bind(&transaction.transfer_info.destination_address)
+        .bind(transaction.transaction_id.block_number)
+        .bind(transaction.transaction_id.position_in_block)
+        .bind(&transaction.transaction_id.tx_hash)
         .bind(Json(&transaction.origin))
         .bind(transaction.status)
         .bind(transaction.transaction_type)
@@ -283,22 +288,17 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
             })
     }
 
-    // TODO: Implement create_transaction_outgoing when OutgoingTransaction type is
-    // defined async fn create_transaction_outgoing(&self, transaction:
-    // OutgoingTransaction) -> DaoResult<Uuid> {     todo!("Implement outgoing
-    // transaction creation") }
-
     async fn get_invoice_transactions(
         &self,
         invoice_id: Uuid,
     ) -> Result<Vec<Transaction>, DaoTransactionError> {
         let query = sqlx::query_as::<_, TransactionRow>(
-        "SELECT id, invoice_id, asset_id, chain, amount, sender, recipient, block_number, position_in_block, tx_hash, origin, status, transaction_type, outgoing_meta, created_at, transaction_bytes
+            "SELECT *
             FROM transactions
             WHERE invoice_id = ?
             ORDER BY created_at ASC",
         )
-            .bind(invoice_id);
+        .bind(invoice_id);
 
         self.fetch_all(query)
             .await
@@ -361,7 +361,10 @@ mod tests {
             created.transaction_type,
             TransactionType::Incoming
         );
-        assert_eq!(created.block_number, Some(1000)); // From default
+        assert_eq!(
+            created.transaction_id.block_number,
+            Some(1000)
+        ); // From default
         assert_eq!(
             created.status,
             TransactionStatus::Waiting
@@ -370,7 +373,7 @@ mod tests {
         // 3. Update transaction (change status)
         let mut updated_tx = created.clone();
         updated_tx.status = TransactionStatus::Completed;
-        updated_tx.tx_hash = Some("0xabcd1234".to_string());
+        updated_tx.transaction_id.tx_hash = Some("0xabcd1234".to_string());
 
         let updated = dao
             .update_transaction(updated_tx)
@@ -381,7 +384,7 @@ mod tests {
             TransactionStatus::Completed
         );
         assert_eq!(
-            updated.tx_hash,
+            updated.transaction_id.tx_hash,
             Some("0xabcd1234".to_string())
         );
 
@@ -515,6 +518,7 @@ mod tests {
         assert_eq!(failed.status, TransactionStatus::Failed);
     }
 
+    #[expect(clippy::too_many_lines)]
     #[tokio::test]
     async fn test_update_transaction_failed_and_successful() {
         let dao = create_test_dao().await;
@@ -525,9 +529,7 @@ mod tests {
 
         // Test 1: Update transaction to Failed
         let tx1 = Transaction {
-            block_number: None,
-            position_in_block: None,
-            tx_hash: None,
+            transaction_id: GeneralTransactionId::empty(),
             ..default_transaction(invoice.id)
         };
 
@@ -536,9 +538,24 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(created1.block_number.is_none());
-        assert!(created1.position_in_block.is_none());
-        assert!(created1.tx_hash.is_none());
+        assert!(
+            created1
+                .transaction_id
+                .block_number
+                .is_none()
+        );
+        assert!(
+            created1
+                .transaction_id
+                .position_in_block
+                .is_none()
+        );
+        assert!(
+            created1
+                .transaction_id
+                .tx_hash
+                .is_none()
+        );
 
         let transaction_id1 = created1.id;
 
@@ -552,7 +569,7 @@ mod tests {
         let chain_transaction_id1 = GeneralTransactionId {
             block_number: Some(123),
             position_in_block: Some(1),
-            hash: None,
+            tx_hash: None,
         };
 
         let now1 = Utc::now();
@@ -567,9 +584,22 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(updated1.block_number, Some(123));
-        assert_eq!(updated1.position_in_block, Some(1));
-        assert!(updated1.tx_hash.is_none());
+        assert_eq!(
+            updated1.transaction_id.block_number,
+            Some(123)
+        );
+        assert_eq!(
+            updated1
+                .transaction_id
+                .position_in_block,
+            Some(1)
+        );
+        assert!(
+            updated1
+                .transaction_id
+                .tx_hash
+                .is_none()
+        );
         assert_eq!(
             updated1.status,
             TransactionStatus::Failed
@@ -581,9 +611,7 @@ mod tests {
 
         // Test 2: Update different transaction to Completed
         let tx2 = Transaction {
-            block_number: None,
-            position_in_block: None,
-            tx_hash: None,
+            transaction_id: GeneralTransactionId::empty(),
             ..default_transaction(invoice.id)
         };
 
@@ -604,7 +632,7 @@ mod tests {
         let chain_transaction_id2 = GeneralTransactionId {
             block_number: Some(456),
             position_in_block: Some(2),
-            hash: None,
+            tx_hash: None,
         };
 
         let now2 = Utc::now();
@@ -618,9 +646,22 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(updated2.block_number, Some(456));
-        assert_eq!(updated2.position_in_block, Some(2));
-        assert!(updated2.tx_hash.is_none());
+        assert_eq!(
+            updated2.transaction_id.block_number,
+            Some(456)
+        );
+        assert_eq!(
+            updated2
+                .transaction_id
+                .position_in_block,
+            Some(2)
+        );
+        assert!(
+            updated2
+                .transaction_id
+                .tx_hash
+                .is_none()
+        );
         assert_eq!(
             updated2.status,
             TransactionStatus::Completed
@@ -757,9 +798,7 @@ mod tests {
 
         // Create transaction with NULL fields (pending transaction)
         let pending_tx = Transaction {
-            block_number: None,
-            position_in_block: None,
-            tx_hash: None,
+            transaction_id: GeneralTransactionId::empty(),
             transaction_bytes: None,
             ..default_transaction(invoice.id)
         };
@@ -768,22 +807,40 @@ mod tests {
             .create_transaction(pending_tx)
             .await
             .unwrap();
-        assert!(created.block_number.is_none());
-        assert!(created.position_in_block.is_none());
-        assert!(created.tx_hash.is_none());
+        assert!(
+            created
+                .transaction_id
+                .block_number
+                .is_none()
+        );
+        assert!(
+            created
+                .transaction_id
+                .position_in_block
+                .is_none()
+        );
+        assert!(created.transaction_id.tx_hash.is_none());
 
         // Update to finalized (add blockchain location)
         let mut finalized = created.clone();
-        finalized.block_number = Some(5000);
-        finalized.position_in_block = Some(3);
-        finalized.tx_hash = Some("0xfinalized".to_string());
+        finalized.transaction_id.block_number = Some(5000);
+        finalized
+            .transaction_id
+            .position_in_block = Some(3);
+        finalized.transaction_id.tx_hash = Some("0xfinalized".to_string());
 
         let updated = dao
             .update_transaction(finalized)
             .await
             .unwrap();
-        assert_eq!(updated.block_number, Some(5000));
-        assert_eq!(updated.position_in_block, Some(3));
+        assert_eq!(
+            updated.transaction_id.block_number,
+            Some(5000)
+        );
+        assert_eq!(
+            updated.transaction_id.position_in_block,
+            Some(3)
+        );
     }
 
     #[tokio::test]
@@ -808,7 +865,7 @@ mod tests {
         let chain_tx_id = GeneralTransactionId {
             block_number: Some(100),
             position_in_block: Some(1),
-            hash: Some("0x123".to_string()),
+            tx_hash: Some("0x123".to_string()),
         };
 
         // Try to update to Completed again (idempotent - should succeed)
@@ -824,8 +881,14 @@ mod tests {
             updated.status,
             TransactionStatus::Completed
         );
-        assert_eq!(updated.block_number, Some(100));
-        assert_eq!(updated.position_in_block, Some(1));
+        assert_eq!(
+            updated.transaction_id.block_number,
+            Some(100)
+        );
+        assert_eq!(
+            updated.transaction_id.position_in_block,
+            Some(1)
+        );
 
         // Scenario 2: Valid transition Waiting -> Completed (direct, for incoming
         // transactions)
@@ -873,7 +936,7 @@ mod tests {
         let chain_tx_id2 = GeneralTransactionId {
             block_number: Some(200),
             position_in_block: Some(2),
-            hash: Some("0x456".to_string()),
+            tx_hash: Some("0x456".to_string()),
         };
         let updated2 = dao
             .update_transaction_successful(id3, chain_tx_id2, Utc::now())

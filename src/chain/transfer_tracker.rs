@@ -129,10 +129,7 @@ impl InvoiceRegistry {
             .find(|inv| {
                 inv.invoice.chain == chain
                     && inv.invoice.payment_address == address
-                    && inv
-                        .invoice
-                        .asset_id
-                        .is_some_and(|id| id.to_string() == asset_id)
+                    && inv.invoice.asset_id == asset_id
             })
             .cloned()
     }

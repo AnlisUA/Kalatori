@@ -37,13 +37,13 @@
 
         async function fetchInvoice() {
             const responseDiv = document.getElementById('response');
-            
+
             try {
-                const response = await fetch(`/public/v1/invoice?invoice_id=${invoiceId}`);
+                const response = await fetch(`/public/invoice?invoice_id=${invoiceId}`);
                 const data = await response.json();
-                
+
                 responseDiv.textContent = JSON.stringify(data, null, 2);
-                
+
                 if (!response.ok) {
                     responseDiv.classList.add('error');
                 }

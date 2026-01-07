@@ -489,26 +489,30 @@ mod tests {
             .unwrap();
 
         // Create 2 incoming transactions for invoice1
-        let tx1_amount = Decimal::new(10050, 2); // 100.50
-        let tx1 = Transaction {
+        let mut tx1 = Transaction {
             id: Uuid::new_v4(),
             invoice_id: invoice1_id,
-            amount: tx1_amount,
             transaction_type: TransactionType::Incoming,
             ..default_transaction(invoice1_id)
         };
+
+        let tx1_amount = Decimal::new(10050, 2); // 100.50
+        tx1.transfer_info.amount = tx1_amount;
+
         dao.create_transaction(tx1)
             .await
             .unwrap();
 
-        let tx2_amount = Decimal::new(5025, 2); // 50.25
-        let tx2 = Transaction {
+        let mut tx2 = Transaction {
             id: Uuid::new_v4(),
             invoice_id: invoice1_id,
-            amount: tx2_amount,
             transaction_type: TransactionType::Incoming,
             ..default_transaction(invoice1_id)
         };
+
+        let tx2_amount = Decimal::new(5025, 2); // 50.25
+        tx2.transfer_info.amount = tx2_amount;
+
         dao.create_transaction(tx2)
             .await
             .unwrap();
@@ -518,19 +522,23 @@ mod tests {
             status: InvoiceStatus::PartiallyPaid,
             ..default_invoice()
         };
+
         let invoice2_id = invoice2.id;
+
         dao.create_invoice(invoice2)
             .await
             .unwrap();
 
-        let tx3_amount = Decimal::new(7599, 2); // 75.99
-        let tx3 = Transaction {
+        let mut tx3 = Transaction {
             id: Uuid::new_v4(),
             invoice_id: invoice2_id,
-            amount: tx3_amount,
             transaction_type: TransactionType::Incoming,
             ..default_transaction(invoice2_id)
         };
+
+        let tx3_amount = Decimal::new(7599, 2); // 75.99
+        tx3.transfer_info.amount = tx3_amount;
+
         dao.create_transaction(tx3)
             .await
             .unwrap();
@@ -538,6 +546,7 @@ mod tests {
         // Create invoice 3 with Waiting status (no transactions)
         let invoice3 = default_invoice();
         let invoice3_id = invoice3.id;
+
         dao.create_invoice(invoice3)
             .await
             .unwrap();
@@ -546,17 +555,20 @@ mod tests {
         // be counted)
         let invoice4 = default_invoice();
         let invoice4_id = invoice4.id;
+
         dao.create_invoice(invoice4)
             .await
             .unwrap();
 
-        let tx4_outgoing = Transaction {
+        let mut tx4_outgoing = Transaction {
             id: Uuid::new_v4(),
             invoice_id: invoice4_id,
-            amount: Decimal::new(10000, 2),
             transaction_type: TransactionType::Outgoing,
             ..default_transaction(invoice4_id)
         };
+
+        tx4_outgoing.transfer_info.amount = Decimal::new(10000, 2); // 100.00
+
         dao.create_transaction(tx4_outgoing)
             .await
             .unwrap();
@@ -566,19 +578,22 @@ mod tests {
             status: InvoiceStatus::Paid,
             ..default_invoice()
         };
+
         let invoice5_id = invoice5.id;
+
         dao.create_invoice(invoice5)
             .await
             .unwrap();
 
-        let tx5_amount = Decimal::new(10000, 2);
-        let tx5 = Transaction {
+        let mut tx5 = Transaction {
             id: Uuid::new_v4(),
             invoice_id: invoice5_id,
-            amount: tx5_amount,
             transaction_type: TransactionType::Incoming,
             ..default_transaction(invoice5_id)
         };
+
+        tx5.transfer_info.amount = Decimal::new(10000, 2); // 100.00
+
         dao.create_transaction(tx5)
             .await
             .unwrap();

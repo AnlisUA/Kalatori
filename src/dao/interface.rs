@@ -146,12 +146,6 @@ pub trait DaoInterface: Send + Sync {
         failed_at: DateTime<Utc>,
     ) -> Result<Transaction, DaoTransactionError>;
 
-    /// Update a transaction with full Transaction object.
-    async fn update_transaction(
-        &self,
-        transaction: Transaction,
-    ) -> Result<Transaction, DaoTransactionError>;
-
     /// Get all transactions for a specific invoice.
     async fn get_invoice_transactions(
         &self,
@@ -262,12 +256,14 @@ pub trait DaoTransactionInterface {
         &self,
         transaction: Transaction,
     ) -> Result<Transaction, DaoTransactionError>;
+
     async fn update_transaction_successful(
         &self,
         transaction_id: Uuid,
         chain_transaction_id: GeneralTransactionId,
         confirmed_at: DateTime<Utc>,
     ) -> Result<Transaction, DaoTransactionError>;
+
     async fn update_transaction_failed(
         &self,
         transaction_id: Uuid,
@@ -275,10 +271,7 @@ pub trait DaoTransactionInterface {
         failure_message: String,
         failed_at: DateTime<Utc>,
     ) -> Result<Transaction, DaoTransactionError>;
-    async fn update_transaction(
-        &self,
-        transaction: Transaction,
-    ) -> Result<Transaction, DaoTransactionError>;
+
     async fn get_invoice_transactions(
         &self,
         invoice_id: Uuid,
@@ -421,13 +414,6 @@ impl DaoInterface for DAO {
             failed_at,
         )
         .await
-    }
-
-    async fn update_transaction(
-        &self,
-        transaction: Transaction,
-    ) -> Result<Transaction, DaoTransactionError> {
-        DaoTransactionMethods::update_transaction(self, transaction).await
     }
 
     async fn get_invoice_transactions(
@@ -579,13 +565,6 @@ impl DaoTransactionInterface for DaoTransaction {
             failed_at,
         )
         .await
-    }
-
-    async fn update_transaction(
-        &self,
-        transaction: Transaction,
-    ) -> Result<Transaction, DaoTransactionError> {
-        DaoTransactionMethods::update_transaction(self, transaction).await
     }
 
     async fn get_invoice_transactions(

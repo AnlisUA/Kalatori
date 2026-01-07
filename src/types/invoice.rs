@@ -32,7 +32,6 @@ pub enum InvoiceStatus {
     // Final statuses
     Paid,
     OverPaid,
-    AdminApproved,
     // Expired statuses
     UnpaidExpired,
     PartiallyPaidExpired,
@@ -53,10 +52,7 @@ impl InvoiceStatus {
 
     /// Check if invoice is in a final state (completed)
     pub const fn is_final(self) -> bool {
-        matches!(
-            self,
-            Self::Paid | Self::OverPaid | Self::AdminApproved
-        )
+        matches!(self, Self::Paid | Self::OverPaid)
     }
 
     /// Check if invoice is expired
@@ -80,9 +76,7 @@ impl InvoiceStatus {
 impl From<InvoiceStatus> for PaymentStatus {
     fn from(status: InvoiceStatus) -> Self {
         match status {
-            InvoiceStatus::Paid | InvoiceStatus::OverPaid | InvoiceStatus::AdminApproved => {
-                Self::Paid
-            },
+            InvoiceStatus::Paid | InvoiceStatus::OverPaid => Self::Paid,
             _ => Self::Pending,
         }
     }
@@ -108,7 +102,6 @@ impl fmt::Display for InvoiceStatus {
             Self::PartiallyPaid => write!(f, "PartiallyPaid"),
             Self::Paid => write!(f, "Paid"),
             Self::OverPaid => write!(f, "OverPaid"),
-            Self::AdminApproved => write!(f, "AdminApproved"),
             Self::UnpaidExpired => write!(f, "UnpaidExpired"),
             Self::PartiallyPaidExpired => write!(f, "PartiallyPaidExpired"),
             Self::CustomerCanceled => write!(f, "CustomerCanceled"),
@@ -126,7 +119,6 @@ impl std::str::FromStr for InvoiceStatus {
             "PartiallyPaid" => Ok(Self::PartiallyPaid),
             "Paid" => Ok(Self::Paid),
             "OverPaid" => Ok(Self::OverPaid),
-            "AdminApproved" => Ok(Self::AdminApproved),
             "UnpaidExpired" => Ok(Self::UnpaidExpired),
             "PartiallyPaidExpired" => Ok(Self::PartiallyPaidExpired),
             "CustomerCanceled" => Ok(Self::CustomerCanceled),
@@ -140,8 +132,11 @@ impl std::str::FromStr for InvoiceStatus {
 pub struct InvoiceCartItem {
     pub name: String,
     pub quantity: u32,
-    pub unit_price: Decimal,
-    pub icon_url: Option<String>,
+    pub price: Decimal, // Price per single item
+    pub product_url: Option<String>,
+    pub image_url: Option<String>,
+    pub tax: Option<Decimal>,
+    pub discount: Option<Decimal>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -163,8 +158,7 @@ pub struct Invoice {
     pub id: Uuid,
     // Merchant-provided order ID
     pub order_id: String,
-    // TODO: make it non-optional, for native asset use asset_id = 0
-    pub asset_id: Option<u32>,
+    pub asset_id: String,
     pub chain: String,
     pub amount: Decimal,
     pub payment_address: String,
@@ -191,7 +185,7 @@ pub struct InvoiceWithIncomingAmount {
 pub struct InvoiceRow {
     pub id: Uuid,
     pub order_id: String,
-    pub asset_id: Option<u32>,
+    pub asset_id: String,
     pub chain: String,
     pub amount: Text<Decimal>,
     pub payment_address: String,
@@ -232,7 +226,7 @@ impl From<InvoiceRow> for Invoice {
 pub struct CreateInvoiceData {
     pub id: Uuid,
     pub order_id: String,
-    pub asset_id: u32,
+    pub asset_id: String,
     pub chain: String,
     pub amount: Decimal,
     pub payment_address: String,
@@ -249,7 +243,7 @@ impl From<CreateInvoiceData> for Invoice {
         Self {
             id: data.id,
             order_id: data.order_id,
-            asset_id: Some(data.asset_id),
+            asset_id: data.asset_id,
             chain: data.chain,
             amount: data.amount,
             payment_address: data.payment_address,
@@ -284,7 +278,7 @@ pub fn default_invoice() -> Invoice {
     Invoice {
         id,
         order_id: id.to_string(),
-        asset_id: Some(1984),
+        asset_id: 1984.to_string(),
         chain: "statemint".to_string(),
         amount: Decimal::new(10000, 2),
         payment_address: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string(),

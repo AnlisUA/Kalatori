@@ -130,7 +130,7 @@ impl From<(u32, u32)> for GeneralTransactionId {
         GeneralTransactionId {
             block_number: Some(value.0),
             position_in_block: Some(value.1),
-            hash: None,
+            tx_hash: None,
         }
     }
 }
@@ -568,6 +568,8 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
         amount: Decimal,
     ) -> Result<UnsignedTransaction<AssetHubChainConfig>, TransactionError<AssetHubChainConfig>>
     {
+        // TODO: in order to support native asset, we need to check if asset_id = 0 and
+        // use other methods to build transfer_all for native asset
         let decimals = self
             .asset_info_store()
             .get_asset_info(asset_id)
@@ -633,6 +635,8 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
         asset_id: &u32,
     ) -> Result<UnsignedTransaction<AssetHubChainConfig>, TransactionError<AssetHubChainConfig>>
     {
+        // TODO: in order to support native asset, we need to check if asset_id = 0 and
+        // use other methods to build transfer_all for native asset
         let tx_config = self.build_tx_config(*asset_id);
 
         let call = runtime::tx().assets().transfer_all(

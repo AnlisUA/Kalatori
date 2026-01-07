@@ -91,7 +91,7 @@ impl GeneralChainTransfer {
         GeneralTransactionId {
             block_number: self.block_number,
             position_in_block: self.position_in_block,
-            hash: self.transaction_hash.clone(),
+            tx_hash: self.transaction_hash.clone(),
         }
     }
 
@@ -129,7 +129,7 @@ impl<T: ChainConfig> From<ChainTransfer<T>> for GeneralChainTransfer {
             recipient: transfer.recipient.to_string(),
             block_number: trans_id.block_number,
             position_in_block: trans_id.position_in_block,
-            transaction_hash: trans_id.hash,
+            transaction_hash: trans_id.tx_hash,
             timestamp: transfer.timestamp,
         }
     }

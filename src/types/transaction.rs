@@ -6,15 +6,11 @@ use chrono::{
     DateTime,
     Utc,
 };
-use rust_decimal::Decimal;
 use serde::{
     Deserialize,
     Serialize,
 };
-use sqlx::types::{
-    Json,
-    Text,
-};
+use sqlx::types::Json;
 use sqlx::{
     FromRow,
     Type,
@@ -23,7 +19,10 @@ use uuid::Uuid;
 
 use crate::chain_client::GeneralChainTransfer;
 
-use super::common::TransferInfo;
+use super::common::{
+    TransferInfo,
+    TransferInfoRow,
+};
 
 /// Transaction type (incoming or outgoing)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -56,11 +55,11 @@ impl std::str::FromStr for TransactionType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, FromRow)]
 pub struct GeneralTransactionId {
     pub block_number: Option<u32>,
     pub position_in_block: Option<u32>,
-    pub hash: Option<String>,
+    pub tx_hash: Option<String>,
 }
 
 impl GeneralTransactionId {
@@ -68,7 +67,7 @@ impl GeneralTransactionId {
         Self {
             block_number: None,
             position_in_block: None,
-            hash: None,
+            tx_hash: None,
         }
     }
 }
@@ -192,21 +191,19 @@ pub struct OutgoingTransactionMeta {
 pub struct Transaction {
     pub id: Uuid,
     pub invoice_id: Uuid,
-    pub chain: String,
     // TODO: change to String for compatibility with different chains
-    pub asset_id: u32,
-    pub amount: Decimal,
-    pub sender: String,
-    pub recipient: String,
-    pub block_number: Option<u32>,
-    pub position_in_block: Option<u32>,
-    pub tx_hash: Option<String>,
+    #[serde(flatten)]
+    pub transfer_info: TransferInfo,
+    #[expect(clippy::struct_field_names)]
+    #[serde(flatten)]
+    pub transaction_id: GeneralTransactionId,
     pub origin: TransactionOrigin,
     pub status: TransactionStatus,
     #[expect(clippy::struct_field_names)]
     pub transaction_type: TransactionType,
     pub outgoing_meta: OutgoingTransactionMeta,
     pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
     #[expect(clippy::struct_field_names)]
     pub transaction_bytes: Option<String>, // Backward compat (hex-encoded extrinsic)
 }
@@ -215,19 +212,16 @@ pub struct Transaction {
 pub struct TransactionRow {
     pub id: Uuid,
     pub invoice_id: Uuid,
-    pub asset_id: u32,
-    pub chain: String,
-    pub amount: Text<Decimal>,
-    pub sender: String,
-    pub recipient: String,
-    pub block_number: Option<u32>,
-    pub position_in_block: Option<u32>,
-    pub tx_hash: Option<String>,
+    #[sqlx(flatten)]
+    pub transfer_info: TransferInfoRow,
+    #[sqlx(flatten)]
+    pub transaction_id: GeneralTransactionId,
     pub origin: Json<TransactionOrigin>,
     pub status: TransactionStatus,
     pub transaction_type: TransactionType,
     pub outgoing_meta: Json<OutgoingTransactionMeta>,
     pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
     pub transaction_bytes: Option<String>,
 }
 
@@ -236,19 +230,14 @@ impl From<TransactionRow> for Transaction {
         Self {
             id: row.id,
             invoice_id: row.invoice_id,
-            asset_id: row.asset_id,
-            chain: row.chain,
-            amount: row.amount.0,
-            sender: row.sender,
-            recipient: row.recipient,
-            block_number: row.block_number,
-            position_in_block: row.position_in_block,
-            tx_hash: row.tx_hash,
+            transfer_info: row.transfer_info.into(),
+            transaction_id: row.transaction_id,
             origin: row.origin.0,
             status: row.status,
             transaction_type: row.transaction_type,
             outgoing_meta: row.outgoing_meta.0,
             created_at: row.created_at,
+            updated_at: row.updated_at,
             transaction_bytes: row.transaction_bytes,
         }
     }
@@ -256,22 +245,33 @@ impl From<TransactionRow> for Transaction {
 
 #[cfg(test)]
 pub fn default_transaction(invoice_id: Uuid) -> Transaction {
-    Transaction {
-        id: Uuid::new_v4(),
-        invoice_id,
-        asset_id: 1984,
+    let transfer_info = TransferInfo {
+        asset_id: 1984.to_string(),
         chain: "statemint".to_string(),
-        amount: Decimal::new(10000, 2),
-        sender: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string(),
-        recipient: "5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty".to_string(),
+        amount: rust_decimal::Decimal::new(10000, 2),
+        source_address: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string(),
+        destination_address: "5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty".to_string(),
+    };
+
+    let transaction_id = GeneralTransactionId {
         block_number: Some(1000),
         position_in_block: Some(2),
         tx_hash: Some("0x1234567890abcdef".to_string()),
+    };
+
+    let now = Utc::now();
+
+    Transaction {
+        id: Uuid::new_v4(),
+        invoice_id,
+        transfer_info,
+        transaction_id,
         origin: TransactionOrigin::default(),
         status: TransactionStatus::Waiting,
         transaction_type: TransactionType::Incoming,
         outgoing_meta: OutgoingTransactionMeta::default(),
-        created_at: Utc::now(),
+        created_at: now,
+        updated_at: now,
         transaction_bytes: Some("0xabcdef123456".to_string()),
     }
 }
@@ -288,33 +288,32 @@ pub struct OutgoingTransaction {
 
 impl From<OutgoingTransaction> for Transaction {
     fn from(value: OutgoingTransaction) -> Self {
-        Self {
-            id: value.id,
-            invoice_id: value.invoice_id,
-            chain: value.transfer_info.chain,
-            asset_id: value
-                .transfer_info
-                .asset_id
-                .parse()
-                .unwrap(),
-            amount: value.transfer_info.amount,
-            sender: value.transfer_info.source_address,
-            recipient: value.transfer_info.destination_address,
+        let now = Utc::now();
+
+        let transaction_id = GeneralTransactionId {
             block_number: None,
             position_in_block: None,
             tx_hash: Some(value.tx_hash),
+        };
+
+        Self {
+            id: value.id,
+            invoice_id: value.invoice_id,
+            transfer_info: value.transfer_info,
+            transaction_id,
             origin: value.origin,
             status: TransactionStatus::InProgress,
             transaction_type: TransactionType::Outgoing,
             outgoing_meta: OutgoingTransactionMeta {
                 extrinsic_bytes: Some(value.transaction_bytes),
-                built_at: Some(Utc::now()),
+                built_at: Some(now),
                 sent_at: None,
                 confirmed_at: None,
                 failed_at: None,
                 failure_message: None,
             },
-            created_at: Utc::now(),
+            created_at: now,
+            updated_at: now,
             transaction_bytes: None,
         }
     }
@@ -347,26 +346,19 @@ impl IncomingTransaction {
 
 impl From<IncomingTransaction> for Transaction {
     fn from(value: IncomingTransaction) -> Self {
+        let now = Utc::now();
+
         Self {
             id: value.id,
             invoice_id: value.invoice_id,
-            chain: value.transfer_info.chain,
-            asset_id: value
-                .transfer_info
-                .asset_id
-                .parse()
-                .unwrap(),
-            amount: value.transfer_info.amount,
-            sender: value.transfer_info.source_address,
-            recipient: value.transfer_info.destination_address,
-            block_number: value.transaction_id.block_number,
-            position_in_block: value.transaction_id.position_in_block,
-            tx_hash: value.transaction_id.hash,
+            transfer_info: value.transfer_info,
+            transaction_id: value.transaction_id,
             origin: TransactionOrigin::default(),
             status: TransactionStatus::Completed,
             transaction_type: TransactionType::Incoming,
             outgoing_meta: OutgoingTransactionMeta::default(),
-            created_at: Utc::now(),
+            created_at: now,
+            updated_at: now,
             transaction_bytes: None,
         }
     }

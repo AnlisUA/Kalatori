@@ -84,6 +84,7 @@ use crate::legacy_types::{
     build_currencies_from_config,
 };
 use crate::types::{
+    GeneralTransactionId,
     Invoice,
     InvoiceCart,
     InvoiceStatus,
@@ -92,6 +93,7 @@ use crate::types::{
     TransactionOrigin,
     TransactionStatus,
     TransactionType,
+    TransferInfo,
 };
 
 // Sled table names
@@ -611,7 +613,11 @@ fn convert_order_to_invoice(
     Ok(Invoice {
         id: invoice_id,
         order_id,
-        asset_id: order_info.currency.asset_id,
+        asset_id: order_info
+            .currency
+            .asset_id
+            .unwrap_or(0)
+            .to_string(),
         chain: order_info.currency.chain_name,
         amount: amount_decimal,
         payment_address: order_info.payment_account,
@@ -655,24 +661,34 @@ fn convert_finalized_transaction_to_new(
                 "Transaction for invoice {invoice_id} has no asset_id, using 0"
             ));
             0
-        });
+        })
+        .to_string();
+
+    let transfer_info = TransferInfo {
+        asset_id,
+        chain: tx_db.inner.currency.chain_name,
+        amount: amount_decimal,
+        source_address: tx_db.inner.sender,
+        destination_address: tx_db.inner.recipient,
+    };
+
+    let transaction_id = GeneralTransactionId {
+        block_number: Some(block_number),
+        position_in_block: Some(position_in_block),
+        tx_hash: Some(tx_hash),
+    };
 
     Ok(Transaction {
         id: Uuid::new_v4(),
         invoice_id,
-        asset_id,
-        chain: tx_db.inner.currency.chain_name,
-        amount: amount_decimal,
-        sender: tx_db.inner.sender,
-        recipient: tx_db.inner.recipient,
-        block_number: Some(block_number),
-        position_in_block: Some(position_in_block),
-        tx_hash: Some(tx_hash),
+        transfer_info,
+        transaction_id,
         origin: TransactionOrigin::default(),
         status: tx_status,
         transaction_type: tx_type,
         outgoing_meta: OutgoingTransactionMeta::default(),
         created_at,
+        updated_at: created_at,
         transaction_bytes: Some(tx_db.transaction_bytes),
     })
 }
@@ -696,24 +712,30 @@ fn convert_pending_transaction_to_new(
                 "Pending transaction for invoice {invoice_id} has no asset_id, using 0"
             ));
             0
-        });
+        })
+        .to_string();
+
+    let transfer_info = TransferInfo {
+        asset_id,
+        chain: tx_inner.currency.chain_name,
+        amount: amount_decimal,
+        source_address: tx_inner.sender,
+        destination_address: tx_inner.recipient,
+    };
+
+    let now = Utc::now();
 
     Ok(Transaction {
         id: Uuid::new_v4(),
         invoice_id,
-        asset_id,
-        chain: tx_inner.currency.chain_name,
-        amount: amount_decimal,
-        sender: tx_inner.sender,
-        recipient: tx_inner.recipient,
-        block_number: None,
-        position_in_block: None,
-        tx_hash: None,
+        transfer_info,
+        transaction_id: GeneralTransactionId::empty(),
         origin: TransactionOrigin::default(),
         status: tx_status,
         transaction_type: tx_type,
         outgoing_meta: OutgoingTransactionMeta::default(),
-        created_at: Utc::now(),
+        created_at: now,
+        updated_at: now,
         transaction_bytes: Some(transaction_bytes),
     })
 }

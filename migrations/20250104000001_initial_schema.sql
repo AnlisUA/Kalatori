@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS invoices (
     order_id TEXT NOT NULL UNIQUE,  -- Merchant-provided order ID
 
     -- Asset information (denormalized to avoid config changes affecting data)
-    asset_id INTEGER,  -- NULL for native tokens
+    asset_id TEXT NOT NULL,
     chain TEXT NOT NULL,
 
     -- Payment details
@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS invoices (
     -- Status (new unified status system)
     status TEXT NOT NULL CHECK(status IN (
         'Waiting', 'PartiallyPaid',  -- Active
-        'Paid', 'OverPaid', 'AdminApproved',  -- Final
+        'Paid', 'OverPaid',  -- Final
         'UnpaidExpired', 'PartiallyPaidExpired',  -- Expired
         'CustomerCanceled', 'AdminCanceled'  -- Canceled
     )) DEFAULT 'Waiting',
@@ -48,9 +48,6 @@ CREATE TABLE IF NOT EXISTS invoices (
 
     -- Optimistic locking
     version INTEGER NOT NULL DEFAULT 1  -- Auto-incremented on each update for optimistic locking
-
-    -- Note: CurrencyInfo (currency_name, decimals, rpc_url, etc.) will be reconstructed in Rust
-    -- from asset_id + chain + config, no need to store redundantly
 );
 
 -- Transactions table (unified: both pending and finalized transactions)
@@ -61,13 +58,13 @@ CREATE TABLE IF NOT EXISTS transactions (
     invoice_id BLOB NOT NULL,  -- References invoices.id
 
     -- Asset information
-    asset_id INTEGER NOT NULL,
+    asset_id TEXT NOT NULL,
     chain TEXT NOT NULL,
     amount TEXT NOT NULL,  -- Decimal string (excluding fees)
 
     -- Addresses (needed for refunds - sender is who we refund to)
-    sender TEXT NOT NULL,  -- For incoming: customer address (refund destination), for outgoing: payment address
-    recipient TEXT NOT NULL,  -- For incoming: payment address, for outgoing: payout/refund destination
+    source_address TEXT NOT NULL,  -- For incoming: customer address (refund destination), for outgoing: payment address
+    destination_address TEXT NOT NULL,  -- For incoming: payment address, for outgoing: payout/refund destination
 
     -- Blockchain location (NULL until finalized)
     block_number INTEGER,  -- NULL for pending transactions
@@ -86,6 +83,7 @@ CREATE TABLE IF NOT EXISTS transactions (
 
     -- Timestamps
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
 
     -- Backward compatibility fields (temporary - ONLY for sled migration deduplication)
     transaction_bytes TEXT,  -- Hex-encoded extrinsic (old field, used as unique key in old system)
@@ -207,8 +205,8 @@ CREATE INDEX IF NOT EXISTS idx_refunds_created_at ON refunds(created_at);
 
 -- Invoice status transition enforcement
 -- Valid transitions:
--- Waiting -> PartiallyPaid, Paid, OverPaid, UnpaidExpired, AdminApproved, AdminCanceled, CustomerCanceled
--- PartiallyPaid -> Paid, OverPaid, PartiallyPaidExpired, AdminApproved, AdminCanceled
+-- Waiting -> PartiallyPaid, Paid, OverPaid, UnpaidExpired, AdminCanceled, CustomerCanceled
+-- PartiallyPaid -> Paid, OverPaid, PartiallyPaidExpired, AdminCanceled
 -- All final/expired/canceled statuses -> no further transitions allowed
 CREATE TRIGGER IF NOT EXISTS enforce_invoice_status_transition
 BEFORE UPDATE OF status ON invoices
@@ -216,14 +214,14 @@ FOR EACH ROW
 BEGIN
     SELECT CASE
         WHEN OLD.status = 'Waiting' AND NEW.status != OLD.status AND NEW.status NOT IN
-            ('PartiallyPaid', 'Paid', 'OverPaid', 'UnpaidExpired', 'AdminApproved', 'AdminCanceled', 'CustomerCanceled')
+            ('PartiallyPaid', 'Paid', 'OverPaid', 'UnpaidExpired', 'AdminCanceled', 'CustomerCanceled')
         THEN RAISE(ABORT, 'INVOICE_STATUS_TRANSITION|old_status=' || OLD.status || '|new_status=' || NEW.status)
 
         WHEN OLD.status = 'PartiallyPaid' AND NEW.status != OLD.status AND NEW.status NOT IN
-            ('Paid', 'OverPaid', 'PartiallyPaidExpired', 'AdminApproved', 'AdminCanceled')
+            ('Paid', 'OverPaid', 'PartiallyPaidExpired', 'AdminCanceled')
         THEN RAISE(ABORT, 'INVOICE_STATUS_TRANSITION|old_status=' || OLD.status || '|new_status=' || NEW.status)
 
-        WHEN OLD.status IN ('Paid', 'OverPaid', 'AdminApproved', 'UnpaidExpired', 'PartiallyPaidExpired', 'CustomerCanceled', 'AdminCanceled')
+        WHEN OLD.status IN ('Paid', 'OverPaid', 'UnpaidExpired', 'PartiallyPaidExpired', 'CustomerCanceled', 'AdminCanceled')
             AND NEW.status != OLD.status
         THEN RAISE(ABORT, 'INVOICE_STATUS_TRANSITION|old_status=' || OLD.status || '|new_status=' || NEW.status)
     END;
