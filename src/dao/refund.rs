@@ -269,7 +269,7 @@ mod tests {
     use crate::dao::create_test_dao;
     use crate::dao::invoice::DaoInvoiceMethods;
     use crate::types::{
-        default_invoice,
+        default_create_invoice_data,
         default_refund,
     };
 
@@ -279,7 +279,7 @@ mod tests {
     async fn test_refund_create_and_get() {
         let dao = create_test_dao().await;
         let invoice = dao
-            .create_invoice(default_invoice())
+            .create_invoice(default_create_invoice_data())
             .await
             .unwrap();
 
@@ -314,7 +314,7 @@ mod tests {
     async fn test_get_pending_refunds_filtering() {
         let dao = create_test_dao().await;
         let invoice = dao
-            .create_invoice(default_invoice())
+            .create_invoice(default_create_invoice_data())
             .await
             .unwrap();
 
@@ -350,7 +350,7 @@ mod tests {
     async fn test_update_refund_status() {
         let dao = create_test_dao().await;
         let invoice = dao
-            .create_invoice(default_invoice())
+            .create_invoice(default_create_invoice_data())
             .await
             .unwrap();
 
@@ -381,7 +381,7 @@ mod tests {
     async fn test_update_refund_retry() {
         let dao = create_test_dao().await;
         let invoice = dao
-            .create_invoice(default_invoice())
+            .create_invoice(default_create_invoice_data())
             .await
             .unwrap();
 
@@ -425,7 +425,7 @@ mod tests {
     #[tokio::test]
     async fn test_refund_status_transition_triggers() {
         let dao = create_test_dao().await;
-        let invoice = default_invoice();
+        let invoice = default_create_invoice_data();
         let invoice_id = invoice.id;
         dao.create_invoice(invoice)
             .await

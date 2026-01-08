@@ -807,10 +807,7 @@ impl<D: DaoInterface + 'static, AH: BlockChainClient<AssetHubChainConfig> + 'sta
 mod tests {
     use mockall::predicate;
 
-    use crate::chain_client::{
-        MockBlockChainClient,
-        default_keyring_client,
-    };
+    use crate::chain_client::MockBlockChainClient;
     use crate::dao::MockDaoInterface;
     use crate::types::default_payout;
 
@@ -818,7 +815,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_collect_pending_payout_requests() {
-        let keyring_client = default_keyring_client();
+        let keyring_client = KeyringClient::default();
 
         let mut dao = MockDaoInterface::new();
 

@@ -328,7 +328,7 @@ mod tests {
         TransactionOrigin,
         TransactionStatus,
         TransactionType,
-        default_invoice,
+        default_create_invoice_data,
         default_transaction,
     };
 
@@ -341,7 +341,7 @@ mod tests {
         let dao = create_test_dao().await;
 
         // Create invoice (required for FK)
-        let invoice = default_invoice();
+        let invoice = default_create_invoice_data();
         dao.create_invoice(invoice.clone())
             .await
             .unwrap();
@@ -408,7 +408,7 @@ mod tests {
     async fn test_create_transaction_types() {
         let dao = create_test_dao().await;
         let invoice = dao
-            .create_invoice(default_invoice())
+            .create_invoice(default_create_invoice_data())
             .await
             .unwrap();
 
@@ -468,7 +468,7 @@ mod tests {
     async fn test_transaction_status_transitions() {
         let dao = create_test_dao().await;
         let invoice = dao
-            .create_invoice(default_invoice())
+            .create_invoice(default_create_invoice_data())
             .await
             .unwrap();
 
@@ -523,7 +523,7 @@ mod tests {
     async fn test_update_transaction_failed_and_successful() {
         let dao = create_test_dao().await;
         let invoice = dao
-            .create_invoice(default_invoice())
+            .create_invoice(default_create_invoice_data())
             .await
             .unwrap();
 
@@ -676,7 +676,7 @@ mod tests {
     async fn test_transaction_json_fields() {
         let dao = create_test_dao().await;
         let invoice = dao
-            .create_invoice(default_invoice())
+            .create_invoice(default_create_invoice_data())
             .await
             .unwrap();
 
@@ -726,7 +726,7 @@ mod tests {
     async fn test_get_invoice_transactions_ordering() {
         let dao = create_test_dao().await;
         let invoice = dao
-            .create_invoice(default_invoice())
+            .create_invoice(default_create_invoice_data())
             .await
             .unwrap();
 
@@ -770,7 +770,7 @@ mod tests {
     async fn test_update_transaction_not_found() {
         let dao = create_test_dao().await;
         let invoice = dao
-            .create_invoice(default_invoice())
+            .create_invoice(default_create_invoice_data())
             .await
             .unwrap();
 
@@ -792,7 +792,7 @@ mod tests {
     async fn test_transaction_nullable_fields() {
         let dao = create_test_dao().await;
         let invoice = dao
-            .create_invoice(default_invoice())
+            .create_invoice(default_create_invoice_data())
             .await
             .unwrap();
 
@@ -846,7 +846,7 @@ mod tests {
     #[tokio::test]
     async fn test_transaction_status_transition_triggers() {
         let dao = create_test_dao().await;
-        let invoice = default_invoice();
+        let invoice = default_create_invoice_data();
         let invoice_id = invoice.id;
         dao.create_invoice(invoice)
             .await

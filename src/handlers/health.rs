@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use axum::Json;
 use axum::extract::State as ExtractState;
 
@@ -10,8 +12,8 @@ use crate::legacy_types::{
 };
 use crate::server::ApiState;
 
-pub async fn status<D: DaoInterface + Clone + 'static>(
-    ExtractState(state): ExtractState<ApiState<D>>
+pub async fn status<D: DaoInterface>(
+    ExtractState(state): ExtractState<Arc<ApiState<D>>>
 ) -> (
     [(
         axum::http::header::HeaderName,
@@ -52,8 +54,8 @@ fn overall_health(connected_rpcs: &[RpcInfo]) -> Health {
     }
 }
 
-pub async fn health<D: DaoInterface + Clone + 'static>(
-    ExtractState(state): ExtractState<ApiState<D>>
+pub async fn health<D: DaoInterface>(
+    ExtractState(state): ExtractState<Arc<ApiState<D>>>
 ) -> (
     [(
         axum::http::header::HeaderName,

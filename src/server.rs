@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::future::Future;
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use axum::{
     Router,
@@ -27,22 +28,21 @@ use crate::handlers::public::public_routes;
 use crate::legacy_types::LegacyApiData;
 use crate::state::AppState;
 
-#[derive(Clone)]
-pub struct ApiState<D: DaoInterface + Clone + 'static> {
+pub struct ApiState<D: DaoInterface> {
     pub state: AppState<D>,
     pub legacy_api_data: LegacyApiData,
 }
 
-pub async fn new<D: DaoInterface + Clone + 'static>(
+pub async fn new<D: DaoInterface>(
     shutdown_notification: CancellationToken,
     config: WebServerConfig,
     state: AppState<D>,
     legacy_api_data: LegacyApiData,
 ) -> Result<impl Future<Output = Result<Cow<'static, str>, Error>>, ServerError> {
-    let api_state = ApiState {
+    let api_state = Arc::new(ApiState {
         state,
         legacy_api_data,
-    };
+    });
 
     let host = SocketAddr::new(config.host, config.port);
 

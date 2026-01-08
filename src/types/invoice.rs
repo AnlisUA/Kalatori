@@ -222,7 +222,7 @@ impl From<InvoiceRow> for Invoice {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CreateInvoiceData {
     pub id: Uuid,
     pub order_id: String,
@@ -272,26 +272,26 @@ pub struct UpdateInvoiceData {
 
 #[cfg(test)]
 pub fn default_invoice() -> Invoice {
+    default_create_invoice_data().into()
+}
+
+#[cfg(test)]
+pub fn default_create_invoice_data() -> CreateInvoiceData {
     let now = Utc::now();
     let id = Uuid::new_v4();
 
-    Invoice {
+    CreateInvoiceData {
         id,
         order_id: id.to_string(),
         asset_id: 1984.to_string(),
         chain: "statemint".to_string(),
         amount: Decimal::new(10000, 2),
         payment_address: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string(),
-        status: InvoiceStatus::Waiting,
-        withdrawal_status: WithdrawalStatus::Waiting,
-        callback: "http://localhost:8080/callback".to_string(),
+        callback_url: None,
         cart: InvoiceCart::empty(),
         redirect_url: "http://localhost:8080/thankyou".to_string(),
         #[expect(clippy::arithmetic_side_effects)]
         valid_till: now + chrono::Duration::hours(24),
-        created_at: now,
-        updated_at: now,
-        version: 1,
     }
 }
 

@@ -368,7 +368,7 @@ async fn create_test_dao() -> DAO {
 mod tests {
     use crate::types::{
         Transaction,
-        default_invoice,
+        default_create_invoice_data,
         default_transaction,
     };
 
@@ -387,7 +387,7 @@ mod tests {
     #[tokio::test]
     async fn test_transaction_exists_by_bytes() {
         let dao = create_test_dao().await;
-        let invoice = DaoInvoiceMethods::create_invoice(&dao, default_invoice())
+        let invoice = DaoInvoiceMethods::create_invoice(&dao, default_create_invoice_data())
             .await
             .unwrap();
 

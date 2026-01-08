@@ -85,7 +85,7 @@ use crate::legacy_types::{
 };
 use crate::types::{
     GeneralTransactionId,
-    Invoice,
+    CreateInvoiceData,
     InvoiceCart,
     InvoiceStatus,
     OutgoingTransactionMeta,
@@ -423,7 +423,7 @@ async fn migrate_orders(
             let invoice_id = Uuid::new_v4();
 
             // Convert OrderInfo to Invoice
-            let invoice = convert_order_to_invoice(
+            let invoice = convert_order_to_create_invoice_data(
                 order_id.clone(),
                 invoice_id,
                 order_info,
@@ -599,18 +599,18 @@ async fn migrate_pending_transactions(
 // ============================================================================
 
 /// Convert old `OrderInfo` to new Invoice
-fn convert_order_to_invoice(
+fn convert_order_to_create_invoice_data(
     order_id: String,
     invoice_id: Uuid,
     order_info: OrderInfo,
     stats: &mut MigrationStats,
-) -> MigrationResult<Invoice> {
+) -> MigrationResult<CreateInvoiceData> {
     let amount_decimal = f64_to_decimal(order_info.amount)?;
     let valid_till = timestamp_to_datetime(order_info.death)?;
     let created_at = estimate_created_at(order_info.death, stats);
     let invoice_status = payment_status_to_invoice_status(&order_info.payment_status);
 
-    Ok(Invoice {
+    Ok(CreateInvoiceData {
         id: invoice_id,
         order_id,
         asset_id: order_info
@@ -621,15 +621,10 @@ fn convert_order_to_invoice(
         chain: order_info.currency.chain_name,
         amount: amount_decimal,
         payment_address: order_info.payment_account,
-        status: invoice_status,
-        withdrawal_status: order_info.withdrawal_status,
-        callback: order_info.callback,
+        callback_url: Some(order_info.callback),
         cart: InvoiceCart::empty(),
         redirect_url: String::new(),
         valid_till,
-        created_at,
-        updated_at: Utc::now(),
-        version: 1,
     })
 }
 

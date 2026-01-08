@@ -12,7 +12,6 @@ pub struct CreateInvoiceParams {
     #[serde(default = "InvoiceCart::empty")]
     pub cart: InvoiceCart,
     pub redirect_url: String,
-    pub callback_url: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]

@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 use crate::legacy_types::WithdrawalStatus;
 use crate::types::{
+    CreateInvoiceData,
     Invoice,
     InvoiceRow,
     InvoiceStatus,
@@ -130,8 +131,10 @@ impl From<InvoiceWithAmountsRow> for InvoiceWithIncomingAmount {
 pub trait DaoInvoiceMethods: DaoExecutor + 'static {
     async fn create_invoice(
         &self,
-        invoice: Invoice,
+        invoice: CreateInvoiceData,
     ) -> Result<Invoice, DaoInvoiceError> {
+        let invoice: Invoice = invoice.into();
+
         let query = sqlx::query_as::<_, InvoiceRow>(
         "INSERT INTO invoices (id, order_id, asset_id, chain, amount, payment_address, status, withdrawal_status, callback, cart, redirect_url, valid_till, created_at, updated_at, version)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -469,7 +472,7 @@ mod tests {
     use crate::types::{
         Transaction,
         TransactionType,
-        default_invoice,
+        default_create_invoice_data,
         default_transaction,
         default_update_invoice_data,
     };
@@ -482,8 +485,9 @@ mod tests {
         let dao = create_test_dao().await;
 
         // Create invoice 1 with Waiting status (will have 2 incoming transactions)
-        let invoice1 = default_invoice();
+        let invoice1 = default_create_invoice_data();
         let invoice1_id = invoice1.id;
+
         dao.create_invoice(invoice1)
             .await
             .unwrap();
@@ -518,14 +522,14 @@ mod tests {
             .unwrap();
 
         // Create invoice 2 with PartiallyPaid status (will have 1 incoming transaction)
-        let invoice2 = Invoice {
-            status: InvoiceStatus::PartiallyPaid,
-            ..default_invoice()
-        };
-
+        let invoice2 = default_create_invoice_data();
         let invoice2_id = invoice2.id;
 
         dao.create_invoice(invoice2)
+            .await
+            .unwrap();
+
+        dao.update_invoice_status(invoice2_id, InvoiceStatus::PartiallyPaid)
             .await
             .unwrap();
 
@@ -544,7 +548,7 @@ mod tests {
             .unwrap();
 
         // Create invoice 3 with Waiting status (no transactions)
-        let invoice3 = default_invoice();
+        let invoice3 = default_create_invoice_data();
         let invoice3_id = invoice3.id;
 
         dao.create_invoice(invoice3)
@@ -553,7 +557,7 @@ mod tests {
 
         // Create invoice 4 with Waiting status and an Outgoing transaction (should not
         // be counted)
-        let invoice4 = default_invoice();
+        let invoice4 = default_create_invoice_data();
         let invoice4_id = invoice4.id;
 
         dao.create_invoice(invoice4)
@@ -574,14 +578,14 @@ mod tests {
             .unwrap();
 
         // Create invoice 5 with Paid status (should not be in results)
-        let invoice5 = Invoice {
-            status: InvoiceStatus::Paid,
-            ..default_invoice()
-        };
-
+        let invoice5 = default_create_invoice_data();
         let invoice5_id = invoice5.id;
 
         dao.create_invoice(invoice5)
+            .await
+            .unwrap();
+
+        dao.update_invoice_status(invoice5_id, InvoiceStatus::Paid)
             .await
             .unwrap();
 
@@ -684,7 +688,7 @@ mod tests {
         let dao = create_test_dao().await;
 
         // Create invoice
-        let invoice = default_invoice();
+        let invoice = default_create_invoice_data();
         let invoice_id = invoice.id;
         let order_id = invoice.order_id.clone();
 
@@ -739,16 +743,16 @@ mod tests {
         let dao = create_test_dao().await;
 
         // Create first invoice
-        let invoice1 = default_invoice();
+        let invoice1 = default_create_invoice_data();
         let order_id = invoice1.order_id.clone();
         dao.create_invoice(invoice1)
             .await
             .unwrap();
 
         // Try to create second invoice with same order_id
-        let invoice2 = Invoice {
+        let invoice2 = CreateInvoiceData {
             order_id: order_id.clone(),
-            ..default_invoice()
+            ..default_create_invoice_data()
         };
 
         let result = dao.create_invoice(invoice2).await;
@@ -770,7 +774,7 @@ mod tests {
         let dao = create_test_dao().await;
 
         // Create invoice with Waiting status
-        let invoice = default_invoice();
+        let invoice = default_create_invoice_data();
         let invoice_id = invoice.id;
         let created = dao
             .create_invoice(invoice)
@@ -819,7 +823,7 @@ mod tests {
         let dao = create_test_dao().await;
 
         // Create invoice (version=1, amount=100.00)
-        let invoice = default_invoice();
+        let invoice = default_create_invoice_data();
         let invoice_id = invoice.id;
         let created = dao
             .create_invoice(invoice)
@@ -877,7 +881,7 @@ mod tests {
         let dao = create_test_dao().await;
 
         // Scenario A: Stale version
-        let invoice1 = default_invoice();
+        let invoice1 = default_create_invoice_data();
         let id1 = invoice1.id;
         let created1 = dao
             .create_invoice(invoice1)
@@ -914,11 +918,9 @@ mod tests {
         }
 
         // Scenario B: Wrong status (not in Waiting state)
-        let invoice2 = Invoice {
-            status: InvoiceStatus::Waiting,
-            ..default_invoice()
-        };
+        let invoice2 = default_create_invoice_data();
         let id2 = invoice2.id;
+
         dao.create_invoice(invoice2)
             .await
             .unwrap();
@@ -975,12 +977,13 @@ mod tests {
         let dao = create_test_dao().await;
 
         // Test transition to Completed
-        let invoice1 = default_invoice();
+        let invoice1 = default_create_invoice_data();
         let id1 = invoice1.id;
         let created1 = dao
             .create_invoice(invoice1)
             .await
             .unwrap();
+
         assert_eq!(
             created1.withdrawal_status,
             WithdrawalStatus::Waiting
@@ -999,8 +1002,9 @@ mod tests {
         assert_eq!(updated1.version, 2); // Trigger incremented
 
         // Test transition to Failed
-        let invoice2 = default_invoice();
+        let invoice2 = default_create_invoice_data();
         let id2 = invoice2.id;
+
         dao.create_invoice(invoice2)
             .await
             .unwrap();
@@ -1016,8 +1020,9 @@ mod tests {
         );
 
         // Test transition to Forced
-        let invoice3 = default_invoice();
+        let invoice3 = default_create_invoice_data();
         let id3 = invoice3.id;
+
         dao.create_invoice(invoice3)
             .await
             .unwrap();
@@ -1038,8 +1043,9 @@ mod tests {
         let dao = create_test_dao().await;
 
         // Create invoice with Waiting withdrawal_status
-        let invoice = default_invoice();
+        let invoice = default_create_invoice_data();
         let invoice_id = invoice.id;
+
         dao.create_invoice(invoice)
             .await
             .unwrap();
@@ -1113,18 +1119,21 @@ mod tests {
         let dao = create_test_dao().await;
 
         // Scenario 1: Invalid transition from Paid (final state) -> Waiting
-        let invoice1 = Invoice {
-            status: InvoiceStatus::Paid,
-            ..default_invoice()
-        };
+        let invoice1 = default_create_invoice_data();
         let id1 = invoice1.id;
+
         dao.create_invoice(invoice1)
+            .await
+            .unwrap();
+
+        dao.update_invoice_status(id1, InvoiceStatus::Paid)
             .await
             .unwrap();
 
         let result = dao
             .update_invoice_status(id1, InvoiceStatus::Waiting)
             .await;
+
         match result.unwrap_err() {
             DaoInvoiceError::StatusConstraintViolation {
                 current_status,
@@ -1137,11 +1146,9 @@ mod tests {
         }
 
         // Scenario 2: Valid transition from Waiting -> Paid
-        let invoice2 = Invoice {
-            status: InvoiceStatus::Waiting,
-            ..default_invoice()
-        };
+        let invoice2 = default_create_invoice_data();
         let id2 = invoice2.id;
+
         dao.create_invoice(invoice2)
             .await
             .unwrap();
@@ -1153,12 +1160,14 @@ mod tests {
         assert_eq!(updated.status, InvoiceStatus::Paid);
 
         // Scenario 3: Invalid transition from PartiallyPaid -> Waiting
-        let invoice3 = Invoice {
-            status: InvoiceStatus::PartiallyPaid,
-            ..default_invoice()
-        };
+        let invoice3 = default_create_invoice_data();
         let id3 = invoice3.id;
+
         dao.create_invoice(invoice3)
+            .await
+            .unwrap();
+
+        dao.update_invoice_status(id3, InvoiceStatus::PartiallyPaid)
             .await
             .unwrap();
 

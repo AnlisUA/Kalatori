@@ -22,6 +22,9 @@ use super::asset_hub::{
     AssetHubUnsignedTransaction,
 };
 
+#[cfg_attr(test, mockall_double::double)]
+pub use client::KeyringClient;
+
 const KEYRING_CHANNEL_CAPACITY: usize = 32;
 
 pub type DerivationParams = Vec<String>;
@@ -85,9 +88,7 @@ impl Keyring {
             tracing::info!("Keyring actor has been shut down");
         });
 
-        let client = KeyringClient {
-            tx,
-        };
+        let client = KeyringClient::new(tx);
 
         (handle, client)
     }
@@ -246,59 +247,82 @@ impl KeyringMessage {
     }
 }
 
-#[derive(Clone)]
-pub struct KeyringClient {
-    tx: mpsc::Sender<KeyringMessage>,
-}
+// Client is wrapped into a separate module to allow mocking and easily doubling.
+#[cfg_attr(test, expect(dead_code))]
+mod client {
+    use super::*;
 
-impl KeyringClient {
-    async fn send_message_with_response<R>(
-        &self,
-        message: KeyringMessage,
-        response_receiver: ResponseReceiver<R>,
-    ) -> KeyringResult<R> {
-        let () = self
-            .tx
-            .send(message)
-            .await
-            .inspect_err(|e| {
-                tracing::debug!(
-                    error.category = crate::utils::logging::category::CHAIN_CLIENT,
-                    error.operation = "keyring_request",
-                    error.source = ?e,
-                    "Failed to send request to Keyring actor"
-                );
-            })
-            .map_err(|_| KeyringError::MessageTransmissionFailed)?;
-
-        response_receiver.receive().await
+    #[derive(Clone)]
+    pub struct KeyringClient {
+        tx: mpsc::Sender<KeyringMessage>,
     }
 
-    #[instrument(skip(self, data))]
-    pub async fn sign_asset_hub_transaction(
-        &self,
-        data: SignTransactionRequestData<AssetHubUnsignedTransaction>,
-    ) -> KeyringResult<AssetHubSignedTransaction> {
-        let params = KeyringMessage::new_sign_asset_hub_transaction(data);
-        self.send_message_with_response(params.0, params.1)
-            .await
+    impl KeyringClient {
+        pub(super) fn new(tx: mpsc::Sender<KeyringMessage>) -> Self {
+            Self { tx }
+        }
+
+        async fn send_message_with_response<R: 'static>(
+            &self,
+            message: KeyringMessage,
+            response_receiver: ResponseReceiver<R>,
+        ) -> KeyringResult<R> {
+            let () = self
+                .tx
+                .send(message)
+                .await
+                .inspect_err(|e| {
+                    tracing::debug!(
+                        error.category = crate::utils::logging::category::CHAIN_CLIENT,
+                        error.operation = "keyring_request",
+                        error.source = ?e,
+                        "Failed to send request to Keyring actor"
+                    );
+                })
+                .map_err(|_| KeyringError::MessageTransmissionFailed)?;
+
+            response_receiver.receive().await
+        }
+
+        #[instrument(skip(self, data))]
+        pub async fn sign_asset_hub_transaction(
+            &self,
+            data: SignTransactionRequestData<AssetHubUnsignedTransaction>,
+        ) -> KeyringResult<AssetHubSignedTransaction> {
+            let params = KeyringMessage::new_sign_asset_hub_transaction(data);
+            self.send_message_with_response(params.0, params.1)
+                .await
+        }
+
+        #[instrument(skip(self, data))]
+        pub async fn generate_asset_hub_address(
+            &self,
+            data: GenerateAddressData,
+        ) -> KeyringResult<AssetHubAccountId> {
+            let params = KeyringMessage::new_generate_asset_hub_address(data);
+            self.send_message_with_response(params.0, params.1)
+                .await
+        }
     }
 
-    #[instrument(skip(self, data))]
-    pub async fn generate_asset_hub_address(
-        &self,
-        data: GenerateAddressData,
-    ) -> KeyringResult<AssetHubAccountId> {
-        let params = KeyringMessage::new_generate_asset_hub_address(data);
-        self.send_message_with_response(params.0, params.1)
-            .await
-    }
-}
+    #[cfg(test)]
+    mockall::mock!{
+        pub KeyringClient {
+            pub(super) fn new(tx: mpsc::Sender<KeyringMessage>) -> Self;
 
-#[cfg(test)]
-pub fn default_keyring_client() -> KeyringClient {
-    let (tx, _rx) = mpsc::channel(KEYRING_CHANNEL_CAPACITY);
-    KeyringClient {
-        tx,
+            pub async fn sign_asset_hub_transaction(
+                &self,
+                data: SignTransactionRequestData<AssetHubUnsignedTransaction>,
+            ) -> KeyringResult<AssetHubSignedTransaction>;
+
+            pub async fn generate_asset_hub_address(
+                &self,
+                data: GenerateAddressData,
+            ) -> KeyringResult<AssetHubAccountId>;
+        }
+
+        impl Clone for KeyringClient {
+            fn clone(&self) -> Self;
+        }
     }
 }

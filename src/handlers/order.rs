@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use axum::Json;
 use axum::extract::{
     Path,
@@ -74,7 +76,7 @@ fn build_order_status(
     })
 }
 
-async fn create_or_update_invoice<D: DaoInterface + Clone + 'static>(
+async fn create_or_update_invoice<D: DaoInterface>(
     state: &AppState<D>,
     api_data: &LegacyApiData,
     order_id: String,
@@ -122,7 +124,6 @@ async fn create_or_update_invoice<D: DaoInterface + Clone + 'static>(
             amount,
             asset_id: Some(asset_id),
             cart: InvoiceCart::empty(),
-            callback_url,
             redirect_url: redirect_url.unwrap_or_default(),
         };
 
@@ -136,7 +137,7 @@ async fn create_or_update_invoice<D: DaoInterface + Clone + 'static>(
     }
 }
 
-async fn process_order<D: DaoInterface + Clone + 'static>(
+async fn process_order<D: DaoInterface>(
     state: &AppState<D>,
     order_id: String,
     order_payload: Option<OrderPayload>,
@@ -212,8 +213,8 @@ async fn process_order<D: DaoInterface + Clone + 'static>(
     }
 }
 
-pub async fn order<D: DaoInterface + Clone + 'static>(
-    ExtractState(state): ExtractState<ApiState<D>>,
+pub async fn order<D: DaoInterface>(
+    ExtractState(state): ExtractState<Arc<ApiState<D>>>,
     Path(order_id): Path<String>,
     payload: Option<Json<OrderPayload>>,
 ) -> Response {
@@ -267,8 +268,8 @@ pub async fn order<D: DaoInterface + Clone + 'static>(
     }
 }
 
-pub async fn process_force_withdrawal<D: DaoInterface + Clone + 'static>(
-    state: &ApiState<D>,
+pub async fn process_force_withdrawal<D: DaoInterface>(
+    state: &Arc<ApiState<D>>,
     order_id: String,
 ) -> Result<OrderResponse, ForceWithdrawalError> {
     match state
@@ -295,8 +296,8 @@ pub async fn process_force_withdrawal<D: DaoInterface + Clone + 'static>(
     }
 }
 
-pub async fn force_withdrawal<D: DaoInterface + Clone + 'static>(
-    ExtractState(state): ExtractState<ApiState<D>>,
+pub async fn force_withdrawal<D: DaoInterface>(
+    ExtractState(state): ExtractState<Arc<ApiState<D>>>,
     Path(order_id): Path<String>,
 ) -> Response {
     match process_force_withdrawal(&state, order_id).await {

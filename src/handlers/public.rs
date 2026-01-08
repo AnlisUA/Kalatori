@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use axum::Json;
 use axum::extract::{
     Query,
@@ -32,8 +34,8 @@ async fn index(Query(params): Query<IndexParams>) -> Html<String> {
     Html(html)
 }
 
-async fn invoice<D: DaoInterface + Clone + 'static>(
-    ExtractState(state): ExtractState<ApiState<D>>,
+async fn invoice<D: DaoInterface>(
+    ExtractState(state): ExtractState<Arc<ApiState<D>>>,
     Query(payload): Query<Params>,
 ) -> Response {
     let invoice = state
@@ -60,7 +62,7 @@ async fn invoice<D: DaoInterface + Clone + 'static>(
     }
 }
 
-pub fn public_routes<D: DaoInterface + Clone + 'static>() -> axum::Router<ApiState<D>> {
+pub fn public_routes<D: DaoInterface>() -> axum::Router<Arc<ApiState<D>>> {
     axum::Router::new()
         .route("/", axum::routing::get(index))
         .route("/invoice", axum::routing::get(invoice))

@@ -77,6 +77,7 @@ trait-variant = "0.1"
 
 [dev-dependencies]
 mockall = "0.14"
+mockall_double = "0.3"
 indoc = "2"
 serial_test = "3.2"
 tempfile = "3"

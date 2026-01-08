@@ -14,6 +14,7 @@ use uuid::Uuid;
 
 use crate::legacy_types::WithdrawalStatus;
 use crate::types::{
+    CreateInvoiceData,
     GeneralTransactionId,
     Invoice,
     InvoiceStatus,
@@ -67,7 +68,7 @@ use super::{
 #[expect(dead_code)]
 #[cfg_attr(test, mockall::automock(type Transaction = MockDaoTransactionInterface;))]
 #[trait_variant::make(Send)]
-pub trait DaoInterface: Send + Sync {
+pub trait DaoInterface: Send + Sync + 'static {
     type Transaction: DaoTransactionInterface;
 
     async fn begin_transaction(&self) -> DaoResult<Self::Transaction>;
@@ -77,7 +78,7 @@ pub trait DaoInterface: Send + Sync {
     /// Create a new invoice in the database.
     async fn create_invoice(
         &self,
-        invoice: Invoice,
+        invoice: CreateInvoiceData,
     ) -> Result<Invoice, DaoInvoiceError>;
 
     /// Get an invoice by its unique ID.
@@ -218,7 +219,7 @@ pub trait DaoTransactionInterface {
 
     async fn create_invoice(
         &self,
-        invoice: Invoice,
+        invoice: CreateInvoiceData,
     ) -> Result<Invoice, DaoInvoiceError>;
 
     async fn get_invoice_by_id(
@@ -325,7 +326,7 @@ impl DaoInterface for DAO {
 
     async fn create_invoice(
         &self,
-        invoice: Invoice,
+        invoice: CreateInvoiceData,
     ) -> Result<Invoice, DaoInvoiceError> {
         DaoInvoiceMethods::create_invoice(self, invoice).await
     }
@@ -482,7 +483,7 @@ impl DaoInterface for DAO {
 impl DaoTransactionInterface for DaoTransaction {
     async fn create_invoice(
         &self,
-        invoice: Invoice,
+        invoice: CreateInvoiceData,
     ) -> Result<Invoice, DaoInvoiceError> {
         DaoInvoiceMethods::create_invoice(self, invoice).await
     }

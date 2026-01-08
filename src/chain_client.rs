@@ -31,8 +31,6 @@ pub use errors::{
     SubscriptionError,
     TransactionError,
 };
-#[cfg(test)]
-pub use keyring::default_keyring_client;
 pub use keyring::{
     Keyring,
     KeyringClient,

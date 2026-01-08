@@ -32,8 +32,8 @@ use crate::types::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InvoiceRegistryRecord {
     // TODO: store something smaller? Most fields are not needed for matching
-    invoice: Invoice,
-    filled_amount: Decimal,
+    pub invoice: Invoice,
+    pub filled_amount: Decimal,
 }
 
 impl InvoiceRegistryRecord {
@@ -146,7 +146,7 @@ impl InvoiceRegistry {
         }
     }
 
-    #[expect(dead_code)]
+    #[cfg_attr(not(test), expect(dead_code))]
     pub async fn invoices_count(&self) -> usize {
         let invoices = self.invoices.read().await;
         invoices.len()
