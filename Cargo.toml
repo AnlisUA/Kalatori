@@ -25,7 +25,10 @@ axum = { version = "0.7", default-features = false, features = [
     "query",
     "json",
     "matched-path",
+    "original-uri",
 ] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace", "request-id", "cors"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "time", "json"] }
 names = { version = "0.14", default-features = false }
 tokio-util = { version = "0.7", features = ["rt"] }
@@ -74,6 +77,8 @@ blake2b_simd = "1.0"
 async-stream = "0.3"
 futures = "0.3"
 trait-variant = "0.1"
+hmac = "0.12"
+sha2 = "0.10"
 
 [dev-dependencies]
 mockall = "0.14"

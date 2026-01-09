@@ -1,3 +1,4 @@
+mod api;
 mod chain;
 mod chain_client;
 mod configs;
@@ -253,15 +254,20 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
         rpc_endpoints: chain_config.endpoints,
     };
 
-    let server = server::new(
-        shutdown_notification.token.clone(),
+    // let server = server::new(
+    //     shutdown_notification.token.clone(),
+    //     web_server_config,
+    //     app_state,
+    //     legacy_api_data,
+    // )
+    // .await?;
+
+    // task_tracker.spawn("the server module", server);
+    let api_handle = api::api_server(
         web_server_config,
         app_state,
-        legacy_api_data,
-    )
-    .await?;
-
-    task_tracker.spawn("the server module", server);
+        shutdown_notification.token.clone(),
+    ).await;
 
     let shutdown_completed = CancellationToken::new();
     let mut shutdown_listener = tokio::spawn(shutdown::listener(
@@ -284,12 +290,14 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
                 _transfer_executor_result,
                 _expiration_detector_result,
                 _transfers_tracker_result,
+                _api_server_result,
             ) = tokio::join!(
                 shutdown_listener,
                 keyring_handle,
                 transfer_executor_handle,
                 expiration_detector_handle,
                 transfers_tracker_handle,
+                api_handle,
             );
 
             shutdown_result
