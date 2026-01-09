@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use axum::Json;
 use axum::extract::{
     Query,
@@ -13,8 +15,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::dao::DaoInterface;
-
-use super::ApiState;
+use crate::server::ApiState;
 
 #[derive(Debug, PartialEq, Eq, Deserialize)]
 struct IndexParams {
@@ -28,16 +29,17 @@ struct Params {
 }
 
 async fn index(Query(params): Query<IndexParams>) -> Html<String> {
-    let raw_html = include_str!("../../static/index.html");
+    let raw_html = include_str!("../../../static/index.html");
     let html = raw_html.replace("{{INVOICE_ID}}", &params.invoice_id);
     Html(html)
 }
 
 async fn invoice<D: DaoInterface>(
-    ExtractState(state): ExtractState<ApiState<D>>,
+    ExtractState(state): ExtractState<Arc<ApiState<D>>>,
     Query(payload): Query<Params>,
 ) -> Response {
     let invoice = state
+        .state
         .get_invoice(payload.invoice_id)
         .await;
 
@@ -60,7 +62,7 @@ async fn invoice<D: DaoInterface>(
     }
 }
 
-pub fn public_routes<D: DaoInterface>() -> axum::Router<ApiState<D>> {
+pub fn public_routes<D: DaoInterface>() -> axum::Router<Arc<ApiState<D>>> {
     axum::Router::new()
         .route("/", axum::routing::get(index))
         .route("/invoice", axum::routing::get(invoice))

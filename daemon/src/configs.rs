@@ -11,7 +11,13 @@ use subxt_signer::SecretString;
 
 use crate::chain::utils::to_base58_string;
 
+// TODO: it's probably gonna be better to get rid of this conditional const and use the single one.
+// For tests we can just create another config dir with test configs. It also will also free us from
+// need to create config files in CI and simplify their modification in local envs.
+#[cfg(not(test))]
 const DEFAULT_CONFIG_DIR_PATH: &str = "configs";
+#[cfg(test)]
+const DEFAULT_CONFIG_DIR_PATH: &str = "../configs";
 
 fn format_prefix(
     prefix: &str,

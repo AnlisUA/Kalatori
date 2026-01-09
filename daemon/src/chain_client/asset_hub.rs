@@ -52,7 +52,7 @@ use super::errors::is_insufficient_balance_error;
 use super::keyring::SignTransactionRequestData;
 
 #[subxt::subxt(
-    runtime_metadata_path = "./metadata.scale",
+    runtime_metadata_path = "../metadata.scale",
     generate_docs,
     // derive_for_all_types = "Clone, PartialEq, Eq",
     derive_for_type(

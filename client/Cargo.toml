@@ -1,0 +1,16 @@
+[package]
+name = "client"
+version = "0.1.0"
+edition = "2024"
+description = "A client for non-castodial crypto payment-gateway Kalatori."
+license.workspace = true
+authors.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+repository.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

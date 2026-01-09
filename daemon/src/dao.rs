@@ -201,7 +201,7 @@ impl DAO {
 
         tracing::info!("Run database migrations...");
 
-        sqlx::migrate!("./migrations")
+        sqlx::migrate!("../migrations")
             .run(&dao.pool)
             .await?;
 
