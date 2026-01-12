@@ -16,7 +16,6 @@ mod payout;
 mod refund;
 mod transaction;
 
-use names::Generator;
 use sqlx::{
     Executor,
     SqliteTransaction,
@@ -24,7 +23,6 @@ use sqlx::{
 use tokio::sync::Mutex;
 
 use crate::configs::DatabaseConfig;
-use crate::legacy_types::ServerInfo;
 
 // Export domain-specific errors
 pub use invoice::DaoInvoiceError;
@@ -225,74 +223,6 @@ impl DAO {
 
         Ok(version)
     }
-
-    /// Upsert server info (used by migration)
-    /// Returns true if a new record was inserted, false if updated
-    pub async fn upsert_server_info(
-        &self,
-        server_info: &ServerInfo,
-    ) -> DaoResult<bool> {
-        let rows_affected = sqlx::query(
-            "INSERT INTO server_info (instance_id, version, remark) VALUES (?, ?, ?)
-             ON CONFLICT(instance_id) DO UPDATE SET
-                version = excluded.version,
-                remark = excluded.remark",
-        )
-        .bind(&server_info.instance_id)
-        .bind(&server_info.version)
-        .bind(&server_info.kalatori_remark)
-        .execute(&self.pool)
-        .await?
-        .rows_affected();
-
-        // If rows_affected is 1, it was an insert; if 2, it was an update
-        Ok(rows_affected == 1)
-    }
-
-    pub async fn initialize_server_info(&self) -> DaoResult<String> {
-        let info = sqlx::query_as::<_, ServerInfo>(
-            "SELECT instance_id, version, remark as kalatori_remark FROM server_info",
-        )
-        .fetch_optional(&self.pool)
-        .await?;
-
-        if let Some(server_info) = info {
-            Ok(server_info.instance_id)
-        } else {
-            let mut generator = Generator::default();
-            let new_instance_id = generator
-                .next()
-                .unwrap_or_else(|| "unknown-instance".to_string());
-
-            let version = env!("CARGO_PKG_VERSION").to_string();
-
-            let result = sqlx::query_as::<_, ServerInfo>(
-                "INSERT INTO server_info (instance_id, version)
-                 VALUES (?, ?)
-                 RETURNING instance_id, version, remark as kalatori_remark",
-            )
-            .bind(&new_instance_id)
-            .bind(version)
-            .fetch_one(&self.pool)
-            .await?;
-
-            Ok(result.instance_id)
-        }
-    }
-
-    pub async fn transaction_exists_by_bytes(
-        &self,
-        transaction_bytes: &str,
-    ) -> DaoResult<bool> {
-        let result = sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM transactions WHERE transaction_bytes = ?",
-        )
-        .bind(transaction_bytes)
-        .fetch_one(&self.pool)
-        .await?;
-
-        Ok(result > 0)
-    }
 }
 
 impl DaoExecutor for DAO {
@@ -362,56 +292,4 @@ async fn create_test_dao() -> DAO {
     DAO::new(config)
         .await
         .expect("Failed to create test DAO")
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::types::{
-        Transaction,
-        default_create_invoice_data,
-        default_transaction,
-    };
-
-    use super::invoice::DaoInvoiceMethods;
-    use super::transaction::DaoTransactionMethods;
-
-    use super::*;
-
-    #[tokio::test]
-    async fn print_sqlite_version() {
-        let dao = create_test_dao().await;
-        let version = dao.sqlite_version().await.unwrap();
-        println!("SQLite version: {version}");
-    }
-
-    #[tokio::test]
-    async fn test_transaction_exists_by_bytes() {
-        let dao = create_test_dao().await;
-        let invoice = DaoInvoiceMethods::create_invoice(&dao, default_create_invoice_data())
-            .await
-            .unwrap();
-
-        // Create transaction with transaction_bytes
-        let tx = Transaction {
-            transaction_bytes: Some("0xdeadbeef".to_string()),
-            ..default_transaction(invoice.id)
-        };
-        DaoTransactionMethods::create_transaction(&dao, tx)
-            .await
-            .unwrap();
-
-        // Check exists
-        let exists = dao
-            .transaction_exists_by_bytes("0xdeadbeef")
-            .await
-            .unwrap();
-        assert!(exists);
-
-        // Check non-existent
-        let not_exists = dao
-            .transaction_exists_by_bytes("0xnotfound")
-            .await
-            .unwrap();
-        assert!(!not_exists);
-    }
 }

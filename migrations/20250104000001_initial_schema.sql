@@ -1,10 +1,6 @@
--- Initial schema migration: New structure based on product requirements
--- Uses updated naming conventions: orders -> invoices, proper datetime types
--- Simplified: single transactions table (no separate pending_transactions)
 -- Financial amounts stored as TEXT to preserve decimal precision
--- Includes new entities: payouts, refunds
 -- All enums use CamelCase naming
--- Minimized backward compat fields - reconstruct from config where possible
+-- UUID v4 stored as BLOB (16 bytes) for efficiency
 
 -- Invoices table (replaces orders)
 CREATE TABLE IF NOT EXISTS invoices (
@@ -14,7 +10,7 @@ CREATE TABLE IF NOT EXISTS invoices (
 
     -- Asset information (denormalized to avoid config changes affecting data)
     asset_id TEXT NOT NULL,
-    chain TEXT NOT NULL,
+    chain TEXT NOT NULL CHECK(chain IN ('PolkadotAssetHub')),
 
     -- Payment details
     amount TEXT NOT NULL,  -- Expected amount as decimal string (e.g., "123.456789")
@@ -27,10 +23,6 @@ CREATE TABLE IF NOT EXISTS invoices (
         'UnpaidExpired', 'PartiallyPaidExpired',  -- Expired
         'CustomerCanceled', 'AdminCanceled'  -- Canceled
     )) DEFAULT 'Waiting',
-
-    -- Backward compatibility: old withdrawal_status (temporary, will be removed with sled)
-    -- This will be computed from payouts table status in Rust code, but kept in DB during transition
-    withdrawal_status TEXT NOT NULL CHECK(withdrawal_status IN ('Waiting', 'Failed', 'Forced', 'Completed')),
 
     -- Callback
     callback TEXT NOT NULL DEFAULT '',
@@ -59,7 +51,7 @@ CREATE TABLE IF NOT EXISTS transactions (
 
     -- Asset information
     asset_id TEXT NOT NULL,
-    chain TEXT NOT NULL,
+    chain TEXT NOT NULL CHECK(chain IN ('PolkadotAssetHub')),
     amount TEXT NOT NULL,  -- Decimal string (excluding fees)
 
     -- Addresses (needed for refunds - sender is who we refund to)
@@ -100,7 +92,7 @@ CREATE TABLE IF NOT EXISTS payouts (
 
     -- Asset information
     asset_id TEXT NOT NULL,
-    chain TEXT NOT NULL,
+    chain TEXT NOT NULL CHECK(chain IN ('PolkadotAssetHub')),
     amount TEXT NOT NULL,  -- Decimal string
 
     -- Addresses
@@ -135,7 +127,7 @@ CREATE TABLE IF NOT EXISTS refunds (
 
     -- Asset information
     asset_id TEXT NOT NULL,
-    chain TEXT NOT NULL,
+    chain TEXT NOT NULL CHECK(chain IN ('PolkadotAssetHub')),
     amount TEXT NOT NULL,  -- Decimal string
 
     -- Addresses
@@ -160,13 +152,6 @@ CREATE TABLE IF NOT EXISTS refunds (
     failure_message TEXT,
 
     FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE
-);
-
--- Server info table (singleton - metadata about daemon instance)
-CREATE TABLE IF NOT EXISTS server_info (
-    instance_id TEXT PRIMARY KEY NOT NULL,
-    version TEXT NOT NULL,
-    remark TEXT
 );
 
 -- Indexes for common query patterns
@@ -224,21 +209,6 @@ BEGIN
         WHEN OLD.status IN ('Paid', 'OverPaid', 'UnpaidExpired', 'PartiallyPaidExpired', 'CustomerCanceled', 'AdminCanceled')
             AND NEW.status != OLD.status
         THEN RAISE(ABORT, 'INVOICE_STATUS_TRANSITION|old_status=' || OLD.status || '|new_status=' || NEW.status)
-    END;
-END;
-
--- Invoice withdrawal status transition enforcement
-CREATE TRIGGER IF NOT EXISTS enforce_invoice_withdrawal_status_transition
-BEFORE UPDATE OF withdrawal_status ON invoices
-FOR EACH ROW
-BEGIN
-    SELECT CASE
-        WHEN OLD.withdrawal_status = 'Waiting' AND NEW.withdrawal_status != OLD.withdrawal_status
-            AND NEW.withdrawal_status NOT IN ('Completed', 'Failed', 'Forced')
-        THEN RAISE(ABORT, 'INVOICE_WITHDRAWAL_TRANSITION|old_status=' || OLD.withdrawal_status || '|new_status=' || NEW.withdrawal_status)
-
-        WHEN OLD.withdrawal_status IN ('Completed', 'Failed', 'Forced') AND NEW.withdrawal_status != OLD.withdrawal_status
-        THEN RAISE(ABORT, 'INVOICE_WITHDRAWAL_TRANSITION|old_status=' || OLD.withdrawal_status || '|new_status=' || NEW.withdrawal_status)
     END;
 END;
 

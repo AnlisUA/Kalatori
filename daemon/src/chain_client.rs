@@ -17,6 +17,7 @@ use tracing::{
 };
 
 use crate::types::{
+    ChainType,
     GeneralTransactionId,
     TransferInfo,
 };
@@ -62,6 +63,8 @@ pub trait ChainConfig: Clone + std::fmt::Debug + Sync + Send + 'static {
     type UnsignedTransaction: Send;
     type SignedTransaction: SignedTransactionUtils + Sync + Send;
     type AccountId: FromStr + ToString + std::fmt::Debug + Sync + Send;
+
+    const CHAIN_TYPE: ChainType;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,7 +76,7 @@ pub struct AssetInfo<T: ChainConfig> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GeneralChainTransfer {
-    pub chain: String,
+    pub chain: ChainType,
     pub asset_id: String,
     pub amount: Decimal,
     pub sender: String,
@@ -119,8 +122,7 @@ impl<T: ChainConfig> From<ChainTransfer<T>> for GeneralChainTransfer {
         let trans_id: GeneralTransactionId = transfer.transaction_id.into();
 
         Self {
-            // TODO: replace with enum, set it to const in ChainConfig trait
-            chain: "statemint".to_string(),
+            chain: T::CHAIN_TYPE,
             asset_id: transfer.asset_id.to_string(),
             amount: transfer.amount,
             sender: transfer.sender.to_string(),

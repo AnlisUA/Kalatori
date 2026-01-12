@@ -107,7 +107,7 @@ impl From<RefundRow> for Refund {
 pub fn default_refund(invoice_id: Uuid) -> Refund {
     let transfer_info = TransferInfo {
         asset_id: 1984.to_string(),
-        chain: "statemint".to_string(),
+        chain: super::ChainType::PolkadotAssetHub,
         amount: rust_decimal::Decimal::new(5000, 2), // 50.00
         source_address: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string(),
         destination_address: "5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty".to_string(),

@@ -1,5 +1,5 @@
 {
-    "name": "statemint",
+    "name": "PolkadotAssetHub",
     "endpoints": [
         "wss://westend-asset-hub-rpc.polkadot.io",
         "wss://westmint-rpc.dwellir.com"

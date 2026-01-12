@@ -22,6 +22,7 @@ use crate::dao::{
     DaoTransactionInterface,
 };
 use crate::types::{
+    ChainType,
     IncomingTransaction,
     Invoice,
     InvoiceStatus,
@@ -107,7 +108,6 @@ impl InvoiceRegistry {
         }
     }
 
-    #[expect(dead_code)]
     pub async fn get_invoice(
         &self,
         invoice_id: &Uuid,
@@ -119,7 +119,7 @@ impl InvoiceRegistry {
     pub async fn find_invoice_by_address(
         &self,
         address: &str,
-        chain: &str,
+        chain: ChainType,
         asset_id: &str,
     ) -> Option<InvoiceRegistryRecord> {
         let invoices = self.invoices.read().await;
@@ -274,7 +274,7 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
             .registry
             .find_invoice_by_address(
                 &recipient,
-                &transfer.chain,
+                transfer.chain,
                 &transfer.asset_id,
             )
             .await

@@ -1,5 +1,5 @@
 {
-    "name": "statemint",
+    "name": "PolkadotAssetHub",
     "endpoints": [
         "ws://chopsticks-asset-hub:9000"
     ],

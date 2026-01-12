@@ -17,6 +17,8 @@ use sqlx::{
     Type,
 };
 
+pub use kalatori_client::types::ChainType;
+
 /// Initiator type for payouts and refunds
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub enum InitiatorType {
@@ -50,7 +52,7 @@ impl std::str::FromStr for InitiatorType {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TransferInfo {
-    pub chain: String,
+    pub chain: ChainType,
     pub asset_id: String,
     pub amount: Decimal,
     pub source_address: String,
@@ -59,7 +61,7 @@ pub struct TransferInfo {
 
 #[derive(FromRow)]
 pub struct TransferInfoRow {
-    pub chain: String,
+    pub chain: ChainType,
     pub asset_id: String,
     pub amount: Text<Decimal>,
     pub source_address: String,

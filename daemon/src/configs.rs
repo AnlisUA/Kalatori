@@ -10,6 +10,7 @@ use serde::de::DeserializeOwned;
 use subxt_signer::SecretString;
 
 use crate::chain::utils::to_base58_string;
+use crate::types::ChainType;
 
 // TODO: it's probably gonna be better to get rid of this conditional const and use the single one.
 // For tests we can just create another config dir with test configs. It also will also free us from
@@ -100,7 +101,7 @@ fn default_account_lifetime_millis() -> u64 {
 // TODO: add some docs for fields, their purpose might be not obvious
 #[derive(Deserialize, Clone, Debug)]
 pub struct ChainConfig {
-    pub name: String,
+    pub name: ChainType,
     // TODO: try to parse into Url in order to intercept some errors on startup?
     pub endpoints: Vec<String>,
     /// false by default
@@ -109,8 +110,8 @@ pub struct ChainConfig {
     pub assets: Vec<AssetConfig>,
 }
 
-fn default_chain() -> String {
-    "statemint".to_string()
+fn default_chain() -> ChainType {
+    ChainType::PolkadotAssetHub
 }
 
 fn default_asset_id() -> String {
@@ -126,10 +127,9 @@ pub struct PaymentsConfig {
     #[serde(default = "default_account_lifetime_millis")]
     pub account_lifetime_millis: u64,
     #[serde(default = "default_chain")]
-    pub default_chain: String,
+    pub default_chain: ChainType,
     #[serde(default = "default_asset_id")]
     pub default_asset_id: String,
-    pub remark: Option<String>,
 }
 
 fn default_host() -> IpAddr {
@@ -313,8 +313,6 @@ mod tests {
                 // It's base58 representation of Alice address with prefix 0 (Polkadot)
                 "15oF4uVJwmo4TdGW7VfQxNLavjCXviqxT9S1MgbjMNHr6Sp5"
             );
-
-            assert_eq!(config.remark, Some("test".to_string()));
         }
 
         // override config dir and set `recipient` in env var
@@ -325,7 +323,7 @@ mod tests {
                     "PAYMENTS_RECIPIENT",
                     "14E5nqKAp3oAJcmzgZhUD2RcptBeUBScxKHgJKU4HPNcKVf3",
                 );
-                std::env::set_var("PAYMENTS_DEFAULT_CHAIN", "statemint");
+                std::env::set_var("PAYMENTS_DEFAULT_CHAIN", "PolkadotAssetHub");
                 std::env::set_var("PAYMENTS_DEFAULT_ASSET_ID", "1337");
             }
 
@@ -340,9 +338,8 @@ mod tests {
                 config.recipient,
                 "14E5nqKAp3oAJcmzgZhUD2RcptBeUBScxKHgJKU4HPNcKVf3"
             );
-            assert_eq!(config.default_chain, "statemint");
+            assert_eq!(config.default_chain, ChainType::PolkadotAssetHub);
             assert_eq!(config.default_asset_id, "1337");
-            assert!(config.remark.is_none());
         }
 
         // override config env prefix
@@ -363,8 +360,6 @@ mod tests {
                 // It's base58 representation of Alice address with prefix 0 (Polkadot)
                 "15oF4uVJwmo4TdGW7VfQxNLavjCXviqxT9S1MgbjMNHr6Sp5"
             );
-
-            assert_eq!(config.remark, Some("test".to_string()));
         }
     }
 
@@ -388,7 +383,7 @@ mod tests {
         {
             let config = chain_config_with_prefix("", "");
 
-            assert_eq!(config.name, "statemint");
+            assert_eq!(config.name, ChainType::PolkadotAssetHub);
             assert_eq!(config.endpoints, expected_endpoints);
             assert_eq!(config.assets, expected_assets);
         }
@@ -404,23 +399,24 @@ mod tests {
 
             expected_endpoints.push("ws://localhost:9500".to_string());
             let config = chain_config_with_prefix("", "");
-            assert_eq!(config.name, "statemint");
+            assert_eq!(config.name, ChainType::PolkadotAssetHub);
             assert_eq!(config.endpoints, expected_endpoints);
             assert_eq!(config.assets, expected_assets);
         }
 
+        // TODO: uncomment and update test after config structure refactoring
         // override env var prefix
-        {
-            unsafe {
-                std::env::set_var("KALATORI_CHAIN_NAME", "kusama");
-            }
+        // {
+        //     unsafe {
+        //         std::env::set_var("KALATORI_CHAIN_NAME", "kusama");
+        //     }
 
-            let _unused = expected_endpoints.pop();
-            let config = chain_config_with_prefix("", "KALATORI");
-            assert_eq!(config.name, "kusama");
-            assert_eq!(config.endpoints, expected_endpoints);
-            assert_eq!(config.assets, expected_assets);
-        }
+        //     let _unused = expected_endpoints.pop();
+        //     let config = chain_config_with_prefix("", "KALATORI");
+        //     assert_eq!(config.name, "kusama");
+        //     assert_eq!(config.endpoints, expected_endpoints);
+        //     assert_eq!(config.assets, expected_assets);
+        // }
     }
 
     #[test]

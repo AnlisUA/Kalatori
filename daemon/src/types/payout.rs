@@ -16,14 +16,13 @@ use sqlx::{
 };
 use uuid::Uuid;
 
-use super::common::{
+use super::{
     InitiatorType,
     RetryMeta,
     TransferInfo,
     TransferInfoRow,
+    Invoice,
 };
-use super::invoice::Invoice;
-use crate::legacy_types::WithdrawalStatus;
 
 /// Payout status
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -61,19 +60,6 @@ impl std::str::FromStr for PayoutStatus {
             "FailedRetriable" => Ok(Self::FailedRetriable),
             "Failed" => Ok(Self::Failed),
             _ => Err(format!("Unknown payout status: {s}")),
-        }
-    }
-}
-
-// Convert PayoutStatus to old WithdrawalStatus for backward compatibility
-impl From<PayoutStatus> for WithdrawalStatus {
-    fn from(status: PayoutStatus) -> Self {
-        match status {
-            PayoutStatus::Waiting | PayoutStatus::InProgress | PayoutStatus::FailedRetriable => {
-                Self::Waiting
-            },
-            PayoutStatus::Completed => Self::Completed,
-            PayoutStatus::Failed => Self::Failed,
         }
     }
 }
@@ -154,7 +140,7 @@ impl From<PayoutRow> for Payout {
 pub fn default_payout(invoice_id: Uuid) -> Payout {
     let transfer_info = TransferInfo {
         asset_id: 1984.to_string(),
-        chain: "statemint".to_string(),
+        chain: super::ChainType::PolkadotAssetHub,
         source_address: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string(),
         destination_address: "1NthTCKurNHLW52mMa6iA8Gz7UFYW5UnM3yTSpVdGu4Th7h".to_string(),
         amount: rust_decimal::Decimal::new(1000, 2),

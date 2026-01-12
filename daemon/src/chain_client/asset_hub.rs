@@ -29,6 +29,8 @@ use tracing::{
     warn,
 };
 
+use crate::types::ChainType;
+
 use super::{
     AssetInfo,
     AssetInfoStore,
@@ -54,10 +56,9 @@ use super::keyring::SignTransactionRequestData;
 #[subxt::subxt(
     runtime_metadata_path = "../metadata.scale",
     generate_docs,
-    // derive_for_all_types = "Clone, PartialEq, Eq",
     derive_for_type(
         path = "staging_xcm::v3::multilocation::MultiLocation",
-        derive = "Clone, codec::Encode",
+        derive = "Clone, subxt::ext::codec::Encode",
         recursive
     )
 )]
@@ -123,6 +124,8 @@ impl ChainConfig for AssetHubChainConfig {
     type TransactionHash = H256;
     type TransactionId = (u32, u32);
     type UnsignedTransaction = AssetHubUnsignedTransaction;
+
+    const CHAIN_TYPE: ChainType = ChainType::PolkadotAssetHub;
 }
 
 impl From<(u32, u32)> for GeneralTransactionId {

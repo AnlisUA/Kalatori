@@ -1,5 +1,3 @@
-use std::fmt;
-
 use chrono::{
     DateTime,
     Utc,
@@ -16,10 +14,7 @@ use sqlx::types::{
 use sqlx::FromRow;
 use uuid::Uuid;
 
-use crate::legacy_types::{
-    PaymentStatus,
-    WithdrawalStatus,
-};
+use super::ChainType;
 
 // Re-export types from kalatori_client for consistency
 pub use kalatori_client::types::{
@@ -27,38 +22,17 @@ pub use kalatori_client::types::{
     InvoiceStatus,
 };
 
-// Convert InvoiceStatus to old PaymentStatus for backward compatibility
-impl From<InvoiceStatus> for PaymentStatus {
-    fn from(status: InvoiceStatus) -> Self {
-        match status {
-            InvoiceStatus::Paid | InvoiceStatus::OverPaid => Self::Paid,
-            _ => Self::Pending,
-        }
-    }
-}
-
-// Convert old PaymentStatus to InvoiceStatus
-impl From<PaymentStatus> for InvoiceStatus {
-    fn from(status: PaymentStatus) -> Self {
-        match status {
-            PaymentStatus::Pending => Self::Waiting,
-            PaymentStatus::Paid => Self::Paid,
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Invoice {
     pub id: Uuid,
     // Merchant-provided order ID
     pub order_id: String,
     pub asset_id: String,
-    pub chain: String,
+    pub chain: ChainType,
     pub amount: Decimal,
     pub payment_address: String,
     pub status: InvoiceStatus,
     // Temporary backward compat field
-    pub withdrawal_status: WithdrawalStatus,
     pub callback: String,
     pub cart: InvoiceCart,
     pub redirect_url: String,
@@ -79,11 +53,10 @@ pub struct InvoiceRow {
     pub id: Uuid,
     pub order_id: String,
     pub asset_id: String,
-    pub chain: String,
+    pub chain: ChainType,
     pub amount: Text<Decimal>,
     pub payment_address: String,
     pub status: InvoiceStatus,
-    pub withdrawal_status: WithdrawalStatus,
     pub callback: String,
     pub cart: Json<InvoiceCart>,
     pub redirect_url: String,
@@ -103,7 +76,6 @@ impl From<InvoiceRow> for Invoice {
             amount: row.amount.into_inner(),
             payment_address: row.payment_address,
             status: row.status,
-            withdrawal_status: row.withdrawal_status,
             callback: row.callback,
             cart: row.cart.0,
             redirect_url: row.redirect_url,
@@ -120,7 +92,7 @@ pub struct CreateInvoiceData {
     pub id: Uuid,
     pub order_id: String,
     pub asset_id: String,
-    pub chain: String,
+    pub chain: ChainType,
     pub amount: Decimal,
     pub payment_address: String,
     pub cart: InvoiceCart,
@@ -141,7 +113,6 @@ impl From<CreateInvoiceData> for Invoice {
             amount: data.amount,
             payment_address: data.payment_address,
             status: InvoiceStatus::Waiting,
-            withdrawal_status: WithdrawalStatus::Waiting,
             // TODO: make it optional in DB as well
             callback: data.callback_url.unwrap_or_default(),
             cart: data.cart,
@@ -177,7 +148,7 @@ pub fn default_create_invoice_data() -> CreateInvoiceData {
         id,
         order_id: id.to_string(),
         asset_id: 1984.to_string(),
-        chain: "statemint".to_string(),
+        chain: ChainType::PolkadotAssetHub,
         amount: Decimal::new(10000, 2),
         payment_address: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string(),
         callback_url: None,

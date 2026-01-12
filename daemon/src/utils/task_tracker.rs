@@ -117,28 +117,6 @@ impl TaskTracker {
         )
     }
 
-    /// Will panic on an error occurrence inside `task` if a receiver handle
-    /// from [`Self::new()`] has been closed/dropped before the occurrence.
-    pub fn spawn(
-        &self,
-        name: impl Print + Send + 'static,
-        task: impl Future<Output = Result<impl Display, Error>> + Send + 'static,
-    ) -> JoinHandle<()> {
-        let error_tx = self.error_tx.clone();
-
-        spawn_inner(
-            &self.inner,
-            name,
-            task,
-            |shutdown_message| tracing::info!("{shutdown_message}"),
-            move |error| {
-                error_tx
-                    .send(error)
-                    .expect("receiver handle shouldn't be closed/dropped");
-            },
-        )
-    }
-
     /// Starts the program main loop & waits until all tasks are finished.
     ///
     /// If any errors would occur in awaited tasks, `shutdown_notification` is

@@ -1,5 +1,5 @@
 {
-    "name": "statemint",
+    "name": "PolkadotAssetHub",
     "endpoints": [
         "ws://localhost:9000"
     ],

@@ -5,10 +5,6 @@ mod configs;
 mod dao;
 mod error;
 mod expiration_detector;
-mod handlers;
-mod legacy_types;
-mod server;
-mod sled_to_sqlite_migration;
 mod state;
 mod types;
 mod utils;
@@ -42,12 +38,6 @@ use error::{
     PrettyCause,
 };
 use expiration_detector::ExpirationDetector;
-use legacy_types::{
-    LegacyApiData,
-    ServerInfo,
-    build_currencies_from_config,
-};
-use sled_to_sqlite_migration::perform_sled_to_sqlite_migration;
 use state::AppState;
 use utils::logger;
 use utils::shutdown::{
@@ -166,15 +156,6 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
         .await
         .map_err(error::DaoError::Sqlx)?;
 
-    perform_sled_to_sqlite_migration(&database_config, &chain_config, &dao)
-        .await
-        .unwrap();
-
-    let instance_id = dao
-        .initialize_server_info()
-        .await
-        .map_err(error::DaoError::Sqlx)?;
-
     let assets: Vec<_> = chain_config
         .assets
         .iter()
@@ -234,8 +215,6 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
 
     let transfer_executor_handle = transfer_executor.ignite(shutdown_notification.token.clone());
 
-    let currencies = build_currencies_from_config(&chain_config);
-
     let app_state = AppState::new(
         keyring_client,
         dao,
@@ -243,26 +222,6 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
         payments_config.clone(),
     );
 
-    let legacy_api_data = LegacyApiData {
-        currencies,
-        server_info: ServerInfo {
-            instance_id,
-            kalatori_remark: payments_config.remark,
-            version: env!("CARGO_PKG_VERSION").to_string(),
-        },
-        recipient: payments_config.recipient,
-        rpc_endpoints: chain_config.endpoints,
-    };
-
-    // let server = server::new(
-    //     shutdown_notification.token.clone(),
-    //     web_server_config,
-    //     app_state,
-    //     legacy_api_data,
-    // )
-    // .await?;
-
-    // task_tracker.spawn("the server module", server);
     let api_handle = api::api_server(
         web_server_config,
         app_state,

@@ -5,7 +5,6 @@ use sqlx::types::{
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::legacy_types::WithdrawalStatus;
 use crate::types::{
     CreateInvoiceData,
     Invoice,
@@ -47,13 +46,6 @@ pub enum DaoInvoiceError {
         attempted_status: InvoiceStatus,
     },
 
-    /// Withdrawal status constraint violation
-    #[error("Cannot transition withdrawal from {current_status} to {attempted_status}")]
-    WithdrawalStatusConstraintViolation {
-        current_status: WithdrawalStatus,
-        attempted_status: WithdrawalStatus,
-    },
-
     /// Duplicate `order_id` (UNIQUE constraint violation)
     #[error("Order ID '{order_id}' already exists")]
     DuplicateOrderId { order_id: String },
@@ -80,25 +72,10 @@ impl From<TriggerError<InvoiceStatus>> for DaoInvoiceError {
     }
 }
 
-impl From<TriggerError<WithdrawalStatus>> for DaoInvoiceError {
-    fn from(err: TriggerError<WithdrawalStatus>) -> Self {
-        DaoInvoiceError::WithdrawalStatusConstraintViolation {
-            current_status: err.old_status,
-            attempted_status: err.new_status,
-        }
-    }
-}
-
 impl StatusTransitionError for InvoiceStatus {
     type ErrorType = DaoInvoiceError;
 
     const ERROR_TYPE_PREFIX: &'static str = "INVOICE_STATUS_TRANSITION|";
-}
-
-impl StatusTransitionError for WithdrawalStatus {
-    type ErrorType = DaoInvoiceError;
-
-    const ERROR_TYPE_PREFIX: &'static str = "INVOICE_WITHDRAWAL_TRANSITION|";
 }
 
 #[derive(sqlx::FromRow)]
@@ -136,8 +113,8 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
         let invoice: Invoice = invoice.into();
 
         let query = sqlx::query_as::<_, InvoiceRow>(
-        "INSERT INTO invoices (id, order_id, asset_id, chain, amount, payment_address, status, withdrawal_status, callback, cart, redirect_url, valid_till, created_at, updated_at, version)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        "INSERT INTO invoices (id, order_id, asset_id, chain, amount, payment_address, status, callback, cart, redirect_url, valid_till, created_at, updated_at, version)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING *"
         )
             .bind(invoice.id)
@@ -147,7 +124,6 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
             .bind(Text(invoice.amount))
             .bind(&invoice.payment_address)
             .bind(invoice.status)
-            .bind(invoice.withdrawal_status)
             .bind(&invoice.callback)
             .bind(Json(invoice.cart))
             .bind(invoice.redirect_url)
@@ -205,31 +181,6 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
                     %invoice_id,
                     error.source = ?e,
                     "Failed to fetch invoice"
-                );
-                DaoInvoiceError::DatabaseError
-            })
-    }
-
-    async fn get_invoice_by_order_id(
-        &self,
-        order_id: &str,
-    ) -> Result<Option<Invoice>, DaoInvoiceError> {
-        let query = sqlx::query_as::<_, InvoiceRow>(
-            "SELECT *
-            FROM invoices
-            WHERE order_id = ?",
-        )
-        .bind(order_id);
-
-        self.fetch_optional(query)
-            .await
-            .map_err(|e| {
-                tracing::debug!(
-                    error.category = "dao.invoice",
-                    error.operation = "get_invoice_by_order_id",
-                    %order_id,
-                    error.source = ?e,
-                    "Failed to fetch invoice by order_id"
                 );
                 DaoInvoiceError::DatabaseError
             })
@@ -388,50 +339,6 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
                     }
                 } else {
                     Err(DaoInvoiceError::DatabaseError)
-                }
-            },
-        }
-    }
-
-    async fn update_invoice_withdrawal_status(
-        &self,
-        invoice_id: Uuid,
-        status: WithdrawalStatus,
-    ) -> Result<Invoice, DaoInvoiceError> {
-        let query = sqlx::query_as::<_, InvoiceRow>(
-            "UPDATE invoices
-            SET withdrawal_status = ?,
-                updated_at = datetime('now'),
-                version = version + 1
-            WHERE id = ?
-            RETURNING *",
-        )
-        .bind(status)
-        .bind(invoice_id);
-
-        match self.fetch_one(query).await {
-            Ok(row) => Ok(row),
-            Err(e) => {
-                tracing::debug!(
-                    error.category = "dao.invoice",
-                    error.operation = "update_invoice_withdrawal_status",
-                    %invoice_id,
-                    new_status = ?status,
-                    error.source = ?e,
-                    "Update failed"
-                );
-
-                // Parse trigger error with WithdrawalStatus type
-                if let Some(error) = WithdrawalStatus::from_sqlx_error(&e) {
-                    return Err(error);
-                }
-
-                // RowNotFound means invoice doesn't exist
-                match e {
-                    sqlx::Error::RowNotFound => Err(DaoInvoiceError::NotFound {
-                        identifier: invoice_id.to_string(),
-                    }),
-                    _ => Err(DaoInvoiceError::DatabaseError),
                 }
             },
         }
@@ -713,29 +620,12 @@ mod tests {
         assert_eq!(by_id.id, invoice_id);
         assert_eq!(by_id.order_id, order_id);
 
-        // Get by order_id - should return Some
-        let by_order = dao
-            .get_invoice_by_order_id(&order_id)
-            .await
-            .unwrap();
-        assert!(by_order.is_some());
-        let by_order = by_order.unwrap();
-        assert_eq!(by_order.id, invoice_id);
-        assert_eq!(by_order.order_id, order_id);
-
         // Get by non-existent ID - should return None
         let non_existent_id = dao
             .get_invoice_by_id(Uuid::new_v4())
             .await
             .unwrap();
         assert!(non_existent_id.is_none());
-
-        // Get by non-existent order_id - should return None
-        let non_existent_order = dao
-            .get_invoice_by_order_id("non_existent_order")
-            .await
-            .unwrap();
-        assert!(non_existent_order.is_none());
     }
 
     #[tokio::test]
@@ -965,148 +855,6 @@ mod tests {
         // Should fail with NotFound
         assert!(result3.is_err());
         match result3.unwrap_err() {
-            DaoInvoiceError::NotFound {
-                ..
-            } => { /* Expected */ },
-            err => panic!("Expected NotFound, got: {err:?}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn test_update_withdrawal_status_transitions() {
-        let dao = create_test_dao().await;
-
-        // Test transition to Completed
-        let invoice1 = default_create_invoice_data();
-        let id1 = invoice1.id;
-        let created1 = dao
-            .create_invoice(invoice1)
-            .await
-            .unwrap();
-
-        assert_eq!(
-            created1.withdrawal_status,
-            WithdrawalStatus::Waiting
-        );
-        assert_eq!(created1.version, 1);
-
-        let updated1 = dao
-            .update_invoice_withdrawal_status(id1, WithdrawalStatus::Completed)
-            .await
-            .unwrap();
-
-        assert_eq!(
-            updated1.withdrawal_status,
-            WithdrawalStatus::Completed
-        );
-        assert_eq!(updated1.version, 2); // Trigger incremented
-
-        // Test transition to Failed
-        let invoice2 = default_create_invoice_data();
-        let id2 = invoice2.id;
-
-        dao.create_invoice(invoice2)
-            .await
-            .unwrap();
-
-        let updated2 = dao
-            .update_invoice_withdrawal_status(id2, WithdrawalStatus::Failed)
-            .await
-            .unwrap();
-
-        assert_eq!(
-            updated2.withdrawal_status,
-            WithdrawalStatus::Failed
-        );
-
-        // Test transition to Forced
-        let invoice3 = default_create_invoice_data();
-        let id3 = invoice3.id;
-
-        dao.create_invoice(invoice3)
-            .await
-            .unwrap();
-
-        let updated3 = dao
-            .update_invoice_withdrawal_status(id3, WithdrawalStatus::Forced)
-            .await
-            .unwrap();
-
-        assert_eq!(
-            updated3.withdrawal_status,
-            WithdrawalStatus::Forced
-        );
-    }
-
-    #[tokio::test]
-    async fn test_update_withdrawal_status_idempotency() {
-        let dao = create_test_dao().await;
-
-        // Create invoice with Waiting withdrawal_status
-        let invoice = default_create_invoice_data();
-        let invoice_id = invoice.id;
-
-        dao.create_invoice(invoice)
-            .await
-            .unwrap();
-
-        // First update: Waiting -> Completed (should succeed)
-        let updated = dao
-            .update_invoice_withdrawal_status(invoice_id, WithdrawalStatus::Completed)
-            .await
-            .unwrap();
-
-        assert_eq!(
-            updated.withdrawal_status,
-            WithdrawalStatus::Completed
-        );
-
-        // Second update: Completed -> Failed (should fail - not in Waiting state)
-        let result = dao
-            .update_invoice_withdrawal_status(invoice_id, WithdrawalStatus::Failed)
-            .await;
-
-        // Should fail with WithdrawalConstraintViolation
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            DaoInvoiceError::WithdrawalStatusConstraintViolation {
-                current_status,
-                attempted_status,
-            } => {
-                assert_eq!(
-                    current_status,
-                    WithdrawalStatus::Completed
-                );
-                assert_eq!(
-                    attempted_status,
-                    WithdrawalStatus::Failed
-                );
-            },
-            err => panic!("Expected WithdrawalConstraintViolation, got: {err:?}"),
-        }
-
-        // Verify withdrawal_status is still Completed (unchanged)
-        let retrieved = dao
-            .get_invoice_by_id(invoice_id)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(
-            retrieved.withdrawal_status,
-            WithdrawalStatus::Completed
-        );
-
-        // Try to update non-existent invoice
-        let result2 = dao
-            .update_invoice_withdrawal_status(
-                Uuid::new_v4(),
-                WithdrawalStatus::Completed,
-            )
-            .await;
-
-        // Should fail with NotFound
-        assert!(result2.is_err());
-        match result2.unwrap_err() {
             DaoInvoiceError::NotFound {
                 ..
             } => { /* Expected */ },

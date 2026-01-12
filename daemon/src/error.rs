@@ -1,12 +1,9 @@
 use std::io::Error as IoError;
-use std::net::SocketAddr;
 
-use codec::Error as ScaleError;
 use serde_json::{
     Error as JsonError,
     Value,
 };
-use sled::Error as DatabaseError;
 use thiserror::Error;
 use tokio::task::JoinError;
 use tracing_subscriber::filter::ParseError;
@@ -38,9 +35,6 @@ pub enum Error {
 
     #[error("order error is occurred")]
     Order(#[from] OrderError),
-
-    #[error("daemon server error is occurred")]
-    Server(#[from] ServerError),
 
     #[error("signer error is occurred")]
     Signer(#[from] SignerError),
@@ -82,9 +76,6 @@ pub enum Error {
     ChainTransaction(
         #[from] crate::chain_client::TransactionError<crate::chain_client::AssetHubChainConfig>,
     ),
-
-    #[error("sled to SQLite migration failed")]
-    MigrationFailed(#[from] crate::sled_to_sqlite_migration::MigrationError),
 }
 
 impl From<crate::dao::DaoInvoiceError> for Error {
@@ -339,17 +330,8 @@ pub enum DbError {
     #[error("database engine isn't running")]
     DbEngineDown,
 
-    #[error("database internal error is occurred")]
-    DbInternalError(#[from] DatabaseError),
-
-    #[error("failed to start the database service")]
-    DbStartError(DatabaseError),
-
     #[error("operating system related I/O error is occurred")]
     IoError(#[from] IoError),
-
-    #[error("database storage decoding error is occurred")]
-    CodecError(#[from] ScaleError),
 
     #[error("order {0:?} isn't found")]
     OrderNotFound(String),
@@ -412,15 +394,6 @@ pub enum ForceWithdrawalError {
 
     #[error("withdrawal was failed: \"{0:?}\"")]
     WithdrawalError(String),
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum ServerError {
-    #[error("failed to bind the TCP listener to \"{0:?}\"")]
-    TcpListenerBind(SocketAddr),
-
-    #[error("internal threading error is occurred")]
-    ThreadError,
 }
 
 #[derive(Debug, Error)]

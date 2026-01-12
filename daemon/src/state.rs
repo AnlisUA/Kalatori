@@ -5,6 +5,11 @@ use chrono::{
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
+use kalatori_client::types::{
+    CreateInvoiceParams,
+    Invoice as PublicInvoice,
+};
+
 use crate::chain::utils::to_base58_string;
 use crate::chain::{
     InvoiceRegistry,
@@ -16,19 +21,13 @@ use crate::dao::{
     DaoInterface,
     DaoInvoiceError,
     DaoTransactionError,
-    DaoTransactionInterface,
 };
-use crate::handlers::types::{
-    UpdateInvoiceParams,
-};
-use kalatori_client::types::{CreateInvoiceParams, Invoice as PublicInvoice};
 use crate::types::{
+    ChainType,
     CreateInvoiceData,
     Invoice,
     InvoiceWithIncomingAmount,
-    Payout,
     Transaction,
-    UpdateInvoiceData,
 };
 
 pub struct AppState<D: DaoInterface> {
@@ -93,15 +92,6 @@ impl<D: DaoInterface> AppState<D> {
             .await
     }
 
-    pub async fn get_invoice_by_order_id(
-        &self,
-        order_id: &str,
-    ) -> Result<Option<Invoice>, DaoInvoiceError> {
-        self.dao
-            .get_invoice_by_order_id(order_id)
-            .await
-    }
-
     #[expect(clippy::arithmetic_side_effects, clippy::cast_possible_wrap)]
     #[tracing::instrument(skip_all)]
     pub async fn create_invoice(
@@ -113,8 +103,7 @@ impl<D: DaoInterface> AppState<D> {
         // asset_id
         let chain = self
             .payments_config
-            .default_chain
-            .clone();
+            .default_chain;
 
         let asset_id = self.payments_config
             .default_asset_id
@@ -126,8 +115,8 @@ impl<D: DaoInterface> AppState<D> {
                     .account_lifetime_millis as i64,
             );
 
-        let payment_address = match chain.as_str() {
-            "statemint" => {
+        let payment_address = match chain {
+            ChainType::PolkadotAssetHub => {
                 let derivation_params = vec![id.to_string()];
 
                 let account_id = self
@@ -147,7 +136,6 @@ impl<D: DaoInterface> AppState<D> {
 
                 to_base58_string(account_id.0, 0)
             },
-            _ => unreachable!(),
         };
 
         let data = CreateInvoiceData {
@@ -185,38 +173,39 @@ impl<D: DaoInterface> AppState<D> {
         Ok(invoice)
     }
 
-    #[expect(clippy::arithmetic_side_effects, clippy::cast_possible_wrap)]
-    pub async fn update_invoice(
-        &self,
-        params: UpdateInvoiceParams,
-    ) -> Result<Invoice, DaoInvoiceError> {
-        // TODO: current implementation of the whole method is not optimal. We fetch the
-        // invoice first to get it's current data, then we update it with new
-        // data. It would be better to have a method in DAO that updates only the fields
-        // that are provided, For that we would need to use query builder
-        // instead of raw SQL queries.
-        let invoice = self
-            .dao
-            .get_invoice_by_id(params.invoice_id)
-            .await?
-            .ok_or_else(|| DaoInvoiceError::NotFound {
-                identifier: params.invoice_id.to_string(),
-            })?;
+    // TODO: uncomment when update invoice functionality is needed
+    // #[expect(clippy::arithmetic_side_effects, clippy::cast_possible_wrap)]
+    // pub async fn update_invoice(
+    //     &self,
+    //     params: UpdateInvoiceParams,
+    // ) -> Result<Invoice, DaoInvoiceError> {
+    //     // TODO: current implementation of the whole method is not optimal. We fetch the
+    //     // invoice first to get it's current data, then we update it with new
+    //     // data. It would be better to have a method in DAO that updates only the fields
+    //     // that are provided, For that we would need to use query builder
+    //     // instead of raw SQL queries.
+    //     let invoice = self
+    //         .dao
+    //         .get_invoice_by_id(params.invoice_id)
+    //         .await?
+    //         .ok_or_else(|| DaoInvoiceError::NotFound {
+    //             identifier: params.invoice_id.to_string(),
+    //         })?;
 
-        let data = UpdateInvoiceData {
-            id: params.invoice_id,
-            amount: params.amount.unwrap_or(invoice.amount),
-            cart: params.cart.unwrap_or(invoice.cart),
-            valid_till: Utc::now()
-                + Duration::milliseconds(
-                    self.payments_config
-                        .account_lifetime_millis as i64,
-                ),
-            version: invoice.version,
-        };
+    //     let data = UpdateInvoiceData {
+    //         id: params.invoice_id,
+    //         amount: params.amount.unwrap_or(invoice.amount),
+    //         cart: params.cart.unwrap_or(invoice.cart),
+    //         valid_till: Utc::now()
+    //             + Duration::milliseconds(
+    //                 self.payments_config
+    //                     .account_lifetime_millis as i64,
+    //             ),
+    //         version: invoice.version,
+    //     };
 
-        self.dao.update_invoice_data(data).await
-    }
+    //     self.dao.update_invoice_data(data).await
+    // }
 
     pub async fn get_invoice_transactions(
         &self,
@@ -225,56 +214,6 @@ impl<D: DaoInterface> AppState<D> {
         self.dao
             .get_invoice_transactions(invoice_id)
             .await
-    }
-
-    // TODO: also mark invoice as paid? Probably, need to change main status as
-    // well. In that case, also remove from registry
-    pub async fn force_withdrawal(
-        &self,
-        order_id: String,
-    ) -> Result<Invoice, DaoInvoiceError> {
-        if let Some(invoice) = self
-            .dao
-            .get_invoice_by_order_id(&order_id)
-            .await?
-        {
-            let dao_transaction = self
-                .dao
-                .begin_transaction()
-                .await
-                .map_err(|_| DaoInvoiceError::DatabaseError)?;
-
-            let invoice_id = invoice.id;
-
-            let payout = Payout::from_invoice(
-                invoice,
-                self.payments_config.recipient.clone(),
-            );
-
-            let _result = dao_transaction
-                .create_payout(payout)
-                .await
-                .map_err(|_| DaoInvoiceError::DatabaseError)?;
-
-            let marked = dao_transaction
-                .update_invoice_withdrawal_status(
-                    invoice_id,
-                    crate::legacy_types::WithdrawalStatus::Forced,
-                )
-                .await?;
-
-            dao_transaction
-                .commit()
-                .await
-                .map_err(|_| DaoInvoiceError::DatabaseError)?;
-
-            Ok(marked)
-        } else {
-            tracing::error!("Invoice for order_id {order_id} not found in new database");
-            Err(DaoInvoiceError::NotFound {
-                identifier: order_id,
-            })
-        }
     }
 }
 
@@ -292,11 +231,10 @@ mod tests {
 
     fn setup_app_state() -> AppState<MockDaoInterface> {
         let config = PaymentsConfig {
-            default_chain: "statemint".to_string(),
+            default_chain: ChainType::PolkadotAssetHub,
             default_asset_id: "1337".to_string(),
             account_lifetime_millis: 600_000,
             recipient: "5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty".to_string(),
-            remark: None,
         };
 
         let keyring = KeyringClient::default();
@@ -339,7 +277,6 @@ mod tests {
             && expected.amount == actual.amount
             && expected.payment_address == actual.payment_address
             && expected.status == actual.status
-            && expected.withdrawal_status == actual.withdrawal_status
             && expected.callback == actual.callback
             && expected.cart == actual.cart
             && expected.redirect_url == actual.redirect_url
@@ -451,7 +388,7 @@ mod tests {
                 cart: params.cart.clone(),
                 redirect_url: params.redirect_url.clone(),
                 asset_id: 1337.to_string(),
-                chain: "statemint".to_string(),
+                chain: ChainType::PolkadotAssetHub,
                 payment_address: to_base58_string(account_id.0, 0),
                 valid_till: Utc::now() + Duration::milliseconds(app_state.payments_config.account_lifetime_millis as i64),
             }
@@ -530,7 +467,7 @@ mod tests {
                 cart: params.cart.clone(),
                 redirect_url: params.redirect_url.clone(),
                 asset_id: 1337.to_string(),
-                chain: "statemint".to_string(),
+                chain: ChainType::PolkadotAssetHub,
                 payment_address: to_base58_string(account_id.0, 0),
                 valid_till: Utc::now() + Duration::milliseconds(app_state.payments_config.account_lifetime_millis as i64),
             }

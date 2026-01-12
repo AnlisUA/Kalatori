@@ -12,7 +12,6 @@ use chrono::{
 };
 use uuid::Uuid;
 
-use crate::legacy_types::WithdrawalStatus;
 use crate::types::{
     CreateInvoiceData,
     GeneralTransactionId,
@@ -87,12 +86,6 @@ pub trait DaoInterface: Send + Sync + 'static {
         invoice_id: Uuid,
     ) -> Result<Option<Invoice>, DaoInvoiceError>;
 
-    /// Get an invoice by its order ID (external identifier).
-    async fn get_invoice_by_order_id(
-        &self,
-        order_id: &str,
-    ) -> Result<Option<Invoice>, DaoInvoiceError>;
-
     /// Get all active invoices (Waiting or `PartiallyPaid` status) along with
     /// their incoming amounts (sum amounts of related Incoming transaction).
     async fn get_active_invoices_with_amounts(
@@ -111,13 +104,6 @@ pub trait DaoInterface: Send + Sync + 'static {
     async fn update_invoice_data(
         &self,
         data: UpdateInvoiceData,
-    ) -> Result<Invoice, DaoInvoiceError>;
-
-    /// Update an invoice's withdrawal status.
-    async fn update_invoice_withdrawal_status(
-        &self,
-        invoice_id: Uuid,
-        status: WithdrawalStatus,
     ) -> Result<Invoice, DaoInvoiceError>;
 
     async fn update_invoices_expired(&self) -> Result<Vec<Invoice>, DaoInvoiceError>;
@@ -188,14 +174,6 @@ pub trait DaoInterface: Send + Sync + 'static {
         retry_meta: RetryMeta,
         is_retriable: bool,
     ) -> Result<Payout, DaoPayoutError>;
-
-    // === Utility Methods ===
-
-    /// Check if a transaction with given bytes already exists.
-    async fn transaction_exists_by_bytes(
-        &self,
-        transaction_bytes: &str,
-    ) -> DaoResult<bool>;
 }
 
 /// Interface for database transaction operations.
@@ -227,11 +205,6 @@ pub trait DaoTransactionInterface {
         invoice_id: Uuid,
     ) -> Result<Option<Invoice>, DaoInvoiceError>;
 
-    async fn get_invoice_by_order_id(
-        &self,
-        order_id: &str,
-    ) -> Result<Option<Invoice>, DaoInvoiceError>;
-
     async fn update_invoice_status(
         &self,
         invoice_id: Uuid,
@@ -241,12 +214,6 @@ pub trait DaoTransactionInterface {
     async fn update_invoice_data(
         &self,
         data: UpdateInvoiceData,
-    ) -> Result<Invoice, DaoInvoiceError>;
-
-    async fn update_invoice_withdrawal_status(
-        &self,
-        invoice_id: Uuid,
-        status: WithdrawalStatus,
     ) -> Result<Invoice, DaoInvoiceError>;
 
     async fn update_invoices_expired(&self) -> Result<Vec<Invoice>, DaoInvoiceError>;
@@ -338,13 +305,6 @@ impl DaoInterface for DAO {
         DaoInvoiceMethods::get_invoice_by_id(self, invoice_id).await
     }
 
-    async fn get_invoice_by_order_id(
-        &self,
-        order_id: &str,
-    ) -> Result<Option<Invoice>, DaoInvoiceError> {
-        DaoInvoiceMethods::get_invoice_by_order_id(self, order_id).await
-    }
-
     async fn get_active_invoices_with_amounts(
         &self
     ) -> Result<Vec<InvoiceWithIncomingAmount>, DaoInvoiceError> {
@@ -364,14 +324,6 @@ impl DaoInterface for DAO {
         data: UpdateInvoiceData,
     ) -> Result<Invoice, DaoInvoiceError> {
         DaoInvoiceMethods::update_invoice_data(self, data).await
-    }
-
-    async fn update_invoice_withdrawal_status(
-        &self,
-        invoice_id: Uuid,
-        status: WithdrawalStatus,
-    ) -> Result<Invoice, DaoInvoiceError> {
-        DaoInvoiceMethods::update_invoice_withdrawal_status(self, invoice_id, status).await
     }
 
     async fn update_invoices_expired(&self) -> Result<Vec<Invoice>, DaoInvoiceError> {
@@ -467,13 +419,6 @@ impl DaoInterface for DAO {
         )
         .await
     }
-
-    async fn transaction_exists_by_bytes(
-        &self,
-        transaction_bytes: &str,
-    ) -> DaoResult<bool> {
-        DAO::transaction_exists_by_bytes(self, transaction_bytes).await
-    }
 }
 
 // ============================================================================
@@ -495,13 +440,6 @@ impl DaoTransactionInterface for DaoTransaction {
         DaoInvoiceMethods::get_invoice_by_id(self, invoice_id).await
     }
 
-    async fn get_invoice_by_order_id(
-        &self,
-        order_id: &str,
-    ) -> Result<Option<Invoice>, DaoInvoiceError> {
-        DaoInvoiceMethods::get_invoice_by_order_id(self, order_id).await
-    }
-
     async fn update_invoice_status(
         &self,
         invoice_id: Uuid,
@@ -515,14 +453,6 @@ impl DaoTransactionInterface for DaoTransaction {
         data: UpdateInvoiceData,
     ) -> Result<Invoice, DaoInvoiceError> {
         DaoInvoiceMethods::update_invoice_data(self, data).await
-    }
-
-    async fn update_invoice_withdrawal_status(
-        &self,
-        invoice_id: Uuid,
-        status: WithdrawalStatus,
-    ) -> Result<Invoice, DaoInvoiceError> {
-        DaoInvoiceMethods::update_invoice_withdrawal_status(self, invoice_id, status).await
     }
 
     async fn update_invoices_expired(&self) -> Result<Vec<Invoice>, DaoInvoiceError> {

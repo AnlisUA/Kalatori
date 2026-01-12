@@ -1,6 +1,5 @@
 {
     "recipient": "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
     "default_asset_id": "1337",
-    "default_chain": "statemint",
-    "remark": "test"
+    "default_chain": "PolkadotAssetHub"
 }

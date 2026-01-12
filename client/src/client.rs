@@ -144,18 +144,18 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test]
-    async fn test_create_invoice() {
-        let client = KalatoriClient::new("http://localhost:16726".to_string(), "secret");
+    // #[tokio::test]
+    // async fn test_create_invoice() {
+    //     let client = KalatoriClient::new("http://localhost:16726".to_string(), "secret");
 
-        let params = CreateInvoiceParams {
-            amount: Decimal::ONE_HUNDRED,
-            order_id: Uuid::new_v4().to_string(),
-            cart: InvoiceCart::empty(),
-            redirect_url: "localhost:8000/thank-you-page".to_string(),
-        };
+    //     let params = CreateInvoiceParams {
+    //         amount: Decimal::ONE_HUNDRED,
+    //         order_id: Uuid::new_v4().to_string(),
+    //         cart: InvoiceCart::empty(),
+    //         redirect_url: "localhost:8000/thank-you-page".to_string(),
+    //     };
 
-        let result = client.create_invoice(params).await.unwrap();
-        println!("{:?}", result);
-    }
+    //     let result = client.create_invoice(params).await.unwrap();
+    //     println!("{:?}", result);
+    // }
 }

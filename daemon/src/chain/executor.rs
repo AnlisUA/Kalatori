@@ -31,10 +31,10 @@ use crate::chain_client::{
 use crate::dao::{
     DAO,
     DaoInterface,
-    DaoInvoiceError,
     DaoTransactionInterface,
 };
 use crate::types::{
+    ChainType,
     GeneralTransactionId,
     OutgoingTransaction,
     Payout,
@@ -67,7 +67,7 @@ const POLLING_INTERVAL_MILLIS: u64 = 100;
 pub struct ChainPayoutRequest<T: ChainConfig> {
     pub id: Uuid,
     pub invoice_id: Uuid,
-    pub chain: String,
+    pub chain: ChainType,
     pub asset_id: T::AssetId,
     pub source_address: T::AccountId,
     pub destination_address: T::AccountId,
@@ -102,6 +102,7 @@ pub enum ChainPayoutRequestTyped {
     AssetHub(ChainPayoutRequest<AssetHubChainConfig>),
 }
 
+// TODO: perhaps it might be just `From`? Used `TryFrom` when had `chain` field as string
 impl TryFrom<Payout> for ChainPayoutRequestTyped {
     // TODO: handle errors properly
     type Error = ();
@@ -116,14 +117,13 @@ impl TryFrom<Payout> for ChainPayoutRequestTyped {
             amount = %value.transfer_info.amount,
             "Preparing payout request for processing",
         );
-        let request = match value.transfer_info.chain.as_ref() {
-            "statemint" => ChainPayoutRequestTyped::AssetHub(ChainPayoutRequest::new(
+        let request = match value.transfer_info.chain {
+            ChainType::PolkadotAssetHub => ChainPayoutRequestTyped::AssetHub(ChainPayoutRequest::new(
                 value.id,
                 value.invoice_id,
                 value.transfer_info,
                 value.retry_meta,
             )?),
-            _ => return Err(()),
         };
 
         Ok(request)
@@ -530,41 +530,6 @@ impl<D: DaoInterface + 'static, AH: BlockChainClient<AssetHubChainConfig> + 'sta
                             reason: "Failed to update payout as completed in database".to_string(),
                         }
                     })?;
-
-                // TODO: get rid of legacy withdrawal status update later
-                let update_withdrawal_status_result = dao_transaction
-                    .update_invoice_withdrawal_status(
-                        invoice_id,
-                        crate::legacy_types::WithdrawalStatus::Completed,
-                    )
-                    .await;
-
-                match update_withdrawal_status_result {
-                    Err(DaoInvoiceError::WithdrawalStatusConstraintViolation {
-                        current_status,
-                        ..
-                    }) => {
-                        if current_status == crate::legacy_types::WithdrawalStatus::Forced {
-                            tracing::warn!(
-                                invoice_id = %invoice_id,
-                                "Invoice withdrawal status is Forced, skip updating to Completed",
-                            );
-                        }
-                    },
-                    Err(e) => {
-                        tracing::error!(
-                            error = %e,
-                            "Failed to update invoice withdrawal status as completed in database",
-                        );
-
-                        return Err(
-                            ChainExecutorError::DaoTransactionError {
-                                reason: "Failed to update invoice withdrawal status as completed in database".to_string(),
-                            },
-                        )
-                    },
-                    Ok(_) => {},
-                }
             },
             // TODO: should be implemented later, not necessary for now
             _ => {},
