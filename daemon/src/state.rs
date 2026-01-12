@@ -19,12 +19,13 @@ use crate::dao::{
     DaoTransactionInterface,
 };
 use crate::handlers::types::{
-    CreateInvoiceParams,
     UpdateInvoiceParams,
 };
+use kalatori_client::types::{CreateInvoiceParams, Invoice as PublicInvoice};
 use crate::types::{
     CreateInvoiceData,
     Invoice,
+    InvoiceWithIncomingAmount,
     Payout,
     Transaction,
     UpdateInvoiceData,
@@ -52,6 +53,37 @@ impl<D: DaoInterface> AppState<D> {
         }
     }
 
+    fn build_payment_url(&self, invoice_id: Uuid) -> String {
+        format!(
+            "{}/public?{}",
+            // self.payments_config.payment_base_url,
+            "localhost:16726",
+            invoice_id,
+        )
+    }
+
+    pub fn build_public_invoice(&self, invoice: InvoiceWithIncomingAmount) -> PublicInvoice {
+        let InvoiceWithIncomingAmount { invoice, incoming_amount } = invoice;
+
+        PublicInvoice {
+            id: invoice.id,
+            order_id: invoice.order_id,
+            amount: invoice.amount,
+            asset_id: invoice.asset_id,
+            asset: "".to_string(), // TODO: fetch asset info
+            chain: invoice.chain,
+            payment_address: invoice.payment_address,
+            payment_url: self.build_payment_url(invoice.id),
+            status: invoice.status,
+            cart: invoice.cart,
+            total_received_amount: incoming_amount,
+            redirect_url: invoice.redirect_url,
+            valid_till: invoice.valid_till,
+            created_at: invoice.created_at,
+            updated_at: invoice.updated_at,
+        }
+    }
+
     pub async fn get_invoice(
         &self,
         invoice_id: Uuid,
@@ -71,6 +103,7 @@ impl<D: DaoInterface> AppState<D> {
     }
 
     #[expect(clippy::arithmetic_side_effects, clippy::cast_possible_wrap)]
+    #[tracing::instrument(skip_all)]
     pub async fn create_invoice(
         &self,
         params: CreateInvoiceParams,
@@ -83,11 +116,9 @@ impl<D: DaoInterface> AppState<D> {
             .default_chain
             .clone();
 
-        let asset_id = params.asset_id.unwrap_or_else(|| {
-            self.payments_config
-                .default_asset_id
-                .clone()
-        });
+        let asset_id = self.payments_config
+            .default_asset_id
+            .clone();
 
         let valid_till = Utc::now()
             + Duration::milliseconds(
@@ -400,7 +431,6 @@ mod tests {
             amount: Decimal::new(1000, 2), // 10.00
             cart: InvoiceCart::empty(),
             redirect_url: "https://redirect.url".to_string(),
-            asset_id: None,
         };
 
         app_state.keyring
@@ -458,7 +488,6 @@ mod tests {
             amount: Decimal::new(5000, 2), // 50.00
             cart: InvoiceCart::empty(),
             redirect_url: "https://redirect.url".to_string(),
-            asset_id: None,
         };
 
         app_state.keyring
@@ -490,7 +519,6 @@ mod tests {
             amount: Decimal::new(7500, 2), // 75.00
             cart: InvoiceCart::empty(),
             redirect_url: "https://redirect.url".to_string(),
-            asset_id: None,
         };
 
         let expected_create_invoice_data = {

@@ -13,10 +13,7 @@ use sqlx::types::{
     Json,
     Text,
 };
-use sqlx::{
-    FromRow,
-    Type,
-};
+use sqlx::FromRow;
 use uuid::Uuid;
 
 use crate::legacy_types::{
@@ -24,53 +21,11 @@ use crate::legacy_types::{
     WithdrawalStatus,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-pub enum InvoiceStatus {
-    // Active statuses
-    Waiting,
-    PartiallyPaid,
-    // Final statuses
-    Paid,
-    OverPaid,
-    // Expired statuses
-    UnpaidExpired,
-    PartiallyPaidExpired,
-    // Canceled statuses
-    CustomerCanceled,
-    AdminCanceled,
-}
-
-#[expect(dead_code)]
-impl InvoiceStatus {
-    /// Check if invoice is in an active state (still being monitored)
-    pub const fn is_active(self) -> bool {
-        matches!(
-            self,
-            Self::Waiting | Self::PartiallyPaid
-        )
-    }
-
-    /// Check if invoice is in a final state (completed)
-    pub const fn is_final(self) -> bool {
-        matches!(self, Self::Paid | Self::OverPaid)
-    }
-
-    /// Check if invoice is expired
-    pub const fn is_expired(self) -> bool {
-        matches!(
-            self,
-            Self::UnpaidExpired | Self::PartiallyPaidExpired
-        )
-    }
-
-    /// Check if invoice is canceled
-    pub const fn is_canceled(self) -> bool {
-        matches!(
-            self,
-            Self::CustomerCanceled | Self::AdminCanceled
-        )
-    }
-}
+// Re-export types from kalatori_client for consistency
+pub use kalatori_client::types::{
+    InvoiceCart,
+    InvoiceStatus,
+};
 
 // Convert InvoiceStatus to old PaymentStatus for backward compatibility
 impl From<InvoiceStatus> for PaymentStatus {
@@ -88,67 +43,6 @@ impl From<PaymentStatus> for InvoiceStatus {
         match status {
             PaymentStatus::Pending => Self::Waiting,
             PaymentStatus::Paid => Self::Paid,
-        }
-    }
-}
-
-impl fmt::Display for InvoiceStatus {
-    fn fmt(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
-        match self {
-            Self::Waiting => write!(f, "Waiting"),
-            Self::PartiallyPaid => write!(f, "PartiallyPaid"),
-            Self::Paid => write!(f, "Paid"),
-            Self::OverPaid => write!(f, "OverPaid"),
-            Self::UnpaidExpired => write!(f, "UnpaidExpired"),
-            Self::PartiallyPaidExpired => write!(f, "PartiallyPaidExpired"),
-            Self::CustomerCanceled => write!(f, "CustomerCanceled"),
-            Self::AdminCanceled => write!(f, "AdminCanceled"),
-        }
-    }
-}
-
-impl std::str::FromStr for InvoiceStatus {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "Waiting" => Ok(Self::Waiting),
-            "PartiallyPaid" => Ok(Self::PartiallyPaid),
-            "Paid" => Ok(Self::Paid),
-            "OverPaid" => Ok(Self::OverPaid),
-            "UnpaidExpired" => Ok(Self::UnpaidExpired),
-            "PartiallyPaidExpired" => Ok(Self::PartiallyPaidExpired),
-            "CustomerCanceled" => Ok(Self::CustomerCanceled),
-            "AdminCanceled" => Ok(Self::AdminCanceled),
-            _ => Err(format!("Unknown invoice status: {s}")),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct InvoiceCartItem {
-    pub name: String,
-    pub quantity: u32,
-    pub price: Decimal, // Price per single item
-    pub product_url: Option<String>,
-    pub image_url: Option<String>,
-    pub tax: Option<Decimal>,
-    pub discount: Option<Decimal>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct InvoiceCart {
-    pub items: Vec<InvoiceCartItem>,
-}
-
-impl InvoiceCart {
-    // Prefer to create an empty cart explicitly over using Default trait
-    pub fn empty() -> Self {
-        Self {
-            items: vec![],
         }
     }
 }
@@ -176,7 +70,6 @@ pub struct Invoice {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InvoiceWithIncomingAmount {
-    #[serde(flatten)]
     pub invoice: Invoice,
     pub incoming_amount: Decimal,
 }

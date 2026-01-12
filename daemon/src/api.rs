@@ -1,5 +1,4 @@
 mod dev;
-mod middlewares;
 mod private;
 mod public;
 

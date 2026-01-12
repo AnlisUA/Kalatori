@@ -14,6 +14,8 @@ use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive;
 use serde::Deserialize;
 
+use kalatori_client::types::CreateInvoiceParams;
+
 use crate::dao::{
     DaoInterface,
     DaoInvoiceError,
@@ -41,7 +43,6 @@ use crate::types::{
 };
 
 use super::types::{
-    CreateInvoiceParams,
     UpdateInvoiceParams,
 };
 
@@ -122,7 +123,6 @@ async fn create_or_update_invoice<D: DaoInterface>(
             order_id,
             // TODO: better return an error if parsing fails
             amount,
-            asset_id: Some(asset_id),
             cart: InvoiceCart::empty(),
             redirect_url: redirect_url.unwrap_or_default(),
         };
