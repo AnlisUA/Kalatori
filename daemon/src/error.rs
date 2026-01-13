@@ -93,7 +93,7 @@ impl From<crate::dao::DaoInvoiceError> for Error {
             crate::dao::DaoInvoiceError::NotFound {
                 ..
             } => DaoError::InvoiceNotFound,
-            crate::dao::DaoInvoiceError::VersionConflict {
+            crate::dao::DaoInvoiceError::UpdateNotAllowed {
                 ..
             } => DaoError::VersionConflict,
             _ => DaoError::Sqlx(sqlx::Error::RowNotFound),

@@ -2,13 +2,13 @@ use std::str::FromStr;
 
 /// Parsed trigger error with structured fields
 #[derive(Debug, Clone)]
-pub struct TriggerError<S> {
+pub struct StatusTriggerError<S> {
     pub old_status: S,
     pub new_status: S,
 }
 
 pub trait StatusTransitionError: FromStr<Err: std::fmt::Debug> {
-    type ErrorType: From<TriggerError<Self>>;
+    type ErrorType: From<StatusTriggerError<Self>>;
 
     const ERROR_TYPE_PREFIX: &'static str;
 
@@ -17,17 +17,12 @@ pub trait StatusTransitionError: FromStr<Err: std::fmt::Debug> {
     }
 }
 
-/// Parse `SQLite` trigger error message with generic status type
-/// Format: "`ERROR_TYPE|old_status=VALUE|new_status=VALUE`"
-///
-/// The status type S must implement `FromStr` to parse status strings
-pub(crate) fn parse_trigger_error<S>(
+fn parse_error_with_statuses<S>(
     db_error: &sqlx::Error,
     prefix: &str,
-) -> Option<TriggerError<S>>
-where
-    S: FromStr,
-    S::Err: std::fmt::Debug,
+) -> Option<(Option<S>, Option<S>)>
+where S: FromStr,
+      S::Err: std::fmt::Debug,
 {
     if let sqlx::Error::Database(err) = db_error {
         let msg = err.message();
@@ -42,26 +37,52 @@ where
         for param in params.split('|') {
             if let Some((key, value)) = param.split_once('=') {
                 match key {
-                    "old_status" => old_status_str = Some(value),
-                    "new_status" => new_status_str = Some(value),
+                    "old_status" => old_status_str = value.parse().ok(),
+                    "new_status" => new_status_str = value.parse().ok(),
                     _ => {},
                 }
             }
         }
 
-        // Parse status strings into typed enums
-        if let (Some(old_str), Some(new_str)) = (old_status_str, new_status_str) {
-            let old_status = S::from_str(old_str).ok()?;
-            let new_status = S::from_str(new_str).ok()?;
-
-            return Some(TriggerError {
-                old_status,
-                new_status,
-            });
-        }
+        return Some((old_status_str, new_status_str));
     }
 
     None
+}
+
+/// Parse `SQLite` trigger error message with generic status type
+/// Format: "`ERROR_TYPE|old_status=VALUE|new_status=VALUE`"
+///
+/// The status type S must implement `FromStr` to parse status strings
+fn parse_trigger_error<S>(
+    db_error: &sqlx::Error,
+    prefix: &str,
+) -> Option<StatusTriggerError<S>>
+where
+    S: FromStr,
+    S::Err: std::fmt::Debug,
+{
+    let (old_status_opt, new_status_opt) =
+        parse_error_with_statuses::<S>(db_error, prefix)?;
+
+    if let (Some(old_status), Some(new_status)) = (old_status_opt, new_status_opt) {
+        Some(StatusTriggerError {
+            old_status,
+            new_status,
+        })
+    } else {
+        None
+    }
+}
+
+pub fn parse_update_not_allowed_error<S>(
+    db_error: &sqlx::Error,
+    prefix: &str,
+) -> Option<S>
+where S: FromStr,
+      S::Err: std::fmt::Debug,
+{
+    parse_error_with_statuses(db_error, prefix)?.0
 }
 
 #[cfg(test)]

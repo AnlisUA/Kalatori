@@ -6,7 +6,7 @@ use rust_decimal::Decimal;
 
 use kalatori_client::utils::HmacConfig;
 use kalatori_client::middleware::axum_hmac_validator;
-use kalatori_client::types::{CreateInvoiceParams, GetInvoiceParams, Invoice};
+use kalatori_client::types::{CancelInvoiceParams, CreateInvoiceParams, GetInvoiceParams, Invoice, UpdateInvoiceParams};
 
 use crate::types::InvoiceWithIncomingAmount;
 use crate::dao::DaoInvoiceError;
@@ -20,7 +20,7 @@ use super::utils::{
     method_not_allowed_fallback_handler,
 };
 
-#[tracing::instrument(skip(state))]
+#[tracing::instrument(skip_all)]
 async fn create_invoice<D: DaoInterface>(
     State(state): State<ApiState<D>>,
     AppJson(params): AppJson<CreateInvoiceParams>,
@@ -38,6 +38,7 @@ async fn create_invoice<D: DaoInterface>(
     Ok(result.into())
 }
 
+#[tracing::instrument(skip_all)]
 async fn get_invoice<D: DaoInterface>(
     State(state): State<ApiState<D>>,
     AppQuery(params): AppQuery<GetInvoiceParams>,
@@ -58,35 +59,48 @@ async fn get_invoice<D: DaoInterface>(
     Ok(result.into())
 }
 
-#[derive(serde::Deserialize)]
-struct Params {
-    a: String,
-    b: String,
+#[tracing::instrument(skip_all)]
+async fn update_invoice<D: DaoInterface>(
+    State(state): State<ApiState<D>>,
+    AppJson(params): AppJson<UpdateInvoiceParams>,
+) -> ApiResult<Invoice, DaoInvoiceError> {
+    let invoice = state
+        .update_invoice(params)
+        .await?;
+
+    let with_amount = InvoiceWithIncomingAmount {
+        invoice,
+        total_received_amount: Decimal::ZERO,
+    };
+
+    let result = state.build_public_invoice(with_amount);
+    Ok(result.into())
 }
 
-#[axum::debug_handler]
-#[tracing::instrument(skip(_params))]
-async fn test_get(
-    AppQuery(_params): AppQuery<Params>,
-) -> &'static str {
-    tracing::info!("Inside private GET route");
-    "Private route accessed"
-}
+#[tracing::instrument(skip_all)]
+async fn cancel_invoice<D: DaoInterface>(
+    State(state): State<ApiState<D>>,
+    AppJson(params): AppJson<CancelInvoiceParams>,
+) -> ApiResult<Invoice, DaoInvoiceError> {
+    let invoice = state
+        .cancel_invoice_admin(params.invoice_id)
+        .await?;
 
-#[tracing::instrument(skip(_params))]
-async fn test_post(
-    AppJson(_params): AppJson<Params>,
-) -> &'static str {
-    tracing::info!("Inside private POST route");
-    "Private POST route accessed"
+    let with_amount = InvoiceWithIncomingAmount {
+        invoice,
+        total_received_amount: Decimal::ZERO,
+    };
+
+    let result = state.build_public_invoice(with_amount);
+    Ok(result.into())
 }
 
 pub fn routes<D: DaoInterface>(hmac_config: HmacConfig) -> axum::Router<ApiState<D>> {
     axum::Router::new()
-        .route("/test-get", get(test_get))
-        .route("/test-post", post(test_post))
         .route("/v3/invoice/create", post(create_invoice))
         .route("/v3/invoice/get", get(get_invoice))
+        .route("/v3/invoice/update", post(update_invoice))
+        .route("/v3/invoice/cancel", post(cancel_invoice))
         .fallback(fallback_handler)
         .method_not_allowed_fallback(method_not_allowed_fallback_handler)
         .layer(axum::middleware::from_fn_with_state(hmac_config, axum_hmac_validator))

@@ -34,10 +34,7 @@ CREATE TABLE IF NOT EXISTS invoices (
     -- Timestamps
     valid_till TEXT NOT NULL,  -- ISO 8601 datetime
     created_at TEXT NOT NULL DEFAULT (datetime('now')),  -- ISO 8601 datetime
-    updated_at TEXT NOT NULL DEFAULT (datetime('now')),  -- ISO 8601 datetime
-
-    -- Optimistic locking
-    version INTEGER NOT NULL DEFAULT 1  -- Auto-incremented on each update for optimistic locking
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))   -- ISO 8601 datetime
 );
 
 -- Transactions table (unified: both pending and finalized transactions)
@@ -267,5 +264,15 @@ BEGIN
 
         WHEN OLD.status IN ('Completed', 'Failed') AND NEW.status != OLD.status
         THEN RAISE(ABORT, 'TRANSACTION_STATUS_TRANSITION|old_status=' || OLD.status || '|new_status=' || NEW.status)
+    END;
+END;
+
+CREATE TRIGGER IF NOT EXISTS update_amount_and_cart_only_for_waiting_invoice
+BEFORE UPDATE OF amount, cart ON invoices
+FOR EACH ROW
+BEGIN
+    SELECT CASE
+        WHEN OLD.status != 'Waiting'
+        THEN RAISE(ABORT, 'INVOICE_UPDATE_NOT_ALLOWED|old_status=' || OLD.status)
     END;
 END;

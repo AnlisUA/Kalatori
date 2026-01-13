@@ -12,7 +12,7 @@ use crate::types::{
 use super::DaoExecutor;
 use super::error_parsing::{
     StatusTransitionError,
-    TriggerError,
+    StatusTriggerError,
 };
 
 // ============================================================================
@@ -47,8 +47,8 @@ impl From<sqlx::Error> for DaoPayoutError {
     }
 }
 
-impl From<TriggerError<PayoutStatus>> for DaoPayoutError {
-    fn from(e: TriggerError<PayoutStatus>) -> Self {
+impl From<StatusTriggerError<PayoutStatus>> for DaoPayoutError {
+    fn from(e: StatusTriggerError<PayoutStatus>) -> Self {
         DaoPayoutError::StatusConstraintViolation {
             current_status: e.old_status,
             attempted_status: e.new_status,

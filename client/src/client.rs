@@ -8,6 +8,8 @@ use crate::types::{
     ApiResultStructured,
     GetInvoiceParams,
     CreateInvoiceParams,
+    CancelInvoiceParams,
+    UpdateInvoiceParams,
     Invoice,
 };
 use crate::utils::{
@@ -27,6 +29,8 @@ pub struct KalatoriClient {
 
 pub const CREATE_INVOICE_PATH: &str = "/private/v3/invoice/create";
 pub const GET_INVOICE_PATH: &str = "/private/v3/invoice/get";
+pub const UPDATE_INVOICE_PATH: &str = "/private/v3/invoice/update";
+pub const CANCEL_INVOICE_PATH: &str = "/private/v3/invoice/cancel";
 
 // A way to restrict HTTP methods in the client
 #[derive(Debug, Clone, Copy)]
@@ -142,6 +146,26 @@ impl KalatoriClient {
         let request = self.build_request(
             KalatoriHttpMethod::Post,
             CREATE_INVOICE_PATH,
+            payload,
+        )?;
+
+        self.execute_request(request).await
+    }
+
+    pub async fn update_invoice(&self, payload: UpdateInvoiceParams) -> Result<ApiResult<Invoice>, reqwest::Error> {
+        let request = self.build_request(
+            KalatoriHttpMethod::Post,
+            UPDATE_INVOICE_PATH,
+            payload,
+        )?;
+
+        self.execute_request(request).await
+    }
+
+    pub async fn cancel_invoice(&self, payload: CancelInvoiceParams) -> Result<ApiResult<Invoice>, reqwest::Error> {
+        let request = self.build_request(
+            KalatoriHttpMethod::Post,
+            CANCEL_INVOICE_PATH,
             payload,
         )?;
 

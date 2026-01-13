@@ -8,8 +8,7 @@ use rust_decimal::Decimal;
 use uuid::Uuid;
 
 use kalatori_client::types::{
-    CreateInvoiceParams,
-    Invoice as PublicInvoice,
+    CreateInvoiceParams, Invoice as PublicInvoice, InvoiceStatus, UpdateInvoiceParams
 };
 
 use crate::chain::utils::to_base58_string;
@@ -30,6 +29,7 @@ use crate::types::{
     Invoice,
     InvoiceWithIncomingAmount,
     Transaction,
+    UpdateInvoiceData,
 };
 
 pub struct AppState<D: DaoInterface> {
@@ -182,39 +182,41 @@ impl<D: DaoInterface> AppState<D> {
         Ok(invoice)
     }
 
-    // TODO: uncomment when update invoice functionality is needed
-    // #[expect(clippy::arithmetic_side_effects, clippy::cast_possible_wrap)]
-    // pub async fn update_invoice(
-    //     &self,
-    //     params: UpdateInvoiceParams,
-    // ) -> Result<Invoice, DaoInvoiceError> {
-    //     // TODO: current implementation of the whole method is not optimal. We fetch the
-    //     // invoice first to get it's current data, then we update it with new
-    //     // data. It would be better to have a method in DAO that updates only the fields
-    //     // that are provided, For that we would need to use query builder
-    //     // instead of raw SQL queries.
-    //     let invoice = self
-    //         .dao
-    //         .get_invoice_by_id(params.invoice_id)
-    //         .await?
-    //         .ok_or_else(|| DaoInvoiceError::NotFound {
-    //             identifier: params.invoice_id.to_string(),
-    //         })?;
+    #[expect(clippy::arithmetic_side_effects, clippy::cast_possible_wrap)]
+    pub async fn update_invoice(
+        &self,
+        params: UpdateInvoiceParams,
+    ) -> Result<Invoice, DaoInvoiceError> {
+        let invoice = self
+            .dao
+            .get_invoice_by_id(params.invoice_id)
+            .await?
+            .ok_or_else(|| DaoInvoiceError::NotFound {
+                invoice_id: params.invoice_id,
+            })?;
 
-    //     let data = UpdateInvoiceData {
-    //         id: params.invoice_id,
-    //         amount: params.amount.unwrap_or(invoice.amount),
-    //         cart: params.cart.unwrap_or(invoice.cart),
-    //         valid_till: Utc::now()
-    //             + Duration::milliseconds(
-    //                 self.payments_config
-    //                     .account_lifetime_millis as i64,
-    //             ),
-    //         version: invoice.version,
-    //     };
+        let data = UpdateInvoiceData {
+            invoice_id: params.invoice_id,
+            amount: params.amount,
+            cart: params.cart,
+            valid_till: Utc::now()
+                + Duration::milliseconds(
+                    self.payments_config
+                        .account_lifetime_millis as i64,
+                ),
+        };
 
-    //     self.dao.update_invoice_data(data).await
-    // }
+        self.dao.update_invoice_data(data).await
+    }
+
+    pub async fn cancel_invoice_admin(
+        &self,
+        invoice_id: Uuid,
+    ) -> Result<Invoice, DaoInvoiceError> {
+        self.dao
+            .update_invoice_status(invoice_id, InvoiceStatus::AdminCanceled)
+            .await
+    }
 
     pub async fn get_invoice_transactions(
         &self,
@@ -300,7 +302,6 @@ mod tests {
             && expected.valid_till.timestamp() == actual.valid_till.timestamp()
             && expected.created_at.timestamp() == actual.created_at.timestamp()
             && expected.updated_at.timestamp() == actual.updated_at.timestamp()
-            && expected.version == actual.version
     }
 
     #[tokio::test]

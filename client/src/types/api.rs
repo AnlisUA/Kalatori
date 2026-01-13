@@ -54,3 +54,14 @@ pub struct GetInvoiceParams {
     #[serde(default = "default_include_transaction")]
     pub include_transaction: bool,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UpdateInvoiceParams {
+    pub invoice_id: Uuid,
+    pub amount: Decimal,
+    #[serde(default = "InvoiceCart::empty")]
+    #[serde(skip_serializing_if = "InvoiceCart::is_empty")]
+    pub cart: InvoiceCart,
+}
+
+pub type CancelInvoiceParams = GetInvoiceParams;

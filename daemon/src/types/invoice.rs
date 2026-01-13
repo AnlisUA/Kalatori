@@ -41,8 +41,6 @@ pub struct Invoice {
     pub valid_till: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-    // Optimistic locking version, auto-incremented on updates
-    pub version: u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -66,7 +64,6 @@ pub struct InvoiceRow {
     pub valid_till: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-    pub version: u16,
 }
 
 impl From<InvoiceRow> for Invoice {
@@ -85,7 +82,6 @@ impl From<InvoiceRow> for Invoice {
             valid_till: row.valid_till,
             created_at: row.created_at,
             updated_at: row.updated_at,
-            version: row.version,
         }
     }
 }
@@ -122,18 +118,16 @@ impl From<CreateInvoiceData> for Invoice {
             valid_till: data.valid_till,
             created_at: now,
             updated_at: now,
-            version: 1,
         }
     }
 }
 
 #[derive(Debug)]
 pub struct UpdateInvoiceData {
-    pub id: Uuid, // Invoice ID to update
+    pub invoice_id: Uuid, // Invoice ID to update
     pub amount: Decimal,
     pub cart: InvoiceCart,
     pub valid_till: DateTime<Utc>,
-    pub version: u16, // Current version for optimistic locking
 }
 
 #[cfg(test)]
@@ -166,11 +160,10 @@ pub fn default_update_invoice_data(invoice_id: Uuid) -> UpdateInvoiceData {
     let now = Utc::now();
 
     UpdateInvoiceData {
-        id: invoice_id,
+        invoice_id,
         amount: Decimal::new(15000, 2),
         cart: InvoiceCart::empty(),
         #[expect(clippy::arithmetic_side_effects)]
         valid_till: now + chrono::Duration::hours(24),
-        version: 1,
     }
 }
