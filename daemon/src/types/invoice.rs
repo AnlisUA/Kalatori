@@ -22,30 +22,33 @@ pub use kalatori_client::types::{
     InvoiceStatus,
 };
 
+// TODO: the main difference between Invoice and PublicInvoice (from kalatori_client crate)
+// is that Invoice doesn't have `payment_url` field. Need to think how we can unify these types
+// and make Invoice a subset of PublicInvoice.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Invoice {
     pub id: Uuid,
     // Merchant-provided order ID
     pub order_id: String,
     pub asset_id: String,
+    pub asset_name: String,
     pub chain: ChainType,
     pub amount: Decimal,
     pub payment_address: String,
     pub status: InvoiceStatus,
-    // Temporary backward compat field
-    pub callback: String,
     pub cart: InvoiceCart,
     pub redirect_url: String,
     pub valid_till: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-    pub version: u16, // Optimistic locking version, auto-incremented on updates
+    // Optimistic locking version, auto-incremented on updates
+    pub version: u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InvoiceWithIncomingAmount {
     pub invoice: Invoice,
-    pub incoming_amount: Decimal,
+    pub total_received_amount: Decimal,
 }
 
 #[derive(FromRow)]
@@ -53,11 +56,11 @@ pub struct InvoiceRow {
     pub id: Uuid,
     pub order_id: String,
     pub asset_id: String,
+    pub asset_name: String,
     pub chain: ChainType,
     pub amount: Text<Decimal>,
     pub payment_address: String,
     pub status: InvoiceStatus,
-    pub callback: String,
     pub cart: Json<InvoiceCart>,
     pub redirect_url: String,
     pub valid_till: DateTime<Utc>,
@@ -72,11 +75,11 @@ impl From<InvoiceRow> for Invoice {
             id: row.id,
             order_id: row.order_id,
             asset_id: row.asset_id,
+            asset_name: row.asset_name,
             chain: row.chain,
             amount: row.amount.into_inner(),
             payment_address: row.payment_address,
             status: row.status,
-            callback: row.callback,
             cart: row.cart.0,
             redirect_url: row.redirect_url,
             valid_till: row.valid_till,
@@ -92,12 +95,12 @@ pub struct CreateInvoiceData {
     pub id: Uuid,
     pub order_id: String,
     pub asset_id: String,
+    pub asset_name: String,
     pub chain: ChainType,
     pub amount: Decimal,
     pub payment_address: String,
     pub cart: InvoiceCart,
     pub redirect_url: String,
-    pub callback_url: Option<String>,
     pub valid_till: DateTime<Utc>,
 }
 
@@ -109,12 +112,11 @@ impl From<CreateInvoiceData> for Invoice {
             id: data.id,
             order_id: data.order_id,
             asset_id: data.asset_id,
+            asset_name: data.asset_name,
             chain: data.chain,
             amount: data.amount,
             payment_address: data.payment_address,
             status: InvoiceStatus::Waiting,
-            // TODO: make it optional in DB as well
-            callback: data.callback_url.unwrap_or_default(),
             cart: data.cart,
             redirect_url: data.redirect_url,
             valid_till: data.valid_till,
@@ -148,10 +150,10 @@ pub fn default_create_invoice_data() -> CreateInvoiceData {
         id,
         order_id: id.to_string(),
         asset_id: 1984.to_string(),
+        asset_name: "USDT".to_string(),
         chain: ChainType::PolkadotAssetHub,
         amount: Decimal::new(10000, 2),
         payment_address: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string(),
-        callback_url: None,
         cart: InvoiceCart::empty(),
         redirect_url: "http://localhost:8080/thankyou".to_string(),
         #[expect(clippy::arithmetic_side_effects)]

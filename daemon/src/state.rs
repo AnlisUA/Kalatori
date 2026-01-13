@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use chrono::{
     Duration,
     Utc,
@@ -34,6 +36,7 @@ pub struct AppState<D: DaoInterface> {
     keyring: KeyringClient,
     dao: D,
     registry: InvoiceRegistry,
+    asset_names_map: HashMap<String, String>,
     payments_config: PaymentsConfig,
 }
 
@@ -42,12 +45,14 @@ impl<D: DaoInterface> AppState<D> {
         keyring: KeyringClient,
         dao: D,
         registry: InvoiceRegistry,
+        asset_names_map: HashMap<String, String>,
         payments_config: PaymentsConfig,
     ) -> Self {
         Self {
             keyring,
             dao,
             registry,
+            asset_names_map,
             payments_config,
         }
     }
@@ -62,14 +67,14 @@ impl<D: DaoInterface> AppState<D> {
     }
 
     pub fn build_public_invoice(&self, invoice: InvoiceWithIncomingAmount) -> PublicInvoice {
-        let InvoiceWithIncomingAmount { invoice, incoming_amount } = invoice;
+        let InvoiceWithIncomingAmount { invoice, total_received_amount: incoming_amount } = invoice;
 
         PublicInvoice {
             id: invoice.id,
             order_id: invoice.order_id,
             amount: invoice.amount,
             asset_id: invoice.asset_id,
-            asset: "".to_string(), // TODO: fetch asset info
+            asset_name: invoice.asset_name,
             chain: invoice.chain,
             payment_address: invoice.payment_address,
             payment_url: self.build_payment_url(invoice.id),
@@ -109,6 +114,11 @@ impl<D: DaoInterface> AppState<D> {
             .default_asset_id
             .clone();
 
+        let asset_name = self.asset_names_map.get(&asset_id)
+            .cloned()
+            // This should never happen, but just in case
+            .unwrap_or_else(|| "UNKNOWN".to_string());
+
         let valid_till = Utc::now()
             + Duration::milliseconds(
                 self.payments_config
@@ -140,13 +150,12 @@ impl<D: DaoInterface> AppState<D> {
 
         let data = CreateInvoiceData {
             order_id: params.order_id,
-            // TODO: get from config
-            callback_url: None,
             amount: params.amount,
             cart: params.cart,
             redirect_url: params.redirect_url,
             id,
             asset_id,
+            asset_name,
             chain,
             payment_address,
             valid_till,
@@ -230,6 +239,11 @@ mod tests {
     use super::*;
 
     fn setup_app_state() -> AppState<MockDaoInterface> {
+        let asset_names_map = HashMap::from([
+            (1337.to_string(), "USDC".to_string()),
+            (1984.to_string(), "USDt".to_string()),
+        ]);
+
         let config = PaymentsConfig {
             default_chain: ChainType::PolkadotAssetHub,
             default_asset_id: "1337".to_string(),
@@ -245,6 +259,7 @@ mod tests {
             keyring,
             dao,
             registry,
+            asset_names_map,
             config,
         )
     }
@@ -273,11 +288,11 @@ mod tests {
         // We don't compare IDs here, as they are generated randomly
         expected.order_id == actual.order_id
             && expected.asset_id == actual.asset_id
+            && expected.asset_name == actual.asset_name
             && expected.chain == actual.chain
             && expected.amount == actual.amount
             && expected.payment_address == actual.payment_address
             && expected.status == actual.status
-            && expected.callback == actual.callback
             && expected.cart == actual.cart
             && expected.redirect_url == actual.redirect_url
             // It might be off by a few milliseconds, so we compare timestamps.
@@ -383,11 +398,11 @@ mod tests {
             CreateInvoiceData {
                 id: Uuid::new_v4(), // We can't predict this, so we'll match fields except ID
                 order_id: params.order_id.clone(),
-                callback_url: None,
                 amount: params.amount,
                 cart: params.cart.clone(),
                 redirect_url: params.redirect_url.clone(),
                 asset_id: 1337.to_string(),
+                asset_name: "USDC".to_string(),
                 chain: ChainType::PolkadotAssetHub,
                 payment_address: to_base58_string(account_id.0, 0),
                 valid_till: Utc::now() + Duration::milliseconds(app_state.payments_config.account_lifetime_millis as i64),
@@ -462,11 +477,11 @@ mod tests {
             CreateInvoiceData {
                 id: Uuid::new_v4(), // We can't predict this, so we'll match fields except ID
                 order_id: params.order_id.clone(),
-                callback_url: None,
                 amount: params.amount,
                 cart: params.cart.clone(),
                 redirect_url: params.redirect_url.clone(),
                 asset_id: 1337.to_string(),
+                asset_name: "USDC".to_string(),
                 chain: ChainType::PolkadotAssetHub,
                 payment_address: to_base58_string(account_id.0, 0),
                 valid_till: Utc::now() + Duration::milliseconds(app_state.payments_config.account_lifetime_millis as i64),

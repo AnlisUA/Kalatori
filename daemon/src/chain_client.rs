@@ -78,6 +78,7 @@ pub struct AssetInfo<T: ChainConfig> {
 pub struct GeneralChainTransfer {
     pub chain: ChainType,
     pub asset_id: String,
+    pub asset_name: String,
     pub amount: Decimal,
     pub sender: String,
     pub recipient: String,
@@ -100,6 +101,7 @@ impl GeneralChainTransfer {
         TransferInfo {
             chain: self.chain,
             asset_id: self.asset_id,
+            asset_name: self.asset_name,
             amount: self.amount,
             source_address: self.sender,
             destination_address: self.recipient,
@@ -110,6 +112,7 @@ impl GeneralChainTransfer {
 #[derive(Debug, Clone)]
 pub struct ChainTransfer<T: ChainConfig> {
     pub asset_id: T::AssetId,
+    pub asset_name: String,
     pub amount: Decimal,
     pub sender: T::AccountId,    // base58 ss58 format
     pub recipient: T::AccountId, // base58 ss58 format
@@ -124,6 +127,7 @@ impl<T: ChainConfig> From<ChainTransfer<T>> for GeneralChainTransfer {
         Self {
             chain: T::CHAIN_TYPE,
             asset_id: transfer.asset_id.to_string(),
+            asset_name: transfer.asset_name,
             amount: transfer.amount,
             sender: transfer.sender.to_string(),
             recipient: transfer.recipient.to_string(),
@@ -169,6 +173,15 @@ impl<T: ChainConfig> AssetInfoStore<T> {
                     .cloned()
                     .map(|val| (id.clone(), val))
             })
+            .collect()
+    }
+
+    pub async fn asset_names_map(&self) -> HashMap<String, String> {
+        let assets = self.assets.read().await;
+
+        assets
+            .iter()
+            .map(|(id, info)| (id.to_string(), info.name.clone()))
             .collect()
     }
 }

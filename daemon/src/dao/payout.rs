@@ -68,13 +68,14 @@ pub trait DaoPayoutMethods: DaoExecutor + 'static {
         payout: Payout,
     ) -> Result<Payout, DaoPayoutError> {
         let query = sqlx::query_as::<_, PayoutRow>(
-        "INSERT INTO payouts (id, invoice_id, asset_id, chain, source_address, destination_address, amount, initiator_type, initiator_id, status, created_at, updated_at, retry_count, last_attempt_at, next_retry_at, failure_message)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        "INSERT INTO payouts (id, invoice_id, asset_id, asset_name, chain, source_address, destination_address, amount, initiator_type, initiator_id, status, created_at, updated_at, retry_count, last_attempt_at, next_retry_at, failure_message)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING *"
         )
             .bind(payout.id)
             .bind(payout.invoice_id)
             .bind(payout.transfer_info.asset_id)
+            .bind(payout.transfer_info.asset_name)
             .bind(&payout.transfer_info.chain)
             .bind(&payout.transfer_info.source_address)
             .bind(&payout.transfer_info.destination_address)

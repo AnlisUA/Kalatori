@@ -31,7 +31,7 @@ async fn create_invoice<D: DaoInterface>(
 
     let with_amount = InvoiceWithIncomingAmount {
         invoice,
-        incoming_amount: Decimal::ZERO,
+        total_received_amount: Decimal::ZERO,
     };
 
     let result = state.build_public_invoice(with_amount);
@@ -51,7 +51,7 @@ async fn get_invoice<D: DaoInterface>(
 
     let with_amount = InvoiceWithIncomingAmount {
         invoice,
-        incoming_amount: Decimal::ZERO,
+        total_received_amount: Decimal::ZERO,
     };
 
     let result = state.build_public_invoice(with_amount);

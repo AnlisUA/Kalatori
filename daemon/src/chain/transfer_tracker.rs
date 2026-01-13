@@ -30,6 +30,7 @@ use crate::types::{
     Payout,
 };
 
+// TODO: it seems to be equivalent to InvoiceWithIncomingAmount
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InvoiceRegistryRecord {
     // TODO: store something smaller? Most fields are not needed for matching
@@ -53,7 +54,7 @@ impl From<InvoiceWithIncomingAmount> for InvoiceRegistryRecord {
     fn from(value: InvoiceWithIncomingAmount) -> Self {
         InvoiceRegistryRecord {
             invoice: value.invoice,
-            filled_amount: value.incoming_amount,
+            filled_amount: value.total_received_amount,
         }
     }
 }

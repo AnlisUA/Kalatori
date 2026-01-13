@@ -54,6 +54,7 @@ impl std::str::FromStr for InitiatorType {
 pub struct TransferInfo {
     pub chain: ChainType,
     pub asset_id: String,
+    pub asset_name: String,
     pub amount: Decimal,
     pub source_address: String,
     pub destination_address: String,
@@ -63,6 +64,7 @@ pub struct TransferInfo {
 pub struct TransferInfoRow {
     pub chain: ChainType,
     pub asset_id: String,
+    pub asset_name: String,
     pub amount: Text<Decimal>,
     pub source_address: String,
     pub destination_address: String,
@@ -73,6 +75,7 @@ impl From<TransferInfoRow> for TransferInfo {
         Self {
             chain: value.chain,
             asset_id: value.asset_id,
+            asset_name: value.asset_name,
             amount: value.amount.into_inner(),
             source_address: value.source_address,
             destination_address: value.destination_address,

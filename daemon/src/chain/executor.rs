@@ -69,6 +69,7 @@ pub struct ChainPayoutRequest<T: ChainConfig> {
     pub invoice_id: Uuid,
     pub chain: ChainType,
     pub asset_id: T::AssetId,
+    pub asset_name: String,
     pub source_address: T::AccountId,
     pub destination_address: T::AccountId,
     pub amount: Decimal,
@@ -87,6 +88,7 @@ impl<T: ChainConfig> ChainPayoutRequest<T> {
             invoice_id,
             chain: transfer_info.chain,
             asset_id: T::AssetId::from_str(&transfer_info.asset_id).map_err(|_| ())?,
+            asset_name: transfer_info.asset_name,
             source_address: T::AccountId::from_str(&transfer_info.source_address)
                 .map_err(|_| ())?,
             destination_address: T::AccountId::from_str(&transfer_info.destination_address)
@@ -368,6 +370,7 @@ impl<D: DaoInterface + 'static, AH: BlockChainClient<AssetHubChainConfig> + 'sta
             invoice_id: request.invoice_id,
             transfer_info: TransferInfo {
                 asset_id: request.asset_id.to_string(),
+                asset_name: request.asset_name.clone(),
                 chain: request.chain.clone(),
                 amount: request.amount,
                 source_address: request.source_address.to_string(),

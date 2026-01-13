@@ -148,7 +148,7 @@ impl From<InvoiceWithAmountsRow> for InvoiceWithIncomingAmount {
 
         Self {
             invoice: row.invoice.into(),
-            incoming_amount,
+            total_received_amount: incoming_amount,
         }
     }
 }
@@ -161,18 +161,18 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
         let invoice: Invoice = invoice.into();
 
         let query = sqlx::query_as::<_, InvoiceRow>(
-        "INSERT INTO invoices (id, order_id, asset_id, chain, amount, payment_address, status, callback, cart, redirect_url, valid_till, created_at, updated_at, version)
+        "INSERT INTO invoices (id, order_id, asset_id, asset_name, chain, amount, payment_address, status, cart, redirect_url, valid_till, created_at, updated_at, version)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING *"
         )
             .bind(invoice.id)
             .bind(&invoice.order_id)
             .bind(invoice.asset_id)
+            .bind(invoice.asset_name)
             .bind(&invoice.chain)
             .bind(Text(invoice.amount))
             .bind(&invoice.payment_address)
             .bind(invoice.status)
-            .bind(&invoice.callback)
             .bind(Json(invoice.cart))
             .bind(invoice.redirect_url)
             .bind(invoice.valid_till)
@@ -590,23 +590,23 @@ mod tests {
         // Verify amounts are summed correctly with full precision
         let expected_invoice1_total = tx1_amount + tx2_amount; // 100.50 + 50.25 = 150.75
         assert_eq!(
-            invoice1_result.incoming_amount, expected_invoice1_total,
+            invoice1_result.total_received_amount, expected_invoice1_total,
             "Invoice 1 should have sum of 2 incoming transactions"
         );
 
         assert_eq!(
-            invoice2_result.incoming_amount, tx3_amount,
+            invoice2_result.total_received_amount, tx3_amount,
             "Invoice 2 should have amount from single incoming transaction"
         );
 
         assert_eq!(
-            invoice3_result.incoming_amount,
+            invoice3_result.total_received_amount,
             Decimal::ZERO,
             "Invoice 3 should have zero incoming amount (no transactions)"
         );
 
         assert_eq!(
-            invoice4_result.incoming_amount,
+            invoice4_result.total_received_amount,
             Decimal::ZERO,
             "Invoice 4 should have zero incoming amount (only outgoing transaction)"
         );

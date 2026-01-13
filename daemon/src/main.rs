@@ -171,6 +171,11 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
         .await
         .map_err(|_| Error::Fatal)?;
 
+    let asset_names_map = asset_hub_client
+        .asset_info_store()
+        .asset_names_map()
+        .await;
+
     let keyring = Keyring::new(seed_config.seed);
     // Please don't keep keyring_client in this scope, it must be moved in order to
     // keep graceful shutdown working.
@@ -219,7 +224,8 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
         keyring_client,
         dao,
         invoice_registry,
-        payments_config.clone(),
+        asset_names_map,
+        payments_config,
     );
 
     let api_handle = api::api_server(

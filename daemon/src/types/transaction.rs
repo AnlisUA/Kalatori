@@ -247,6 +247,7 @@ impl From<TransactionRow> for Transaction {
 pub fn default_transaction(invoice_id: Uuid) -> Transaction {
     let transfer_info = TransferInfo {
         asset_id: 1984.to_string(),
+        asset_name: "USDT".to_string(),
         chain: super::ChainType::PolkadotAssetHub,
         amount: rust_decimal::Decimal::new(10000, 2),
         source_address: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string(),

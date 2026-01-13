@@ -68,13 +68,14 @@ pub trait DaoRefundMethods: DaoExecutor + 'static {
         refund: Refund,
     ) -> Result<Refund, DaoRefundError> {
         let query = sqlx::query_as::<_, RefundRow>(
-        "INSERT INTO refunds (id, invoice_id, asset_id, chain, amount, source_address, destination_address, initiator_type, initiator_id, status, created_at, updated_at, retry_count, last_attempt_at, next_retry_at, failure_message)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        "INSERT INTO refunds (id, invoice_id, asset_id, asset_name, chain, amount, source_address, destination_address, initiator_type, initiator_id, status, created_at, updated_at, retry_count, last_attempt_at, next_retry_at, failure_message)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING *"
         )
             .bind(refund.id)
             .bind(refund.invoice_id)
             .bind(refund.transfer_info.asset_id)
+            .bind(&refund.transfer_info.asset_name)
             .bind(&refund.transfer_info.chain)
             .bind(Text(refund.transfer_info.amount))
             .bind(&refund.transfer_info.source_address)

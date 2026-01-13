@@ -75,13 +75,14 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
         transaction: Transaction,
     ) -> Result<Transaction, DaoTransactionError> {
         let query = sqlx::query_as::<_, TransactionRow>(
-        "INSERT INTO transactions (id, invoice_id, asset_id, chain, amount, source_address, destination_address, block_number, position_in_block, tx_hash, origin, status, transaction_type, outgoing_meta, created_at, updated_at, transaction_bytes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        "INSERT INTO transactions (id, invoice_id, asset_id, asset_name, chain, amount, source_address, destination_address, block_number, position_in_block, tx_hash, origin, status, transaction_type, outgoing_meta, created_at, updated_at, transaction_bytes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING *"
         )
             .bind(transaction.id)
             .bind(transaction.invoice_id)
             .bind(transaction.transfer_info.asset_id)
+            .bind(transaction.transfer_info.asset_name)
             .bind(&transaction.transfer_info.chain)
             .bind(Text(transaction.transfer_info.amount))
             .bind(&transaction.transfer_info.source_address)

@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS invoices (
 
     -- Asset information (denormalized to avoid config changes affecting data)
     asset_id TEXT NOT NULL,
+    asset_name TEXT NOT NULL,
     chain TEXT NOT NULL CHECK(chain IN ('PolkadotAssetHub')),
 
     -- Payment details
@@ -24,14 +25,11 @@ CREATE TABLE IF NOT EXISTS invoices (
         'CustomerCanceled', 'AdminCanceled'  -- Canceled
     )) DEFAULT 'Waiting',
 
-    -- Callback
-    callback TEXT NOT NULL DEFAULT '',
-
     -- Cart metadata
     cart TEXT NOT NULL DEFAULT '{}',  -- JSONB: {cart_items?}
 
     -- Redirect URL
-    redirect_url TEXT NOT NULL DEFAULT '',
+    redirect_url TEXT NOT NULL,
 
     -- Timestamps
     valid_till TEXT NOT NULL,  -- ISO 8601 datetime
@@ -51,6 +49,7 @@ CREATE TABLE IF NOT EXISTS transactions (
 
     -- Asset information
     asset_id TEXT NOT NULL,
+    asset_name TEXT NOT NULL,
     chain TEXT NOT NULL CHECK(chain IN ('PolkadotAssetHub')),
     amount TEXT NOT NULL,  -- Decimal string (excluding fees)
 
@@ -92,6 +91,7 @@ CREATE TABLE IF NOT EXISTS payouts (
 
     -- Asset information
     asset_id TEXT NOT NULL,
+    asset_name TEXT NOT NULL,
     chain TEXT NOT NULL CHECK(chain IN ('PolkadotAssetHub')),
     amount TEXT NOT NULL,  -- Decimal string
 
@@ -127,6 +127,7 @@ CREATE TABLE IF NOT EXISTS refunds (
 
     -- Asset information
     asset_id TEXT NOT NULL,
+    asset_name TEXT NOT NULL,
     chain TEXT NOT NULL CHECK(chain IN ('PolkadotAssetHub')),
     amount TEXT NOT NULL,  -- Decimal string
 

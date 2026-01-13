@@ -90,6 +90,7 @@ impl Payout {
             invoice_id: invoice.id,
             transfer_info: TransferInfo {
                 asset_id: invoice.asset_id,
+                asset_name: invoice.asset_name,
                 chain: invoice.chain,
                 source_address: invoice.payment_address,
                 destination_address: payout_address,
@@ -140,6 +141,7 @@ impl From<PayoutRow> for Payout {
 pub fn default_payout(invoice_id: Uuid) -> Payout {
     let transfer_info = TransferInfo {
         asset_id: 1984.to_string(),
+        asset_name: "USDT".to_string(),
         chain: super::ChainType::PolkadotAssetHub,
         source_address: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string(),
         destination_address: "1NthTCKurNHLW52mMa6iA8Gz7UFYW5UnM3yTSpVdGu4Th7h".to_string(),

@@ -297,6 +297,7 @@ impl AssetHubClient {
 
                         Some(ChainTransfer {
                             asset_id: event.asset_id,
+                            asset_name: asset_info.name.clone(),
                             // TODO: check event.amount? Cast is quite unsafe
                             #[expect(clippy::cast_possible_truncation)]
                             amount: Decimal::new(
@@ -865,6 +866,7 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
         Ok(ChainTransfer {
             amount,
             asset_id: event.asset_id,
+            asset_name: asset_info.name.clone(),
             sender: event.from,
             recipient: event.to,
             transaction_id: (block_number, extrinsic_index),

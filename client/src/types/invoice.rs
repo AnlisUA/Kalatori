@@ -132,7 +132,7 @@ impl InvoiceCart {
 pub struct Invoice {
     pub id: Uuid,
     pub order_id: String,
-    pub asset: String,
+    pub asset_name: String,
     pub asset_id: String,
     pub chain: ChainType,
     pub amount: Decimal,
@@ -140,10 +140,10 @@ pub struct Invoice {
     pub status: InvoiceStatus,
     pub payment_url: String,
     pub redirect_url: String,
-    pub valid_till: DateTime<Utc>,
     pub cart: InvoiceCart,
     pub total_received_amount: Decimal,
     // pub transactions: Vec<Transaction>,
+    pub valid_till: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

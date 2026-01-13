@@ -17,8 +17,9 @@ const EXPIRATION_CHECK_INTERVAL_MILLIS: u64 = 1000;
 async fn send_webhook(
     client: reqwest::Client,
     invoice: Invoice,
+    callback_url: &str,
 ) {
-    if invoice.callback.is_empty() {
+    if callback_url.is_empty() {
         tracing::warn!(
             invoice_id = %invoice.id,
             error.category = "expiration_detector",
@@ -30,7 +31,7 @@ async fn send_webhook(
     }
 
     if let Err(e) = client
-        .get(invoice.callback)
+        .get(callback_url)
         .send()
         .await
     {
@@ -88,7 +89,8 @@ impl<D: DaoInterface + 'static> ExpirationDetector<D> {
         invoice: Invoice,
     ) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
         let client = self.client.clone();
-        Box::pin(send_webhook(client, invoice))
+        // TODO: get real callback URL from config
+        Box::pin(send_webhook(client, invoice, ""))
     }
 
     // 1. Update statuses in the database for expired and partially paid expired
