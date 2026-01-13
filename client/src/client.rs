@@ -3,9 +3,19 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use hmac::Mac;
 
-use crate::types::{GetInvoiceParams, CreateInvoiceParams, Invoice};
+use crate::types::{
+    ApiResult,
+    ApiResultStructured,
+    GetInvoiceParams,
+    CreateInvoiceParams,
+    Invoice,
+};
 use crate::utils::{
-    HmacConfig, TIMESTAMP_HEADER, SIGNATURE_HEADER, hmac_from_request_parts, timestamp_secs
+    HmacConfig,
+    TIMESTAMP_HEADER,
+    SIGNATURE_HEADER,
+    hmac_from_request_parts,
+    timestamp_secs,
 };
 
 pub struct KalatoriClient {
@@ -19,6 +29,7 @@ pub const CREATE_INVOICE_PATH: &str = "/private/v3/invoice/create";
 pub const GET_INVOICE_PATH: &str = "/private/v3/invoice/get";
 
 // A way to restrict HTTP methods in the client
+#[derive(Debug, Clone, Copy)]
 enum KalatoriHttpMethod {
     Get,
     Post,
@@ -107,15 +118,17 @@ impl KalatoriClient {
     async fn execute_request<T: DeserializeOwned>(
         &self,
         request: reqwest::Request,
-    ) -> Result<T, reqwest::Error> {
-        self.client
+    ) -> Result<ApiResult<T>, reqwest::Error> {
+        let result = self.client
             .execute(request)
             .await?
-            .json()
-            .await
+            .json::<ApiResultStructured<T>>()
+            .await?;
+
+        Ok(result.into())
     }
 
-    pub async fn get_invoice(&self, payload: GetInvoiceParams) -> Result<Invoice, reqwest::Error> {
+    pub async fn get_invoice(&self, payload: GetInvoiceParams) -> Result<ApiResult<Invoice>, reqwest::Error> {
         let request = self.build_request(
             KalatoriHttpMethod::Get,
             GET_INVOICE_PATH,
@@ -125,7 +138,7 @@ impl KalatoriClient {
         self.execute_request(request).await
     }
 
-    pub async fn create_invoice(&self, payload: CreateInvoiceParams) -> Result<Invoice, reqwest::Error> {
+    pub async fn create_invoice(&self, payload: CreateInvoiceParams) -> Result<ApiResult<Invoice>, reqwest::Error> {
         let request = self.build_request(
             KalatoriHttpMethod::Post,
             CREATE_INVOICE_PATH,
@@ -138,9 +151,10 @@ impl KalatoriClient {
 
 #[cfg(test)]
 mod tests {
-    use crate::types::InvoiceCart;
     use rust_decimal::Decimal;
     use uuid::Uuid;
+
+    use crate::types::InvoiceCart;
 
     use super::*;
 
@@ -157,5 +171,25 @@ mod tests {
 
     //     let result = client.create_invoice(params).await.unwrap();
     //     println!("{:?}", result);
+    // }
+
+    // #[tokio::test]
+    // async fn test_invalid_json() {
+    //     let client = KalatoriClient::new("http://localhost:16726".to_string(), "secret");
+
+    //     let params = GetInvoiceParams {
+    //         invoice_id: Uuid::new_v4(),
+    //         include_transaction: false,
+    //     };
+
+    //     let request = client.build_request(
+    //         KalatoriHttpMethod::Get,
+    //         CREATE_INVOICE_PATH,
+    //         params,
+    //     ).unwrap();
+
+    //     let result = client.execute_request::<Invoice>(request).await;
+
+    //     println!("Result :{:#?}", result);
     // }
 }

@@ -1,7 +1,7 @@
 use crate::dao::DaoInterface;
 
 use axum::routing::{get, post};
-use axum::extract::{State, Json};
+use axum::extract::State;
 use rust_decimal::Decimal;
 
 use kalatori_client::utils::HmacConfig;
@@ -9,18 +9,25 @@ use kalatori_client::middleware::axum_hmac_validator;
 use kalatori_client::types::{CreateInvoiceParams, GetInvoiceParams, Invoice};
 
 use crate::types::InvoiceWithIncomingAmount;
+use crate::dao::DaoInvoiceError;
 
 use super::ApiState;
+use super::utils::{
+    ApiResult,
+    AppJson,
+    AppQuery,
+    fallback_handler,
+    method_not_allowed_fallback_handler,
+};
 
 #[tracing::instrument(skip(state))]
 async fn create_invoice<D: DaoInterface>(
     State(state): State<ApiState<D>>,
-    Json(params): Json<CreateInvoiceParams>,
-) -> Json<Invoice> {
+    AppJson(params): AppJson<CreateInvoiceParams>,
+) -> ApiResult<Invoice, DaoInvoiceError> {
     let invoice = state
         .create_invoice(params)
-        .await
-        .unwrap();
+        .await?;
 
     let with_amount = InvoiceWithIncomingAmount {
         invoice,
@@ -28,7 +35,27 @@ async fn create_invoice<D: DaoInterface>(
     };
 
     let result = state.build_public_invoice(with_amount);
-    Json(result)
+    Ok(result.into())
+}
+
+async fn get_invoice<D: DaoInterface>(
+    State(state): State<ApiState<D>>,
+    AppQuery(params): AppQuery<GetInvoiceParams>,
+) -> ApiResult<Invoice, DaoInvoiceError> {
+    let invoice = state
+        .get_invoice(params.invoice_id)
+        .await?
+        .ok_or_else(|| DaoInvoiceError::NotFound {
+            invoice_id: params.invoice_id,
+        })?;
+
+    let with_amount = InvoiceWithIncomingAmount {
+        invoice,
+        incoming_amount: Decimal::ZERO,
+    };
+
+    let result = state.build_public_invoice(with_amount);
+    Ok(result.into())
 }
 
 #[derive(serde::Deserialize)]
@@ -37,9 +64,10 @@ struct Params {
     b: String,
 }
 
+#[axum::debug_handler]
 #[tracing::instrument(skip(_params))]
 async fn test_get(
-    axum::extract::Query(_params): axum::extract::Query<Params>,
+    AppQuery(_params): AppQuery<Params>,
 ) -> &'static str {
     tracing::info!("Inside private GET route");
     "Private route accessed"
@@ -47,18 +75,19 @@ async fn test_get(
 
 #[tracing::instrument(skip(_params))]
 async fn test_post(
-    axum::extract::Json(_params): axum::extract::Json<Params>,
+    AppJson(_params): AppJson<Params>,
 ) -> &'static str {
     tracing::info!("Inside private POST route");
     "Private POST route accessed"
 }
 
-pub fn private_routes<D: DaoInterface>() -> axum::Router<ApiState<D>> {
-    let config = HmacConfig::new("secret", 6000);
-
+pub fn routes<D: DaoInterface>(hmac_config: HmacConfig) -> axum::Router<ApiState<D>> {
     axum::Router::new()
         .route("/test-get", get(test_get))
         .route("/test-post", post(test_post))
         .route("/v3/invoice/create", post(create_invoice))
-        .layer(axum::middleware::from_fn_with_state(config, axum_hmac_validator))
+        .route("/v3/invoice/get", get(get_invoice))
+        .fallback(fallback_handler)
+        .method_not_allowed_fallback(method_not_allowed_fallback_handler)
+        .layer(axum::middleware::from_fn_with_state(hmac_config, axum_hmac_validator))
 }

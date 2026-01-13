@@ -27,9 +27,9 @@ use super::error_parsing::{
 #[derive(Debug, Error)]
 pub enum DaoInvoiceError {
     /// Invoice not found by ID or `order_id`
-    #[error("Invoice not found: {identifier}")]
+    #[error("Invoice not found: {invoice_id}")]
     NotFound {
-        identifier: String, // Can be UUID string or order_id
+        invoice_id: Uuid,
     },
 
     /// Optimistic locking failure - invoice was modified by another request
@@ -53,6 +53,54 @@ pub enum DaoInvoiceError {
     /// Database operation failed
     #[error("Database error during invoice operation")]
     DatabaseError,
+}
+
+impl crate::api::ApiErrorExt for DaoInvoiceError {
+    fn category(&self) -> &str {
+        match self {
+            DaoInvoiceError::NotFound { .. } => "ENTITY_NOT_FOUND",
+            DaoInvoiceError::VersionConflict { .. } => "UPDATE_CONFLICT",
+            DaoInvoiceError::StatusConstraintViolation { .. } => "STATUS",
+            DaoInvoiceError::DuplicateOrderId { .. } => "DUPLICATE_ENTITY",
+            DaoInvoiceError::DatabaseError => "INTERNAL_SERVER_ERROR",
+        }
+    }
+
+    fn code(&self) -> &str {
+        match self {
+            DaoInvoiceError::NotFound { .. } => "NOT_FOUND",
+            DaoInvoiceError::VersionConflict { .. } => "VERSION_CONFLICT",
+            DaoInvoiceError::StatusConstraintViolation { .. } => "STATUS_CONSTRAINT_VIOLATION",
+            DaoInvoiceError::DuplicateOrderId { .. } => "DUPLICATE_ORDER_ID",
+            DaoInvoiceError::DatabaseError => "DATABASE_ERROR",
+        }
+    }
+
+    fn message(&self) -> &str {
+        match self {
+            DaoInvoiceError::NotFound { .. } => "The requested invoice was not found.",
+            DaoInvoiceError::VersionConflict { .. } => {
+                "The invoice was modified by another operation. Please retry."
+            }
+            DaoInvoiceError::StatusConstraintViolation { .. } => {
+                "The requested status transition is not allowed."
+            }
+            DaoInvoiceError::DuplicateOrderId { .. } => {
+                "An invoice with the specified order ID already exists."
+            }
+            DaoInvoiceError::DatabaseError => "A database error occurred.",
+        }
+    }
+
+    fn http_status_code(&self) -> reqwest::StatusCode {
+        match self {
+            DaoInvoiceError::NotFound { .. } => reqwest::StatusCode::NOT_FOUND,
+            DaoInvoiceError::VersionConflict { .. } => reqwest::StatusCode::CONFLICT,
+            DaoInvoiceError::StatusConstraintViolation { .. } => reqwest::StatusCode::BAD_REQUEST,
+            DaoInvoiceError::DuplicateOrderId { .. } => reqwest::StatusCode::CONFLICT,
+            DaoInvoiceError::DatabaseError => reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
 }
 
 impl From<sqlx::Error> for DaoInvoiceError {
@@ -258,7 +306,7 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
 
                 match e {
                     sqlx::Error::RowNotFound => DaoInvoiceError::NotFound {
-                        identifier: invoice_id.to_string(),
+                        invoice_id,
                     },
                     _ => DaoInvoiceError::DatabaseError,
                 }
@@ -324,7 +372,7 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
                             })
                         },
                         Ok(None) => Err(DaoInvoiceError::NotFound {
-                            identifier: data.id.to_string(),
+                            invoice_id: data.id,
                         }),
                         Err(e) => {
                             tracing::warn!(

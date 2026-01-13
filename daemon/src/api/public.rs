@@ -60,7 +60,7 @@ async fn invoice<D: DaoInterface>(
     }
 }
 
-pub fn public_routes<D: DaoInterface>() -> axum::Router<ApiState<D>> {
+pub fn routes<D: DaoInterface>() -> axum::Router<ApiState<D>> {
     axum::Router::new()
         .route("/", axum::routing::get(index))
         .route("/invoice", axum::routing::get(invoice))
