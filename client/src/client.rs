@@ -2,6 +2,7 @@ use http::HeaderValue;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use hmac::Mac;
+use secrecy::SecretSlice;
 
 use crate::types::{
     ApiResult,
@@ -50,8 +51,8 @@ impl From<KalatoriHttpMethod> for http::Method {
 
 impl KalatoriClient {
     // TODO: add host validation
-    pub fn new(base_url: String, secret_key: impl AsRef<str>) -> Self {
-        let config = HmacConfig::new(secret_key.as_ref(), 0);
+    pub fn new(base_url: String, secret_key: impl Into<SecretSlice<u8>>) -> Self {
+        let config = HmacConfig::new(secret_key, 0);
 
         Self {
             client: reqwest::Client::new(),
@@ -184,7 +185,7 @@ mod tests {
 
     // #[tokio::test]
     // async fn test_create_invoice() {
-    //     let client = KalatoriClient::new("http://localhost:16726".to_string(), "secret");
+    //     let client = KalatoriClient::new("http://localhost:8080".to_string(), "secret".as_bytes().to_vec());
 
     //     let params = CreateInvoiceParams {
     //         amount: Decimal::ONE_HUNDRED,

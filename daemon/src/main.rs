@@ -9,8 +9,10 @@ mod state;
 mod types;
 mod utils;
 
+use std::collections::HashMap;
 use std::process::ExitCode;
 
+use kalatori_client::types::ChainType;
 use tokio::runtime::Runtime;
 use tokio_util::sync::CancellationToken;
 use tracing::Level;
@@ -26,11 +28,13 @@ use chain_client::{
     Keyring,
 };
 use configs::{
-    chain_config_with_prefix,
+    chains_config_with_prefix,
     database_config_with_prefix,
     payments_config_with_prefix,
-    seed_config_with_prefix,
+    secrets_config_with_prefix,
     web_server_config_with_prefix,
+    PaymentsConfig,
+    ChainsConfig,
 };
 use dao::DAO;
 use error::{
@@ -122,6 +126,47 @@ fn try_main(shutdown_notification: ShutdownNotification) -> Result<(), Error> {
         .block_on(async_try_main(shutdown_notification))
 }
 
+async fn init_invoice_registry(
+    dao: &impl DaoInterface,
+) -> Result<InvoiceRegistry, Error> {
+    let invoice_registry = InvoiceRegistry::new();
+
+    let restore_invoices = dao
+        .get_active_invoices_with_amounts()
+        .await
+        .map_err(|_| Error::Fatal)?
+        .into_iter()
+        .map(From::from)
+        .collect();
+
+    invoice_registry
+        .add_invoices(restore_invoices)
+        .await;
+
+    Ok(invoice_registry)
+}
+
+fn validate_and_extend_configs(
+    chains_config: &mut ChainsConfig,
+    payments_config: &mut PaymentsConfig,
+    restored_asset_ids: HashMap<ChainType, Vec<String>>,
+) -> Result<(), Error> {
+    // Ensure that we have recipients for all chains from restored invoices and for default chain
+    let mut required_recipients: Vec<_> = restored_asset_ids.keys().cloned().collect();
+
+    if !required_recipients.contains(&payments_config.default_chain) {
+        required_recipients.push(payments_config.default_chain);
+    }
+
+    payments_config.validate_recipients(&required_recipients).map_err(|_| Error::Fatal)?;
+
+    // Extend chains config with default and restored asset IDs
+    chains_config.add_default_asset_ids(&payments_config.default_asset_id);
+    chains_config.add_restored_asset_ids(restored_asset_ids);
+
+    Ok(())
+}
+
 #[expect(clippy::too_many_lines)]
 async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(), Error> {
     // Planned start order
@@ -142,32 +187,39 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
 
     let configs_path = std::env::var(format!("{env_prefix}_CONFIG_DIR_PATH")).unwrap_or_default();
 
-    let seed_config = seed_config_with_prefix(&configs_path, &env_prefix);
-    let chain_config = chain_config_with_prefix(&configs_path, &env_prefix);
-    let payments_config = payments_config_with_prefix(&configs_path, &env_prefix);
+    let secrets_config = secrets_config_with_prefix(&configs_path, &env_prefix);
+    let mut chains_config = chains_config_with_prefix(&configs_path, &env_prefix);
+    let mut payments_config = payments_config_with_prefix(&configs_path, &env_prefix);
     let web_server_config = web_server_config_with_prefix(&configs_path, &env_prefix);
     let database_config = database_config_with_prefix(&configs_path, &env_prefix);
-
-    // Start services
-    let (task_tracker, error_rx) = TaskTracker::new();
 
     // Initialize DAO for SQLite database operations
     let dao = DAO::new(database_config.clone())
         .await
         .map_err(error::DaoError::Sqlx)?;
 
-    let assets: Vec<_> = chain_config
-        .assets
-        .iter()
-        .map(|config| config.id)
-        .collect();
+    let invoice_registry = init_invoice_registry(&dao).await?;
 
-    let asset_hub_client = AssetHubClient::new(&chain_config)
+    validate_and_extend_configs(
+        &mut chains_config,
+        &mut payments_config,
+        invoice_registry.used_asset_ids().await,
+    )?;
+
+    let asset_hub_chain_config = chains_config.chains.get(&ChainType::PolkadotAssetHub).unwrap();
+
+    let assets = chains_config.chains
+        .get(&ChainType::PolkadotAssetHub)
+        .unwrap()
+        .assets
+        .as_ref();
+
+    let asset_hub_client = AssetHubClient::new(asset_hub_chain_config)
         .await
         .map_err(|_| Error::Fatal)?;
 
     asset_hub_client
-        .init_asset_info(&assets)
+        .init_asset_info(assets)
         .await
         .map_err(|_| Error::Fatal)?;
 
@@ -176,24 +228,10 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
         .asset_names_map()
         .await;
 
-    let keyring = Keyring::new(seed_config.seed);
+    let keyring = Keyring::new(secrets_config.seed);
     // Please don't keep keyring_client in this scope, it must be moved in order to
     // keep graceful shutdown working.
     let (keyring_handle, keyring_client) = keyring.ignite();
-
-    let invoice_registry = InvoiceRegistry::new();
-
-    let restore_invoices = dao
-        .get_active_invoices_with_amounts()
-        .await
-        .map_err(|_| Error::Fatal)?
-        .into_iter()
-        .map(From::from)
-        .collect();
-
-    invoice_registry
-        .add_invoices(restore_invoices)
-        .await;
 
     let expiration_detector = ExpirationDetector::new(dao.clone(), invoice_registry.clone());
 
@@ -230,6 +268,7 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
 
     let api_handle = api::api_server(
         web_server_config,
+        secrets_config.api_secret_key,
         app_state,
         shutdown_notification.token.clone(),
     ).await;
@@ -241,6 +280,7 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
     ));
 
     tracing::info!("The initialization has been completed.");
+    let (task_tracker, error_rx) = TaskTracker::new();
 
     // Start the main loop and wait for it to gracefully end or the early
     // termination signal.

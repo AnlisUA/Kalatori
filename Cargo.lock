@@ -2165,6 +2165,7 @@ dependencies = [
  "parity-scale-codec",
  "reqwest 0.12.24",
  "rust_decimal",
+ "secrecy",
  "serde",
  "serde_json",
  "serial_test",
@@ -2196,6 +2197,7 @@ dependencies = [
  "http",
  "reqwest 0.13.1",
  "rust_decimal",
+ "secrecy",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -3835,6 +3837,7 @@ version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e891af845473308773346dc847b2c23ee78fe442e0472ac50e22a18a93d3ae5a"
 dependencies = [
+ "serde",
  "zeroize",
 ]
 

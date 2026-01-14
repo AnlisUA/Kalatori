@@ -279,7 +279,7 @@ pub trait BlockChainClient<T: ChainConfig>: Sync {
     // client initialization.
     async fn init_asset_info(
         &self,
-        asset_ids: &[T::AssetId],
+        asset_ids: &[String],
     ) -> Result<(), ClientError>;
 }
 
@@ -289,7 +289,7 @@ pub trait BlockChainClientExt<T: ChainConfig>: BlockChainClient<T> {
     #[instrument(skip(self))]
     async fn init_asset_info_impl(
         &self,
-        asset_ids: &[T::AssetId],
+        asset_ids: &[String],
     ) -> Result<(), ClientError> {
         info!(message = "Initialize asset info store");
         let mut store = self
@@ -298,11 +298,14 @@ pub trait BlockChainClientExt<T: ChainConfig>: BlockChainClient<T> {
             .write()
             .await;
 
-        for id in asset_ids {
+        for raw_id in asset_ids {
+            let id = T::AssetId::from_str(raw_id).map_err(|_e| ClientError::MetadataFetchFailed)?;
+
             let asset_info = self
-                .fetch_asset_info(id)
+                .fetch_asset_info(&id)
                 .await
                 .map_err(|_e| ClientError::MetadataFetchFailed)?;
+
             store.insert(id.clone(), asset_info);
         }
 

@@ -31,6 +31,8 @@ use tokio::net::TcpListener;
 use tower_http::trace::TraceLayer;
 use tower_http::request_id::{SetRequestIdLayer, PropagateRequestIdLayer, MakeRequestUuid};
 use tower_http::cors::{CorsLayer, Any};
+use secrecy::{SecretString, ExposeSecret};
+use zeroize::Zeroize;
 
 use kalatori_client::types::ApiError;
 use kalatori_client::utils::HmacConfig;
@@ -67,11 +69,13 @@ mod dev {
 
 pub async fn api_server<D: DaoInterface>(
     config: WebServerConfig,
+    mut api_secret_key: SecretString,
     state: AppState<D>,
     cancellation_token: tokio_util::sync::CancellationToken,
 ) -> impl std::future::Future<Output = ()> {
     let api_state = Arc::new(state);
-    let hmac_config = HmacConfig::new("secret", 6000);
+    let hmac_config = HmacConfig::new(api_secret_key.expose_secret().as_bytes().to_vec(), 6000);
+    api_secret_key.zeroize();
 
     let host = SocketAddr::new(config.host, config.port);
 

@@ -21,6 +21,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 rust_decimal = "1"
 chrono = { version = "0.4", features = ["serde"] }
 serde_json = "1"
+secrecy = "0.10"
 
 # Client
 serde = { version = "1", features = ["derive"] }

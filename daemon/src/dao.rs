@@ -284,7 +284,6 @@ async fn create_test_dao() -> DAO {
     use crate::configs::DatabaseConfig;
 
     let config = DatabaseConfig {
-        path: String::new(),
         dir: String::new(),
         temporary: true,
     };

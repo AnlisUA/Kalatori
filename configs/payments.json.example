@@ -1,6 +1,5 @@
 {
-    "recipient": "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
-    "default_asset_id": "1337",
-    "default_chain": "PolkadotAssetHub",
-    "account_lifetime_millis": 86400000
+  "recipient": {
+    "PolkadotAssetHub": "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
+  }
 }

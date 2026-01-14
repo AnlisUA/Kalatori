@@ -1,0 +1,10 @@
+{
+  "recipient": {
+    "PolkadotAssetHub": "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
+  },
+  "invoice_lifetime_millis": 6000,
+  "default_chain": "PolkadotAssetHub",
+  "default_asset_id": {
+    "PolkadotAssetHub": "1984"
+  }
+}

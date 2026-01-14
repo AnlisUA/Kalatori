@@ -37,17 +37,6 @@ copy-configs: # Copy .example configs to actual configs
 		cp "$$i" "$${i%.*}"; \
 	done
 
-copy-configs-ci: # Copy .ci configs to actual configs
-	cd configs; \
-	for i in ./*.ci; \
-	do \
-		cp "$$i" "$${i%.*}"; \
-	done
-
-copy-ah-production-config: # Copy chain.json.example_asset_hub config to actual chain.json config
-	cd configs; \
-	cp chain.json.example_asset_hub chain.json
-
 create-network: # Create docker network `kalatori-network` required for docker compose services
 	docker network create kalatori-network || true
 

@@ -557,7 +557,7 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
     #[instrument(skip(self))]
     async fn init_asset_info(
         &self,
-        asset_ids: &[u32],
+        asset_ids: &[String],
     ) -> Result<(), ClientError> {
         // Delegate to the extension trait default implementation
         BlockChainClientExt::init_asset_info_impl(self, asset_ids).await
@@ -892,7 +892,7 @@ mod tests {
             asset_info_store: AssetInfoStore::new(),
         };
 
-        let assets = vec![1337, 1984];
+        let assets = vec![1337.to_string(), 1984.to_string()];
 
         let () = client
             .init_asset_info(&assets)

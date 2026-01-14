@@ -6,6 +6,16 @@ pub enum ChainType {
     PolkadotAssetHub,
 }
 
+impl ChainType {
+    pub fn iter() -> impl Iterator<Item = ChainType> {
+        [
+            ChainType::PolkadotAssetHub,
+        ]
+            .iter()
+            .copied()
+    }
+}
+
 impl std::fmt::Display for ChainType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {

@@ -1,8 +1,7 @@
-use std::sync::Arc;
-
 use hmac::{Hmac, Mac};
 use http::Method;
 use sha2::Sha256;
+use secrecy::{SecretSlice, ExposeSecret};
 
 /// HMAC-SHA256 signature validator
 pub(crate) type HmacSha256 = Hmac<Sha256>;
@@ -14,16 +13,15 @@ pub const TIMESTAMP_HEADER: &str = "X-KALATORI-TIMESTAMP";
 #[derive(Clone)]
 pub struct HmacConfig {
     /// The secret key used for HMAC calculation
-    // TODO: make it secret box or similar
-    pub(crate) secret_key: Arc<[u8]>,
+    pub(crate) secret_key: SecretSlice<u8>,
     /// Maximum age of the request in seconds (prevents replay attacks)
     pub(crate) max_age_seconds: u64,
 }
 
 impl HmacConfig {
-    pub fn new(secret_key: impl AsRef<[u8]>, max_age_seconds: u64) -> Self {
+    pub fn new(secret_key: impl Into<SecretSlice<u8>>, max_age_seconds: u64) -> Self {
         Self {
-            secret_key: Arc::from(secret_key.as_ref()),
+            secret_key: secret_key.into(),
             max_age_seconds,
         }
     }
@@ -31,13 +29,13 @@ impl HmacConfig {
 
 /// Calculates HMAC-SHA256
 fn calculate_hmac(
-    secret_key: &[u8],
+    secret_key: &SecretSlice<u8>,
     method: &str,
     path: &str,
     query_or_body: &[u8],
     timestamp: &str,
 ) -> Hmac<Sha256> {
-    let mut mac = HmacSha256::new_from_slice(secret_key)
+    let mut mac = HmacSha256::new_from_slice(secret_key.expose_secret())
         .expect("HMAC can take key of any size");
 
     mac.update(method.as_bytes());

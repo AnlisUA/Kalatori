@@ -147,6 +147,20 @@ impl InvoiceRegistry {
         }
     }
 
+    pub async fn used_asset_ids(&self) -> HashMap<ChainType, Vec<String>> {
+        let invoices = self.invoices.read().await;
+        let mut asset_ids_map: HashMap<ChainType, Vec<String>> = HashMap::new();
+
+        for record in invoices.values() {
+            asset_ids_map
+                .entry(record.invoice.chain)
+                .or_insert_with(Vec::new)
+                .push(record.invoice.asset_id.clone());
+        }
+
+        asset_ids_map
+    }
+
     #[cfg_attr(not(test), expect(dead_code))]
     pub async fn invoices_count(&self) -> usize {
         let invoices = self.invoices.read().await;
@@ -225,6 +239,7 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
             .map_err(|_e| ChainTransferTrackerError::DaoTransactionError)?;
 
         let invoice_id = transaction.invoice_id;
+        let chain = transaction.transfer_info.chain;
 
         dao_transaction
             .create_transaction(transaction.into())
@@ -237,7 +252,10 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
             .map_err(|_e| ChainTransferTrackerError::DaoTransactionError)?;
 
         if invoice_status == InvoiceStatus::Paid {
-            let payout = Payout::from_invoice(invoice, self.config.recipient.clone());
+            let payout = Payout::from_invoice(
+                invoice,
+                self.config.recipient.get(&chain).unwrap().clone(),
+            );
 
             dao_transaction
                 .create_payout(payout)
@@ -445,9 +463,15 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
 
     pub fn ignite(
         self,
-        assets: Vec<T::AssetId>,
+        assets: &[String],
         token: CancellationToken,
     ) -> tokio::task::JoinHandle<()> {
+        // TODO: handle invalid asset IDs, though they shouldn't happen in practice
+        let assets = assets
+            .iter()
+            .filter_map(|asset_id| T::AssetId::from_str(asset_id).ok())
+            .collect();
+
         tokio::spawn(async move {
             self.perform(assets, token).await;
         })

@@ -112,6 +112,8 @@ impl<D: DaoInterface> AppState<D> {
 
         let asset_id = self.payments_config
             .default_asset_id
+            .get(&chain)
+            .unwrap()
             .clone();
 
         let asset_name = self.asset_names_map.get(&asset_id)
@@ -122,7 +124,7 @@ impl<D: DaoInterface> AppState<D> {
         let valid_till = Utc::now()
             + Duration::milliseconds(
                 self.payments_config
-                    .account_lifetime_millis as i64,
+                    .invoice_lifetime_millis as i64,
             );
 
         let payment_address = match chain {
@@ -202,7 +204,7 @@ impl<D: DaoInterface> AppState<D> {
             valid_till: Utc::now()
                 + Duration::milliseconds(
                     self.payments_config
-                        .account_lifetime_millis as i64,
+                        .invoice_lifetime_millis as i64,
                 ),
         };
 
@@ -248,9 +250,13 @@ mod tests {
 
         let config = PaymentsConfig {
             default_chain: ChainType::PolkadotAssetHub,
-            default_asset_id: "1337".to_string(),
-            account_lifetime_millis: 600_000,
-            recipient: "5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty".to_string(),
+            default_asset_id: HashMap::from([
+                (ChainType::PolkadotAssetHub, 1337.to_string()),
+            ]),
+            invoice_lifetime_millis: 600_000,
+            recipient: HashMap::from([
+                (ChainType::PolkadotAssetHub, "5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty".to_string()),
+            ]),
         };
 
         let keyring = KeyringClient::default();
@@ -406,7 +412,7 @@ mod tests {
                 asset_name: "USDC".to_string(),
                 chain: ChainType::PolkadotAssetHub,
                 payment_address: to_base58_string(account_id.0, 0),
-                valid_till: Utc::now() + Duration::milliseconds(app_state.payments_config.account_lifetime_millis as i64),
+                valid_till: Utc::now() + Duration::milliseconds(app_state.payments_config.invoice_lifetime_millis as i64),
             }
         };
 
@@ -485,7 +491,7 @@ mod tests {
                 asset_name: "USDC".to_string(),
                 chain: ChainType::PolkadotAssetHub,
                 payment_address: to_base58_string(account_id.0, 0),
-                valid_till: Utc::now() + Duration::milliseconds(app_state.payments_config.account_lifetime_millis as i64),
+                valid_till: Utc::now() + Duration::milliseconds(app_state.payments_config.invoice_lifetime_millis as i64),
             }
         };
 
