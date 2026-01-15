@@ -14,11 +14,7 @@ use crate::types::{
     Invoice,
 };
 use crate::utils::{
-    HmacConfig,
-    TIMESTAMP_HEADER,
-    SIGNATURE_HEADER,
-    hmac_from_request_parts,
-    timestamp_secs,
+    HmacConfig, SIGNATURE_HEADER, TIMESTAMP_HEADER, add_headers_to_reqwest, hmac_from_request_parts, timestamp_secs
 };
 
 pub struct KalatoriClient {
@@ -75,33 +71,6 @@ impl KalatoriClient {
         format!("{}{}", self.base_url, modified_path)
     }
 
-    fn add_headers(
-        &self,
-        request: &mut reqwest::Request,
-    ) {
-        let timestamp = timestamp_secs().to_string();
-
-        let signature = hmac_from_request_parts(
-            &self.config,
-            request.method(),
-            request.url().path(),
-            request.url().query(),
-            request
-                .body()
-                .map(|b| b.as_bytes())
-                .flatten()
-                .unwrap_or(&[]),
-            &timestamp,
-        ).unwrap();
-
-        let encoded_signature = const_hex::encode(signature.finalize().into_bytes());
-
-        let headers = request.headers_mut();
-
-        headers.insert(TIMESTAMP_HEADER, HeaderValue::from_str(&timestamp).unwrap());
-        headers.insert(SIGNATURE_HEADER, HeaderValue::from_str(&encoded_signature).unwrap());
-    }
-
     fn build_request(
         &self,
         method: KalatoriHttpMethod,
@@ -115,7 +84,7 @@ impl KalatoriClient {
             KalatoriHttpMethod::Post => self.client.post(url).json(&payload).build()?,
         };
 
-        self.add_headers(&mut request);
+        add_headers_to_reqwest(&self.config, &mut request);
 
         Ok(request)
     }

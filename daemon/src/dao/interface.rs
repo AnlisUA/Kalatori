@@ -17,12 +17,13 @@ use crate::types::{
     GeneralTransactionId,
     Invoice,
     InvoiceStatus,
-    InvoiceWithIncomingAmount,
+    InvoiceWithReceivedAmount,
     Payout,
     PayoutStatus,
     RetryMeta,
     Transaction,
     UpdateInvoiceData,
+    WebhookEvent,
 };
 
 use super::invoice::{
@@ -36,6 +37,10 @@ use super::payout::{
 use super::transaction::{
     DaoTransactionError,
     DaoTransactionMethods,
+};
+use super::webhook_event::{
+    DaoWebhookEventError,
+    DaoWebhookEventMethods,
 };
 
 use super::{
@@ -90,7 +95,7 @@ pub trait DaoInterface: Send + Sync + 'static {
     /// their incoming amounts (sum amounts of related Incoming transaction).
     async fn get_active_invoices_with_amounts(
         &self
-    ) -> Result<Vec<InvoiceWithIncomingAmount>, DaoInvoiceError>;
+    ) -> Result<Vec<InvoiceWithReceivedAmount>, DaoInvoiceError>;
 
     /// Update an invoice's status.
     async fn update_invoice_status(
@@ -174,6 +179,23 @@ pub trait DaoInterface: Send + Sync + 'static {
         retry_meta: RetryMeta,
         is_retriable: bool,
     ) -> Result<Payout, DaoPayoutError>;
+
+    // === Webhook Event Methods ===
+
+    async fn create_webhook_event(
+        &self,
+        event: WebhookEvent,
+    ) -> Result<WebhookEvent, DaoWebhookEventError>;
+
+    async fn get_webhook_events_to_send(
+        &self,
+        limit: u32,
+    ) -> Result<Vec<WebhookEvent>, DaoWebhookEventError>;
+
+    async fn mark_webhook_event_as_sent(
+        &self,
+        event_id: Uuid,
+    ) -> Result<WebhookEvent, DaoWebhookEventError>;
 }
 
 /// Interface for database transaction operations.
@@ -271,6 +293,23 @@ pub trait DaoTransactionInterface {
         is_retriable: bool,
     ) -> Result<Payout, DaoPayoutError>;
 
+    // === Webhook Event Methods ===
+
+    async fn create_webhook_event(
+        &self,
+        event: WebhookEvent,
+    ) -> Result<WebhookEvent, DaoWebhookEventError>;
+
+    async fn get_webhook_events_to_send(
+        &self,
+        limit: u32,
+    ) -> Result<Vec<WebhookEvent>, DaoWebhookEventError>;
+
+    async fn mark_webhook_event_as_sent(
+        &self,
+        event_id: Uuid,
+    ) -> Result<WebhookEvent, DaoWebhookEventError>;
+
     // === Transaction Control ===
 
     /// Commit the transaction, persisting all changes.
@@ -307,7 +346,7 @@ impl DaoInterface for DAO {
 
     async fn get_active_invoices_with_amounts(
         &self
-    ) -> Result<Vec<InvoiceWithIncomingAmount>, DaoInvoiceError> {
+    ) -> Result<Vec<InvoiceWithReceivedAmount>, DaoInvoiceError> {
         DaoInvoiceMethods::get_active_invoices_with_amounts(self).await
     }
 
@@ -418,6 +457,27 @@ impl DaoInterface for DAO {
             is_retriable,
         )
         .await
+    }
+
+    async fn create_webhook_event(
+        &self,
+        event: WebhookEvent,
+    ) -> Result<WebhookEvent, DaoWebhookEventError> {
+        DaoWebhookEventMethods::create_webhook_event(self, event).await
+    }
+
+    async fn get_webhook_events_to_send(
+        &self,
+        limit: u32,
+    ) -> Result<Vec<WebhookEvent>, DaoWebhookEventError> {
+        DaoWebhookEventMethods::get_webhook_events_to_send(self, limit).await
+    }
+
+    async fn mark_webhook_event_as_sent(
+        &self,
+        event_id: Uuid,
+    ) -> Result<WebhookEvent, DaoWebhookEventError> {
+        DaoWebhookEventMethods::mark_webhook_event_as_sent(self, event_id).await
     }
 }
 
@@ -547,6 +607,27 @@ impl DaoTransactionInterface for DaoTransaction {
             is_retriable,
         )
         .await
+    }
+
+    async fn create_webhook_event(
+        &self,
+        event: WebhookEvent,
+    ) -> Result<WebhookEvent, DaoWebhookEventError> {
+        DaoWebhookEventMethods::create_webhook_event(self, event).await
+    }
+
+    async fn get_webhook_events_to_send(
+        &self,
+        limit: u32,
+    ) -> Result<Vec<WebhookEvent>, DaoWebhookEventError> {
+        DaoWebhookEventMethods::get_webhook_events_to_send(self, limit).await
+    }
+
+    async fn mark_webhook_event_as_sent(
+        &self,
+        event_id: Uuid,
+    ) -> Result<WebhookEvent, DaoWebhookEventError> {
+        DaoWebhookEventMethods::mark_webhook_event_as_sent(self, event_id).await
     }
 
     async fn commit(self) -> DaoResult<()> {

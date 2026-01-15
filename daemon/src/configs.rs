@@ -68,6 +68,15 @@ pub fn database_config_with_prefix(
     config_from_file_or_env(&config_path, &env_prefix)
 }
 
+pub fn shop_config_with_prefix(
+    config_dir_path: &str,
+    prefix: &str,
+) -> ShopConfig {
+    let config_path = format_config_path(config_dir_path, "shop.json");
+    let env_prefix = format_prefix(prefix, "SHOP");
+    config_from_file_or_env(&config_path, &env_prefix)
+}
+
 // #[cfg(test)]
 // mod tests {
 //     use super::*;

@@ -16,6 +16,7 @@ mod invoice;
 mod payout;
 mod refund;
 mod transaction;
+mod webhook_event;
 
 // Re-export commonly used types for convenience
 pub use common::*;
@@ -23,3 +24,4 @@ pub use invoice::*;
 pub use payout::*;
 pub use refund::*;
 pub use transaction::*;
+pub use webhook_event::*;

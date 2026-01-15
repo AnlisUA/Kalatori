@@ -1,5 +1,5 @@
 use hmac::{Hmac, Mac};
-use http::Method;
+use http::{Method, HeaderValue};
 use sha2::Sha256;
 use secrecy::{SecretSlice, ExposeSecret};
 
@@ -100,4 +100,31 @@ pub(crate) fn timestamp_secs() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .expect("System time before UNIX epoch")
         .as_secs()
+}
+
+pub fn add_headers_to_reqwest(
+    config: &HmacConfig,
+    request: &mut reqwest::Request,
+) {
+    let timestamp = timestamp_secs().to_string();
+
+    let signature = hmac_from_request_parts(
+        config,
+        request.method(),
+        request.url().path(),
+        request.url().query(),
+        request
+            .body()
+            .map(|b| b.as_bytes())
+            .flatten()
+            .unwrap_or(&[]),
+        &timestamp,
+    ).unwrap();
+
+    let encoded_signature = const_hex::encode(signature.finalize().into_bytes());
+
+    let headers = request.headers_mut();
+
+    headers.insert(TIMESTAMP_HEADER, HeaderValue::from_str(&timestamp).unwrap());
+    headers.insert(SIGNATURE_HEADER, HeaderValue::from_str(&encoded_signature).unwrap());
 }

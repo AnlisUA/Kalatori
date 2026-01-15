@@ -1,70 +1,33 @@
-use std::pin::Pin;
 use std::time::Duration;
 
-use futures::stream::{
-    FuturesUnordered,
-    StreamExt,
-};
+use kalatori_client::types::KalatoriEventExt;
 use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
+use rust_decimal::Decimal;
 
 use crate::chain::InvoiceRegistry;
+use crate::configs::PaymentsConfig;
 use crate::dao::DaoInterface;
-use crate::types::Invoice;
+use crate::types::{Invoice, InvoiceEventType};
 
 const EXPIRATION_CHECK_INTERVAL_MILLIS: u64 = 1000;
 
-async fn send_webhook(
-    client: reqwest::Client,
-    invoice: Invoice,
-    callback_url: &str,
-) {
-    if callback_url.is_empty() {
-        tracing::warn!(
-            invoice_id = %invoice.id,
-            error.category = "expiration_detector",
-            error.operation = "send_expiration_webhook",
-            "Invoice has no callback URL, skipping expiration webhook"
-        );
-
-        return;
-    }
-
-    if let Err(e) = client
-        .get(callback_url)
-        .send()
-        .await
-    {
-        tracing::warn!(
-            invoice_id = %invoice.id,
-            error.category = "expiration_detector",
-            error.operation = "send_expiration_webhook",
-            error.source = ?e,
-            "Failed to send expiration webhook for invoice"
-        );
-    } else {
-        tracing::info!(
-            invoice_id = %invoice.id,
-            "Sent expiration webhook for invoice"
-        );
-    }
-}
-
 pub struct ExpirationDetector<D: DaoInterface + 'static> {
-    client: reqwest::Client,
     dao: D,
     registry: InvoiceRegistry,
+    config: PaymentsConfig,
 }
 
 impl<D: DaoInterface + 'static> ExpirationDetector<D> {
     pub fn new(
         dao: D,
         registry: InvoiceRegistry,
+        config: PaymentsConfig,
     ) -> Self {
         ExpirationDetector {
-            client: reqwest::Client::new(),
             dao,
             registry,
+            config,
         }
     }
 
@@ -84,32 +47,19 @@ impl<D: DaoInterface + 'static> ExpirationDetector<D> {
             .unwrap_or_default()
     }
 
-    fn build_future(
-        &self,
-        invoice: Invoice,
-    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
-        let client = self.client.clone();
-        // TODO: get real callback URL from config
-        Box::pin(send_webhook(client, invoice, ""))
-    }
-
     // 1. Update statuses in the database for expired and partially paid expired
     //    invoices
     // 2. Notify tracker, it should remove them from tracking
     // 3. TODO: Check balances one last time (ensure that we didn't miss any
     //    transfers)
     // 4. Schedule webhooks for expired invoices
-    async fn handle_expirations(&self) -> Vec<Pin<Box<dyn Future<Output = ()> + Send + 'static>>> {
+    async fn handle_expirations(&self) {
         let expired_invoices = self.fetch_expired_invoices().await;
 
         let expired_invoices_ids: Vec<_> = expired_invoices
             .iter()
             .map(|inv| inv.id)
             .collect();
-
-        // TODO: send notification to remove expired invoices to tracker after it's
-        // refactoring. For now it's not necessary cause tracker will check if
-        // invoice is expired on each balance check.
 
         if !expired_invoices_ids.is_empty() {
             tracing::info!(
@@ -129,10 +79,30 @@ impl<D: DaoInterface + 'static> ExpirationDetector<D> {
         // using transactional outbox pattern. But for now, as we don't have time for
         // that, we'll just return futures which actually send webhooks for the
         // updated invoices.
-        expired_invoices
-            .into_iter()
-            .map(|invoice| self.build_future(invoice))
-            .collect()
+
+        for invoice in expired_invoices {
+            let invoice_id = invoice.id;
+
+            let event = invoice
+                // TODO: amount should be set properly when we have partially paid invoices
+                .with_amount(Decimal::ZERO)
+                .into_public_invoice(&self.config.payment_url_base)
+                .build_event(InvoiceEventType::Expired)
+                .into();
+
+            // TODO: handle errors properly, maybe set back invoice status if webhook creation fails?
+            // Have to think about it. We don't really want to use transaction here cause we'll make
+            // relatively slow requests to RPC endpoints.
+            if let Err(e) = self.dao.create_webhook_event(event).await {
+                tracing::warn!(
+                    invoice_id = %invoice_id,
+                    error.category = "expiration_detector",
+                    error.operation = "handle_expirations",
+                    error.source = ?e,
+                    "Failed to create expiration webhook event for invoice"
+                );
+            };
+        }
     }
 
     async fn perform(
@@ -143,37 +113,17 @@ impl<D: DaoInterface + 'static> ExpirationDetector<D> {
             EXPIRATION_CHECK_INTERVAL_MILLIS,
         ));
 
-        let mut shutdown_expected = false;
-        let mut futures_set = FuturesUnordered::new();
-
         loop {
             tokio::select! {
-                _ = interval.tick(), if !shutdown_expected => {
-                    futures_set.extend(self.handle_expirations().await);
-                }
-                _ = futures_set.next(), if !futures_set.is_empty() => {
-                    if futures_set.is_empty() && shutdown_expected {
-                        tracing::info!(
-                            "All pending tasks finished, expiration detector is shutting down"
-                        );
-
-                        break;
-                    }
+                _ = interval.tick() => {
+                    self.handle_expirations().await;
                 }
                 () = token.cancelled() => {
                     tracing::info!(
                         "Expiration detector received shutdown signal, finishing pending tasks before shutting down"
                     );
 
-                    shutdown_expected = true;
-
-                    if futures_set.is_empty() {
-                        tracing::info!(
-                            "No pending tasks, expiration detector is shutting down"
-                        );
-
-                        break;
-                    }
+                    break
                 }
             }
         }

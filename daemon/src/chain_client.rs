@@ -85,6 +85,7 @@ pub struct GeneralChainTransfer {
     pub block_number: Option<u32>,
     pub position_in_block: Option<u32>,
     pub transaction_hash: Option<String>,
+    // TODO: use DateTime<Utc> for consistency
     pub timestamp: u64, // milliseconds since epoch
 }
 

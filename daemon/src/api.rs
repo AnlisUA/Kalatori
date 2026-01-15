@@ -38,10 +38,9 @@ use kalatori_client::types::ApiError;
 use kalatori_client::utils::HmacConfig;
 
 use crate::configs::WebServerConfig;
-use crate::dao::DaoInterface;
 use crate::state::AppState;
 
-pub type ApiState<D> = Arc<AppState<D>>;
+pub type ApiState = Arc<AppState>;
 
 const REQUEST_ID_HEADER: HeaderName = HeaderName::from_static("x-request-id");
 
@@ -62,20 +61,18 @@ pub trait ApiErrorExt: std::error::Error {
 
 #[cfg(not(feature = "dev_api"))]
 mod dev {
-    pub fn routes<D: super::DaoInterface>() -> axum::Router<super::ApiState<D>> {
+    pub fn routes() -> axum::Router<super::ApiState> {
         axum::Router::new()
     }
 }
 
-pub async fn api_server<D: DaoInterface>(
+pub async fn api_server(
     config: WebServerConfig,
-    mut api_secret_key: SecretString,
-    state: AppState<D>,
+    hmac_config: HmacConfig,
+    state: AppState,
     cancellation_token: tokio_util::sync::CancellationToken,
 ) -> impl std::future::Future<Output = ()> {
     let api_state = Arc::new(state);
-    let hmac_config = HmacConfig::new(api_secret_key.expose_secret().as_bytes().to_vec(), 6000);
-    api_secret_key.zeroize();
 
     let host = SocketAddr::new(config.host, config.port);
 

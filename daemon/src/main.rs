@@ -8,14 +8,18 @@ mod expiration_detector;
 mod state;
 mod types;
 mod utils;
+mod webhook_sender;
 
 use std::collections::HashMap;
 use std::process::ExitCode;
 
 use kalatori_client::types::ChainType;
+use kalatori_client::utils::HmacConfig;
 use tokio::runtime::Runtime;
 use tokio_util::sync::CancellationToken;
 use tracing::Level;
+use secrecy::ExposeSecret;
+use zeroize::Zeroize;
 
 use chain::{
     InvoiceRegistry,
@@ -33,6 +37,7 @@ use configs::{
     payments_config_with_prefix,
     secrets_config_with_prefix,
     web_server_config_with_prefix,
+    shop_config_with_prefix,
     PaymentsConfig,
     ChainsConfig,
 };
@@ -187,11 +192,19 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
 
     let configs_path = std::env::var(format!("{env_prefix}_CONFIG_DIR_PATH")).unwrap_or_default();
 
-    let secrets_config = secrets_config_with_prefix(&configs_path, &env_prefix);
+    let mut secrets_config = secrets_config_with_prefix(&configs_path, &env_prefix);
     let mut chains_config = chains_config_with_prefix(&configs_path, &env_prefix);
     let mut payments_config = payments_config_with_prefix(&configs_path, &env_prefix);
     let web_server_config = web_server_config_with_prefix(&configs_path, &env_prefix);
     let database_config = database_config_with_prefix(&configs_path, &env_prefix);
+    let shop_config = shop_config_with_prefix(&configs_path, &env_prefix);
+
+    let hmac_config = HmacConfig::new(
+        secrets_config.api_secret_key.expose_secret().as_bytes().to_vec(),
+        shop_config.signature_max_age_secs,
+    );
+
+    secrets_config.api_secret_key.zeroize();
 
     // Initialize DAO for SQLite database operations
     let dao = DAO::new(database_config.clone())
@@ -233,7 +246,11 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
     // keep graceful shutdown working.
     let (keyring_handle, keyring_client) = keyring.ignite();
 
-    let expiration_detector = ExpirationDetector::new(dao.clone(), invoice_registry.clone());
+    let expiration_detector = ExpirationDetector::new(
+        dao.clone(),
+        invoice_registry.clone(),
+        payments_config.clone(),
+    );
 
     let expiration_detector_handle =
         expiration_detector.ignite(shutdown_notification.token.clone());
@@ -258,6 +275,14 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
 
     let transfer_executor_handle = transfer_executor.ignite(shutdown_notification.token.clone());
 
+    let webhook_sender = webhook_sender::WebhookSender::new(
+        dao.clone(),
+        shop_config.invoices_webhook_url,
+        hmac_config.clone(),
+    );
+
+    let webhook_sender_handle = webhook_sender.ignite(shutdown_notification.token.clone());
+
     let app_state = AppState::new(
         keyring_client,
         dao,
@@ -268,7 +293,7 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
 
     let api_handle = api::api_server(
         web_server_config,
-        secrets_config.api_secret_key,
+        hmac_config,
         app_state,
         shutdown_notification.token.clone(),
     ).await;
@@ -295,6 +320,7 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
                 _transfer_executor_result,
                 _expiration_detector_result,
                 _transfers_tracker_result,
+                _webhook_sender_result,
                 _api_server_result,
             ) = tokio::join!(
                 shutdown_listener,
@@ -302,6 +328,7 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
                 transfer_executor_handle,
                 expiration_detector_handle,
                 transfers_tracker_handle,
+                webhook_sender_handle,
                 api_handle,
             );
 

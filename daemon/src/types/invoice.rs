@@ -20,6 +20,7 @@ use super::ChainType;
 pub use kalatori_client::types::{
     InvoiceCart,
     InvoiceStatus,
+    Invoice as PublicInvoice,
 };
 
 // TODO: the main difference between Invoice and PublicInvoice (from kalatori_client crate)
@@ -43,10 +44,41 @@ pub struct Invoice {
     pub updated_at: DateTime<Utc>,
 }
 
+impl Invoice {
+    pub fn with_amount(self, total_received_amount: Decimal) -> InvoiceWithReceivedAmount {
+        InvoiceWithReceivedAmount {
+            invoice: self,
+            total_received_amount,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct InvoiceWithIncomingAmount {
+pub struct InvoiceWithReceivedAmount {
     pub invoice: Invoice,
     pub total_received_amount: Decimal,
+}
+
+impl InvoiceWithReceivedAmount {
+    pub fn into_public_invoice(self, payment_url_base: &str) -> PublicInvoice {
+        PublicInvoice {
+            id: self.invoice.id,
+            order_id: self.invoice.order_id,
+            asset_id: self.invoice.asset_id,
+            asset_name: self.invoice.asset_name,
+            chain: self.invoice.chain,
+            amount: self.invoice.amount,
+            payment_address: self.invoice.payment_address,
+            status: self.invoice.status,
+            payment_url: format!("{}/public?invoice_id={}", payment_url_base.trim_end_matches('/'), self.invoice.id),
+            redirect_url: self.invoice.redirect_url,
+            cart: self.invoice.cart,
+            valid_till: self.invoice.valid_till,
+            created_at: self.invoice.created_at,
+            updated_at: self.invoice.updated_at,
+            total_received_amount: self.total_received_amount,
+        }
+    }
 }
 
 #[derive(FromRow)]

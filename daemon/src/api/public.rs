@@ -12,8 +12,6 @@ use axum::response::{
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::dao::DaoInterface;
-
 use super::ApiState;
 
 #[derive(Debug, PartialEq, Eq, Deserialize)]
@@ -33,8 +31,8 @@ async fn index(Query(params): Query<IndexParams>) -> Html<String> {
     Html(html)
 }
 
-async fn invoice<D: DaoInterface>(
-    ExtractState(state): ExtractState<ApiState<D>>,
+async fn invoice(
+    ExtractState(state): ExtractState<ApiState>,
     Query(payload): Query<Params>,
 ) -> Response {
     let invoice = state
@@ -60,7 +58,7 @@ async fn invoice<D: DaoInterface>(
     }
 }
 
-pub fn routes<D: DaoInterface>() -> axum::Router<ApiState<D>> {
+pub fn routes() -> axum::Router<ApiState> {
     axum::Router::new()
         .route("/", axum::routing::get(index))
         .route("/invoice", axum::routing::get(invoice))

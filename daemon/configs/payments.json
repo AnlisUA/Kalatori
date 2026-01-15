@@ -6,5 +6,6 @@
   "default_chain": "PolkadotAssetHub",
   "default_asset_id": {
     "PolkadotAssetHub": "1984"
-  }
+  },
+  "payment_url_base": "https://pay.example.com"
 }

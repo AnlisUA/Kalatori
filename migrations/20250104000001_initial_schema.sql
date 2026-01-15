@@ -152,6 +152,15 @@ CREATE TABLE IF NOT EXISTS refunds (
     FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS webhook_events (
+    id BLOB PRIMARY KEY NOT NULL,  -- UUID v4
+    entity_id BLOB NOT NULL,  -- References invoices.id, payouts.id, refunds.id, transactions.id
+    payload TEXT NOT NULL,  -- JSONB payload
+    sent INTEGER NOT NULL DEFAULT 0,  -- 0 = false, 1 = true
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Indexes for common query patterns
 
 -- Invoice queries: by status, by time, combined filters
@@ -178,6 +187,9 @@ CREATE INDEX IF NOT EXISTS idx_payouts_created_at ON payouts(created_at);
 CREATE INDEX IF NOT EXISTS idx_refunds_invoice_id ON refunds(invoice_id);
 CREATE INDEX IF NOT EXISTS idx_refunds_status ON refunds(status);
 CREATE INDEX IF NOT EXISTS idx_refunds_created_at ON refunds(created_at);
+
+-- Webhook events queries
+CREATE INDEX IF NOT EXISTS idx_webhook_events_sent_entity_created_id ON webhook_events(sent, entity_id, created_at, id);
 
 -- ============================================================================
 -- Status Transition Triggers

@@ -19,7 +19,9 @@ use crate::chain::{
 use crate::chain_client::KeyringClient;
 use crate::configs::PaymentsConfig;
 use crate::dao::{
+    DAO,
     DaoInterface,
+    DaoTransactionInterface,
     DaoInvoiceError,
     DaoTransactionError,
 };
@@ -27,12 +29,14 @@ use crate::types::{
     ChainType,
     CreateInvoiceData,
     Invoice,
-    InvoiceWithIncomingAmount,
+    InvoiceWithReceivedAmount,
+    InvoiceEventType,
     Transaction,
     UpdateInvoiceData,
+    KalatoriEventExt,
 };
 
-pub struct AppState<D: DaoInterface> {
+pub struct AppState<D: DaoInterface = DAO> {
     keyring: KeyringClient,
     dao: D,
     registry: InvoiceRegistry,
@@ -57,35 +61,11 @@ impl<D: DaoInterface> AppState<D> {
         }
     }
 
-    fn build_payment_url(&self, invoice_id: Uuid) -> String {
-        format!(
-            "{}/public?{}",
-            // self.payments_config.payment_base_url,
-            "localhost:16726",
-            invoice_id,
-        )
-    }
-
-    pub fn build_public_invoice(&self, invoice: InvoiceWithIncomingAmount) -> PublicInvoice {
-        let InvoiceWithIncomingAmount { invoice, total_received_amount: incoming_amount } = invoice;
-
-        PublicInvoice {
-            id: invoice.id,
-            order_id: invoice.order_id,
-            amount: invoice.amount,
-            asset_id: invoice.asset_id,
-            asset_name: invoice.asset_name,
-            chain: invoice.chain,
-            payment_address: invoice.payment_address,
-            payment_url: self.build_payment_url(invoice.id),
-            status: invoice.status,
-            cart: invoice.cart,
-            total_received_amount: incoming_amount,
-            redirect_url: invoice.redirect_url,
-            valid_till: invoice.valid_till,
-            created_at: invoice.created_at,
-            updated_at: invoice.updated_at,
-        }
+    pub fn invoice_to_public_invoice(
+        &self,
+        invoice: InvoiceWithReceivedAmount,
+    ) -> PublicInvoice {
+        invoice.into_public_invoice(&self.payments_config.payment_url_base)
     }
 
     pub async fn get_invoice(
@@ -163,10 +143,21 @@ impl<D: DaoInterface> AppState<D> {
             valid_till,
         };
 
-        let invoice = self
-            .dao
+        // TODO: handle errors properly
+        let dao_transaction = self.dao
+            .begin_transaction()
+            .await
+            .map_err(|_| DaoInvoiceError::DatabaseError)?;
+
+        let invoice = dao_transaction
             .create_invoice(data)
             .await?;
+
+        let invoice_with_amount = invoice.clone().with_amount(Decimal::ZERO);
+        let event = self.invoice_to_public_invoice(invoice_with_amount).build_event(InvoiceEventType::Created).into();
+        dao_transaction.create_webhook_event(event).await.map_err(|_| DaoInvoiceError::DatabaseError)?;
+
+        dao_transaction.commit().await.map_err(|_| DaoInvoiceError::DatabaseError)?;
 
         tracing::info!(
             invoice_id = %invoice.id,
@@ -189,14 +180,6 @@ impl<D: DaoInterface> AppState<D> {
         &self,
         params: UpdateInvoiceParams,
     ) -> Result<Invoice, DaoInvoiceError> {
-        let invoice = self
-            .dao
-            .get_invoice_by_id(params.invoice_id)
-            .await?
-            .ok_or_else(|| DaoInvoiceError::NotFound {
-                invoice_id: params.invoice_id,
-            })?;
-
         let data = UpdateInvoiceData {
             invoice_id: params.invoice_id,
             amount: params.amount,
@@ -208,16 +191,54 @@ impl<D: DaoInterface> AppState<D> {
                 ),
         };
 
-        self.dao.update_invoice_data(data).await
+        let dao_transaction = self.dao
+            .begin_transaction()
+            .await
+            .map_err(|_| DaoInvoiceError::DatabaseError)?;
+
+        let result = self.dao.update_invoice_data(data).await?;
+        let invoice_with_amount = result.clone().with_amount(Decimal::ZERO);
+        let event = self.invoice_to_public_invoice(invoice_with_amount).build_event(InvoiceEventType::Updated).into();
+
+        dao_transaction.create_webhook_event(event).await.map_err(|_| DaoInvoiceError::DatabaseError)?;
+        dao_transaction.commit().await.map_err(|_| DaoInvoiceError::DatabaseError)?;
+
+        tracing::info!(
+            invoice_id = %result.id,
+            "Invoice has been updated",
+        );
+
+        Ok(result)
     }
 
     pub async fn cancel_invoice_admin(
         &self,
         invoice_id: Uuid,
     ) -> Result<Invoice, DaoInvoiceError> {
-        self.dao
-            .update_invoice_status(invoice_id, InvoiceStatus::AdminCanceled)
+        // TODO: if invoice has been partially paid, we need to also handle refunds
+        let dao_transaction = self.dao
+            .begin_transaction()
             .await
+            .map_err(|_| DaoInvoiceError::DatabaseError)?;
+
+        let result = self.dao
+            .update_invoice_status(invoice_id, InvoiceStatus::AdminCanceled)
+            .await?;
+
+        let invoice_with_amount = result.clone().with_amount(Decimal::ZERO);
+        let event = self.invoice_to_public_invoice(invoice_with_amount).build_event(InvoiceEventType::AdminCanceled).into();
+
+        dao_transaction.create_webhook_event(event).await.map_err(|_| DaoInvoiceError::DatabaseError)?;
+        dao_transaction.commit().await.map_err(|_| DaoInvoiceError::DatabaseError)?;
+
+        self.registry.remove_invoice(&invoice_id).await;
+
+        tracing::info!(
+            invoice_id = %result.id,
+            "Invoice has been canceled by admin",
+        );
+
+        Ok(result)
     }
 
     pub async fn get_invoice_transactions(
@@ -257,6 +278,7 @@ mod tests {
             recipient: HashMap::from([
                 (ChainType::PolkadotAssetHub, "5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty".to_string()),
             ]),
+            payment_url_base: "https://payments.example.com".to_string(),
         };
 
         let keyring = KeyringClient::default();

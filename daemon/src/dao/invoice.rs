@@ -11,7 +11,7 @@ use crate::types::{
     Invoice,
     InvoiceRow,
     InvoiceStatus,
-    InvoiceWithIncomingAmount,
+    InvoiceWithReceivedAmount,
     UpdateInvoiceData,
 };
 
@@ -57,6 +57,7 @@ pub enum DaoInvoiceError {
 }
 
 impl crate::api::ApiErrorExt for DaoInvoiceError {
+    // TODO: create enum for categories and codes
     fn category(&self) -> &str {
         match self {
             DaoInvoiceError::NotFound { .. } => "ENTITY_NOT_FOUND",
@@ -134,7 +135,7 @@ struct InvoiceWithAmountsRow {
     amounts: sqlx::types::Json<Vec<String>>,
 }
 
-impl From<InvoiceWithAmountsRow> for InvoiceWithIncomingAmount {
+impl From<InvoiceWithAmountsRow> for InvoiceWithReceivedAmount {
     fn from(row: InvoiceWithAmountsRow) -> Self {
         let incoming_amount = row
             .amounts
@@ -198,7 +199,7 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
 
                         if message.contains("UNIQUE") && message.contains("order_id") {
                             return DaoInvoiceError::DuplicateOrderId {
-                                order_id: invoice.order_id.clone(),
+                                order_id: invoice.order_id,
                             };
                         }
 
@@ -241,7 +242,7 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
     /// Returns invoices with status 'Waiting' or '`PartiallyPaid`'
     async fn get_active_invoices_with_amounts(
         &self
-    ) -> Result<Vec<InvoiceWithIncomingAmount>, DaoInvoiceError> {
+    ) -> Result<Vec<InvoiceWithReceivedAmount>, DaoInvoiceError> {
         let query = sqlx::query_as::<_, InvoiceWithAmountsRow>(
             "SELECT
                 i.*,

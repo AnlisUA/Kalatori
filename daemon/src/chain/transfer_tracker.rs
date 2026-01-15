@@ -3,6 +3,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use futures::StreamExt;
+use kalatori_client::types::{InvoiceEventType, KalatoriEventExt};
 use rust_decimal::Decimal;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
@@ -26,7 +27,7 @@ use crate::types::{
     IncomingTransaction,
     Invoice,
     InvoiceStatus,
-    InvoiceWithIncomingAmount,
+    InvoiceWithReceivedAmount,
     Payout,
 };
 
@@ -50,8 +51,8 @@ impl InvoiceRegistryRecord {
     }
 }
 
-impl From<InvoiceWithIncomingAmount> for InvoiceRegistryRecord {
-    fn from(value: InvoiceWithIncomingAmount) -> Self {
+impl From<InvoiceWithReceivedAmount> for InvoiceRegistryRecord {
+    fn from(value: InvoiceWithReceivedAmount) -> Self {
         InvoiceRegistryRecord {
             invoice: value.invoice,
             filled_amount: value.total_received_amount,
@@ -231,6 +232,7 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
         &self,
         transaction: IncomingTransaction,
         invoice_status: InvoiceStatus,
+        total_received_amount: Decimal,
     ) -> Result<(), ChainTransferTrackerError> {
         let dao_transaction = self
             .dao
@@ -251,6 +253,11 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
             .await
             .map_err(|_e| ChainTransferTrackerError::DaoTransactionError)?;
 
+        let public_invoice = invoice
+            .clone()
+            .with_amount(total_received_amount)
+            .into_public_invoice(&self.config.payment_url_base);
+
         if invoice_status == InvoiceStatus::Paid {
             let payout = Payout::from_invoice(
                 invoice,
@@ -259,6 +266,24 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
 
             dao_transaction
                 .create_payout(payout)
+                .await
+                .map_err(|_e| ChainTransferTrackerError::DaoTransactionError)?;
+
+            let event = public_invoice
+                .build_event(InvoiceEventType::Paid)
+                .into();
+
+            dao_transaction
+                .create_webhook_event(event)
+                .await
+                .map_err(|_e| ChainTransferTrackerError::DaoTransactionError)?;
+        } else if invoice_status == InvoiceStatus::PartiallyPaid {
+            let event = public_invoice
+                .build_event(InvoiceEventType::PartiallyPaid)
+                .into();
+
+            dao_transaction
+                .create_webhook_event(event)
                 .await
                 .map_err(|_e| ChainTransferTrackerError::DaoTransactionError)?;
         }
@@ -319,7 +344,7 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
             };
 
             match self
-                .store_transaction(transaction, updated_status)
+                .store_transaction(transaction, updated_status, filled_amount)
                 .await
             {
                 Ok(()) if updated_status == InvoiceStatus::Paid => {

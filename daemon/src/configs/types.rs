@@ -17,6 +17,7 @@ use super::consts::{
     DEFAULT_HOST,
     DEFAULT_POLKADOT_ASSET_HUB_ENDPOINTS,
     DEFAULT_PORT,
+    DEFAULT_SIGNATURE_MAX_AGE_SECS,
 };
 
 #[derive(Deserialize)]
@@ -130,6 +131,8 @@ pub struct PaymentsConfig {
     /// Default asset IDs per chain. Can be left empty to use built-in defaults.
     #[serde(default)]
     pub default_asset_id: HashMap<ChainType, String>,
+    /// Base URL for payment links, e.g. "https://shop.example.com". Should be an address of Kalatori instance.
+    pub payment_url_base: String,
 }
 
 impl PaymentsConfig {
@@ -197,4 +200,15 @@ pub struct DatabaseConfig {
     pub dir: String,
     #[serde(default)]
     pub temporary: bool,
+}
+
+fn default_signature_max_age_secs() -> u64 {
+    DEFAULT_SIGNATURE_MAX_AGE_SECS
+}
+
+#[derive(Deserialize, Clone)]
+pub struct ShopConfig {
+    pub invoices_webhook_url: String,
+    #[serde(default = "default_signature_max_age_secs")]
+    pub signature_max_age_secs: u64,
 }

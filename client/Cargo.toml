@@ -26,6 +26,7 @@ secrecy = "0.10"
 # Client
 serde = { version = "1", features = ["derive"] }
 http = "1"
+# Please keep reqwest version in sync with the one in daemon/Cargo.toml
 reqwest = { version = "0.13", features = ["json", "query"], optional = true }
 
 # Middlewares
@@ -45,3 +46,7 @@ sqlx-types = ["sqlx"]
 
 [lints]
 workspace = true
+
+[[examples]]
+name = "webhook"
+required-features = ["axum-middleware"]
