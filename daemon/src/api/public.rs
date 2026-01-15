@@ -41,9 +41,10 @@ async fn invoice(
 
     match invoice {
         // If the invoice exists and is active, return it
-        Ok(Some(invoice)) if invoice.status.is_active() => {
+        Ok(Some(invoice)) if invoice.invoice.status.is_active() => {
             (StatusCode::OK, Json(invoice)).into_response()
         },
+        // TODO: update errors
         // If the invoice does not exist or is not active, return 404
         Ok(Some(_) | None) => (
             StatusCode::NOT_FOUND,

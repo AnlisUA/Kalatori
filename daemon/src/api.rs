@@ -31,8 +31,6 @@ use tokio::net::TcpListener;
 use tower_http::trace::TraceLayer;
 use tower_http::request_id::{SetRequestIdLayer, PropagateRequestIdLayer, MakeRequestUuid};
 use tower_http::cors::{CorsLayer, Any};
-use secrecy::{SecretString, ExposeSecret};
-use zeroize::Zeroize;
 
 use kalatori_client::types::ApiError;
 use kalatori_client::utils::HmacConfig;

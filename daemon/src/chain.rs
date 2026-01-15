@@ -5,6 +5,5 @@ pub mod utils;
 pub use executor::TransfersExecutor;
 pub use transfer_tracker::{
     InvoiceRegistry,
-    InvoiceRegistryRecord,
     TransfersTracker,
 };

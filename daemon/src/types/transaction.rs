@@ -11,49 +11,22 @@ use serde::{
     Serialize,
 };
 use sqlx::types::Json;
-use sqlx::{
-    FromRow,
-    Type,
-};
+use sqlx::FromRow;
 use uuid::Uuid;
 
 use crate::chain_client::GeneralChainTransfer;
 
+pub use kalatori_client::types::{
+    TransactionType,
+    TransactionStatus,
+    Transaction as PublicTransaction,
+};
+
 use super::common::{
     TransferInfo,
     TransferInfoRow,
+    ChainType,
 };
-
-/// Transaction type (incoming or outgoing)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-pub enum TransactionType {
-    Incoming,
-    Outgoing,
-}
-
-impl fmt::Display for TransactionType {
-    fn fmt(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
-        match self {
-            Self::Incoming => write!(f, "Incoming"),
-            Self::Outgoing => write!(f, "Outgoing"),
-        }
-    }
-}
-
-impl std::str::FromStr for TransactionType {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "Incoming" => Ok(Self::Incoming),
-            "Outgoing" => Ok(Self::Outgoing),
-            _ => Err(format!("Unknown transaction type: {s}")),
-        }
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, FromRow)]
 pub struct GeneralTransactionId {
@@ -72,45 +45,6 @@ impl GeneralTransactionId {
     }
 }
 
-/// Transaction status (for new schema)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-pub enum TransactionStatus {
-    Waiting,
-    InProgress,
-    Completed,
-    Failed,
-}
-
-impl fmt::Display for TransactionStatus {
-    fn fmt(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
-        match self {
-            Self::Waiting => write!(f, "Waiting"),
-            Self::InProgress => write!(f, "InProgress"),
-            Self::Completed => write!(f, "Completed"),
-            Self::Failed => write!(f, "Failed"),
-        }
-    }
-}
-
-impl std::str::FromStr for TransactionStatus {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "Waiting" => Ok(Self::Waiting),
-            "InProgress" => Ok(Self::InProgress),
-            "Completed" => Ok(Self::Completed),
-            "Failed" => Ok(Self::Failed),
-            _ => Err(format!(
-                "Unknown transaction status: {s}"
-            )),
-        }
-    }
-}
-
 /// Origin field for transactions (what triggered this transaction)
 #[expect(clippy::struct_field_names)]
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -125,9 +59,7 @@ pub struct TransactionOrigin {
 
 pub enum TransactionOriginVariant {
     Payout(Uuid),
-    #[expect(dead_code)]
     Refund(Uuid),
-    #[expect(dead_code)]
     InternalTransfer(Uuid),
     None,
 }
@@ -191,7 +123,7 @@ pub struct OutgoingTransactionMeta {
 pub struct Transaction {
     pub id: Uuid,
     pub invoice_id: Uuid,
-    // TODO: change to String for compatibility with different chains
+    // TODO: move TransferInfo to `client`?
     #[serde(flatten)]
     pub transfer_info: TransferInfo,
     #[expect(clippy::struct_field_names)]
@@ -204,8 +136,47 @@ pub struct Transaction {
     pub outgoing_meta: OutgoingTransactionMeta,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-    #[expect(clippy::struct_field_names)]
-    pub transaction_bytes: Option<String>, // Backward compat (hex-encoded extrinsic)
+}
+
+impl From<Transaction> for PublicTransaction {
+    fn from(value: Transaction) -> Self {
+        let transaction_link = match value.transfer_info.chain {
+            ChainType::PolkadotAssetHub => format!(
+                // For now we don't expect errors here cause we will make into public only
+                // Incoming transaction. Although it will be better to refactor it later and
+                // return an error if we trying to turn into PublicTransaction not finished
+                // Outgoing transaction
+                "https://assethub-polkadot.subscan.io/extrinsic/{}-{}",
+                value.transaction_id.block_number.unwrap_or_default(),
+                value.transaction_id.position_in_block.unwrap_or_default(),
+            )
+        };
+
+        PublicTransaction {
+            id: value.id,
+            invoice_id: value.invoice_id,
+            block_number: value.transaction_id.block_number,
+            position_in_block: value.transaction_id.position_in_block,
+            tx_hash: value.transaction_id.tx_hash,
+            transaction_type: value.transaction_type,
+            asset_name: value.transfer_info.asset_name,
+            asset_id: value.transfer_info.asset_id,
+            chain: value.transfer_info.chain,
+            amount: value.transfer_info.amount,
+            source_address: value.transfer_info.source_address,
+            destination_address: value.transfer_info.destination_address,
+            created_at: value.created_at,
+            updated_at: value.updated_at,
+            status: value.status,
+            transaction_link,
+        }
+    }
+}
+
+impl Transaction {
+    fn into_public_transaction(self) -> PublicTransaction {
+        self.into()
+    }
 }
 
 #[derive(FromRow)]
@@ -222,7 +193,6 @@ pub struct TransactionRow {
     pub outgoing_meta: Json<OutgoingTransactionMeta>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-    pub transaction_bytes: Option<String>,
 }
 
 impl From<TransactionRow> for Transaction {
@@ -238,7 +208,6 @@ impl From<TransactionRow> for Transaction {
             outgoing_meta: row.outgoing_meta.0,
             created_at: row.created_at,
             updated_at: row.updated_at,
-            transaction_bytes: row.transaction_bytes,
         }
     }
 }
@@ -248,7 +217,7 @@ pub fn default_transaction(invoice_id: Uuid) -> Transaction {
     let transfer_info = TransferInfo {
         asset_id: 1984.to_string(),
         asset_name: "USDT".to_string(),
-        chain: super::ChainType::PolkadotAssetHub,
+        chain: ChainType::PolkadotAssetHub,
         amount: rust_decimal::Decimal::new(10000, 2),
         source_address: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string(),
         destination_address: "5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty".to_string(),
@@ -273,7 +242,6 @@ pub fn default_transaction(invoice_id: Uuid) -> Transaction {
         outgoing_meta: OutgoingTransactionMeta::default(),
         created_at: now,
         updated_at: now,
-        transaction_bytes: Some("0xabcdef123456".to_string()),
     }
 }
 
@@ -315,7 +283,6 @@ impl From<OutgoingTransaction> for Transaction {
             },
             created_at: now,
             updated_at: now,
-            transaction_bytes: None,
         }
     }
 }
@@ -360,7 +327,6 @@ impl From<IncomingTransaction> for Transaction {
             outgoing_meta: OutgoingTransactionMeta::default(),
             created_at: now,
             updated_at: now,
-            transaction_bytes: None,
         }
     }
 }

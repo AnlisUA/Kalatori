@@ -73,9 +73,6 @@ CREATE TABLE IF NOT EXISTS transactions (
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
 
-    -- Backward compatibility fields (temporary - ONLY for sled migration deduplication)
-    transaction_bytes TEXT,  -- Hex-encoded extrinsic (old field, used as unique key in old system)
-
     FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE
 );
 

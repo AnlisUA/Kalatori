@@ -75,8 +75,8 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
         transaction: Transaction,
     ) -> Result<Transaction, DaoTransactionError> {
         let query = sqlx::query_as::<_, TransactionRow>(
-        "INSERT INTO transactions (id, invoice_id, asset_id, asset_name, chain, amount, source_address, destination_address, block_number, position_in_block, tx_hash, origin, status, transaction_type, outgoing_meta, created_at, updated_at, transaction_bytes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        "INSERT INTO transactions (id, invoice_id, asset_id, asset_name, chain, amount, source_address, destination_address, block_number, position_in_block, tx_hash, origin, status, transaction_type, outgoing_meta, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING *"
         )
             .bind(transaction.id)
@@ -95,8 +95,7 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
             .bind(transaction.transaction_type)
             .bind(Json(&transaction.outgoing_meta))
             .bind(transaction.created_at)
-            .bind(transaction.updated_at)
-            .bind(&transaction.transaction_bytes);
+            .bind(transaction.updated_at);
 
         self.fetch_one(query)
             .await
@@ -244,7 +243,7 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
             "UPDATE transactions
             SET invoice_id = ?, asset_id = ?, chain = ?, amount = ?, source_address = ?, destination_address = ?,
                 block_number = ?, position_in_block = ?, tx_hash = ?, origin = ?, status = ?,
-                transaction_type = ?, outgoing_meta = ?, transaction_bytes = ?
+                transaction_type = ?, outgoing_meta = ?
             WHERE id = ?
             RETURNING *",
         )
@@ -261,7 +260,6 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
         .bind(transaction.status)
         .bind(transaction.transaction_type)
         .bind(Json(&transaction.outgoing_meta))
-        .bind(&transaction.transaction_bytes)
         .bind(transaction.id);
 
         self.fetch_one(query)
@@ -800,7 +798,6 @@ mod tests {
         // Create transaction with NULL fields (pending transaction)
         let pending_tx = Transaction {
             transaction_id: GeneralTransactionId::empty(),
-            transaction_bytes: None,
             ..default_transaction(invoice.id)
         };
 

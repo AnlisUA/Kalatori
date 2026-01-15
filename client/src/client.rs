@@ -1,7 +1,5 @@
-use http::HeaderValue;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use hmac::Mac;
 use secrecy::SecretSlice;
 
 use crate::types::{
@@ -14,7 +12,8 @@ use crate::types::{
     Invoice,
 };
 use crate::utils::{
-    HmacConfig, SIGNATURE_HEADER, TIMESTAMP_HEADER, add_headers_to_reqwest, hmac_from_request_parts, timestamp_secs
+    HmacConfig,
+    add_headers_to_reqwest,
 };
 
 pub struct KalatoriClient {
@@ -141,49 +140,4 @@ impl KalatoriClient {
 
         self.execute_request(request).await
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use rust_decimal::Decimal;
-    use uuid::Uuid;
-
-    use crate::types::InvoiceCart;
-
-    use super::*;
-
-    // #[tokio::test]
-    // async fn test_create_invoice() {
-    //     let client = KalatoriClient::new("http://localhost:8080".to_string(), "secret".as_bytes().to_vec());
-
-    //     let params = CreateInvoiceParams {
-    //         amount: Decimal::ONE_HUNDRED,
-    //         order_id: Uuid::new_v4().to_string(),
-    //         cart: InvoiceCart::empty(),
-    //         redirect_url: "localhost:8000/thank-you-page".to_string(),
-    //     };
-
-    //     let result = client.create_invoice(params).await.unwrap();
-    //     println!("{:?}", result);
-    // }
-
-    // #[tokio::test]
-    // async fn test_invalid_json() {
-    //     let client = KalatoriClient::new("http://localhost:16726".to_string(), "secret");
-
-    //     let params = GetInvoiceParams {
-    //         invoice_id: Uuid::new_v4(),
-    //         include_transaction: false,
-    //     };
-
-    //     let request = client.build_request(
-    //         KalatoriHttpMethod::Get,
-    //         CREATE_INVOICE_PATH,
-    //         params,
-    //     ).unwrap();
-
-    //     let result = client.execute_request::<Invoice>(request).await;
-
-    //     println!("Result :{:#?}", result);
-    // }
 }

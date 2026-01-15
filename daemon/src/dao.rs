@@ -32,7 +32,6 @@ pub use payout::DaoPayoutError;
 #[expect(unused_imports)]
 pub use refund::DaoRefundError;
 pub use transaction::DaoTransactionError;
-pub use webhook_event::DaoWebhookEventError;
 
 // Export high-level interface traits
 pub use interface::{

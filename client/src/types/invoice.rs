@@ -8,7 +8,10 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::ChainType;
+use super::{
+    ChainType,
+    Transaction,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "sqlx-types", derive(sqlx::Type))]
@@ -142,7 +145,7 @@ pub struct Invoice {
     pub redirect_url: String,
     pub cart: InvoiceCart,
     pub total_received_amount: Decimal,
-    // pub transactions: Vec<Transaction>,
+    pub transactions: Vec<Transaction>,
     pub valid_till: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

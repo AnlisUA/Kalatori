@@ -12,10 +12,7 @@ use kalatori_client::types::{
 };
 
 use crate::chain::utils::to_base58_string;
-use crate::chain::{
-    InvoiceRegistry,
-    InvoiceRegistryRecord,
-};
+use crate::chain::InvoiceRegistry;
 use crate::chain_client::KeyringClient;
 use crate::configs::PaymentsConfig;
 use crate::dao::{
@@ -28,7 +25,6 @@ use crate::dao::{
 use crate::types::{
     ChainType,
     CreateInvoiceData,
-    Invoice,
     InvoiceWithReceivedAmount,
     InvoiceEventType,
     Transaction,
@@ -68,12 +64,13 @@ impl<D: DaoInterface> AppState<D> {
         invoice.into_public_invoice(&self.payments_config.payment_url_base)
     }
 
+    #[tracing::instrument(skip_all)]
     pub async fn get_invoice(
         &self,
         invoice_id: Uuid,
-    ) -> Result<Option<Invoice>, DaoInvoiceError> {
+    ) -> Result<Option<InvoiceWithReceivedAmount>, DaoInvoiceError> {
         self.dao
-            .get_invoice_by_id(invoice_id)
+            .get_invoice_with_received_amount_by_id(invoice_id)
             .await
     }
 
@@ -82,7 +79,7 @@ impl<D: DaoInterface> AppState<D> {
     pub async fn create_invoice(
         &self,
         params: CreateInvoiceParams,
-    ) -> Result<Invoice, DaoInvoiceError> {
+    ) -> Result<InvoiceWithReceivedAmount, DaoInvoiceError> {
         let id = Uuid::new_v4();
         // Later we can extend CreateInvoiceParams to include optional chain and
         // asset_id
@@ -153,33 +150,30 @@ impl<D: DaoInterface> AppState<D> {
             .create_invoice(data)
             .await?;
 
-        let invoice_with_amount = invoice.clone().with_amount(Decimal::ZERO);
-        let event = self.invoice_to_public_invoice(invoice_with_amount).build_event(InvoiceEventType::Created).into();
-        dao_transaction.create_webhook_event(event).await.map_err(|_| DaoInvoiceError::DatabaseError)?;
+        let invoice_with_amount = invoice.with_amount(Decimal::ZERO);
+        let event = self.invoice_to_public_invoice(invoice_with_amount.clone()).build_event(InvoiceEventType::Created).into();
 
+        dao_transaction.create_webhook_event(event).await.map_err(|_| DaoInvoiceError::DatabaseError)?;
         dao_transaction.commit().await.map_err(|_| DaoInvoiceError::DatabaseError)?;
 
         tracing::info!(
-            invoice_id = %invoice.id,
-            payment_address = %invoice.payment_address,
+            invoice_id = %invoice_with_amount.invoice.id,
+            payment_address = %invoice_with_amount.invoice.payment_address,
             "Created new invoice",
         );
 
         self.registry
-            .add_invoice(InvoiceRegistryRecord::new(
-                invoice.clone(),
-                Decimal::ZERO,
-            ))
+            .add_invoice(invoice_with_amount.clone())
             .await;
 
-        Ok(invoice)
+        Ok(invoice_with_amount)
     }
 
     #[expect(clippy::arithmetic_side_effects, clippy::cast_possible_wrap)]
     pub async fn update_invoice(
         &self,
         params: UpdateInvoiceParams,
-    ) -> Result<Invoice, DaoInvoiceError> {
+    ) -> Result<InvoiceWithReceivedAmount, DaoInvoiceError> {
         let data = UpdateInvoiceData {
             invoice_id: params.invoice_id,
             amount: params.amount,
@@ -208,33 +202,49 @@ impl<D: DaoInterface> AppState<D> {
             "Invoice has been updated",
         );
 
+        // We allow to update only unpaid invoices, so the received amount is zero
+        let result = result.with_amount(Decimal::ZERO);
+
         Ok(result)
     }
 
     pub async fn cancel_invoice_admin(
         &self,
         invoice_id: Uuid,
-    ) -> Result<Invoice, DaoInvoiceError> {
+    ) -> Result<InvoiceWithReceivedAmount, DaoInvoiceError> {
         // TODO: if invoice has been partially paid, we need to also handle refunds
         let dao_transaction = self.dao
             .begin_transaction()
             .await
             .map_err(|_| DaoInvoiceError::DatabaseError)?;
 
-        let result = self.dao
-            .update_invoice_status(invoice_id, InvoiceStatus::AdminCanceled)
-            .await?;
+        // TODO: refactor it. If invoice not in registry, it probably has non-active status and can not be canceled anymore
+        let result = if let Some(invoice_with_amount) = self.registry.remove_invoice(&invoice_id).await {
+            let result = self.dao
+                .update_invoice_status(invoice_id, InvoiceStatus::AdminCanceled)
+                .await?;
 
-        let invoice_with_amount = result.clone().with_amount(Decimal::ZERO);
-        let event = self.invoice_to_public_invoice(invoice_with_amount).build_event(InvoiceEventType::AdminCanceled).into();
+            let invoice_with_amount = result.with_amount(invoice_with_amount.total_received_amount);
+            let event = self.invoice_to_public_invoice(invoice_with_amount.clone()).build_event(InvoiceEventType::AdminCanceled).into();
 
-        dao_transaction.create_webhook_event(event).await.map_err(|_| DaoInvoiceError::DatabaseError)?;
-        dao_transaction.commit().await.map_err(|_| DaoInvoiceError::DatabaseError)?;
+            dao_transaction.create_webhook_event(event).await.map_err(|_| DaoInvoiceError::DatabaseError)?;
+            dao_transaction.commit().await.map_err(|_| DaoInvoiceError::DatabaseError)?;
+            invoice_with_amount
+        } else {
+            let result = self.dao
+                .update_invoice_status(invoice_id, InvoiceStatus::AdminCanceled)
+                .await?;
 
-        self.registry.remove_invoice(&invoice_id).await;
+            let invoice_with_amount = result.with_amount(Decimal::ZERO);
+            let event = self.invoice_to_public_invoice(invoice_with_amount.clone()).build_event(InvoiceEventType::AdminCanceled).into();
+
+            dao_transaction.create_webhook_event(event).await.map_err(|_| DaoInvoiceError::DatabaseError)?;
+            dao_transaction.commit().await.map_err(|_| DaoInvoiceError::DatabaseError)?;
+            invoice_with_amount
+        };
 
         tracing::info!(
-            invoice_id = %result.id,
+            invoice_id = %invoice_id,
             "Invoice has been canceled by admin",
         );
 
@@ -258,8 +268,8 @@ mod tests {
     use mockall::predicate::eq;
 
     use crate::chain_client::KeyringError;
-    use crate::dao::MockDaoInterface;
-    use crate::types::{InvoiceCart, default_invoice};
+    use crate::dao::{MockDaoInterface, MockDaoTransactionInterface};
+    use crate::types::{Invoice, InvoiceCart, default_invoice};
 
     use super::*;
 
@@ -311,12 +321,15 @@ mod tests {
             && expected.valid_till.timestamp() == actual.valid_till.timestamp()
     }
 
+    // TODO: we'll replace expected id with returned one (already done) and add method for invoice to strip
+    // dates (hidden behind `#[cfg(test)]`) and we'll be able to compare them using Eq trait and get rid of
+    // this function
     fn compare_created_invoice(
         expected: &Invoice,
         actual: &Invoice,
     ) -> bool {
-        // We don't compare IDs here, as they are generated randomly
-        expected.order_id == actual.order_id
+        expected.id == actual.id
+            && expected.order_id == actual.order_id
             && expected.asset_id == actual.asset_id
             && expected.asset_name == actual.asset_name
             && expected.chain == actual.chain
@@ -341,12 +354,12 @@ mod tests {
         let invoice = Invoice {
             id: invoice_id,
             ..default_invoice()
-        };
+        }.with_amount(Decimal::ONE);
 
         let returning_invoice = invoice.clone();
 
         app_state.dao
-            .expect_get_invoice_by_id()
+            .expect_get_invoice_with_received_amount_by_id()
             .once()
             .with(eq(invoice_id))
             .returning(move |_| Ok(Some(returning_invoice.clone())));
@@ -362,7 +375,7 @@ mod tests {
         let invoice_id = Uuid::new_v4();
 
         app_state.dao
-            .expect_get_invoice_by_id()
+            .expect_get_invoice_with_received_amount_by_id()
             .once()
             .with(eq(invoice_id))
             .returning(|_| Ok(None));
@@ -378,7 +391,7 @@ mod tests {
         let invoice_id = Uuid::new_v4();
 
         app_state.dao
-            .expect_get_invoice_by_id()
+            .expect_get_invoice_with_received_amount_by_id()
             .once()
             .with(eq(invoice_id))
             .returning(|_| Err(DaoInvoiceError::DatabaseError));
@@ -438,25 +451,43 @@ mod tests {
             }
         };
 
-        let mut expected_invoice: Invoice = expected_create_invoice_data.clone().into();
+        let expected_invoice: Invoice = expected_create_invoice_data.clone().into();
+        let mut expected_invoice_with_amount = expected_invoice.with_amount(Decimal::ZERO);
 
-        app_state.dao
+        let mut dao_transaction = MockDaoTransactionInterface::default();
+
+        dao_transaction
             .expect_create_invoice()
             .once()
             .withf(move |data| compare_create_invoice_data(&expected_create_invoice_data, data))
             .returning(|data| Ok(data.into()));
+
+        dao_transaction
+            .expect_create_webhook_event()
+            // we can not compare event here because of entity ID which we don't know at this point
+            .once()
+            .returning(|data| Ok(data));
+
+        dao_transaction
+            .expect_commit()
+            .once()
+            .returning(|| Ok(()));
+
+        app_state.dao.expect_begin_transaction()
+            .once()
+            .return_once(move || Ok(dao_transaction));
 
         let result = app_state
             .create_invoice(params.clone())
             .await
             .unwrap();
 
-        expected_invoice.id = result.id; // Set the ID to match for comparison
-        assert!(compare_created_invoice(&expected_invoice, &result));
+        expected_invoice_with_amount.invoice.id = result.invoice.id; // Set the ID to match for comparison
+        assert!(compare_created_invoice(&expected_invoice_with_amount.invoice, &result.invoice));
 
-        let registry_record = app_state.registry.get_invoice(&result.id).await.unwrap();
-        assert_eq!(registry_record.invoice, result);
-        assert!(registry_record.filled_amount.is_zero());
+        let registry_record = app_state.registry.get_invoice(&result.invoice.id).await.unwrap();
+        assert_eq!(registry_record, result);
+        assert!(registry_record.total_received_amount.is_zero());
 
         // Test case 2: Keyring error
         // Expected:
@@ -526,11 +557,18 @@ mod tests {
             )
             .returning(move |_| Ok(bob_account_id_2.clone()));
 
-        app_state.dao
+        let mut dao_transaction = MockDaoTransactionInterface::default();
+
+        dao_transaction
             .expect_create_invoice()
             .once()
             .withf(move |data| compare_create_invoice_data(&expected_create_invoice_data, data))
             .returning(|_| Err(DaoInvoiceError::DatabaseError));
+
+        app_state.dao
+            .expect_begin_transaction()
+            .once()
+            .return_once(|| Ok(dao_transaction));
 
         let result = app_state
             .create_invoice(params)

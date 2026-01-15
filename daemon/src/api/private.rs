@@ -1,12 +1,11 @@
 use axum::routing::{get, post};
 use axum::extract::State;
-use rust_decimal::Decimal;
 
 use kalatori_client::utils::HmacConfig;
 use kalatori_client::middleware::axum_hmac_validator;
-use kalatori_client::types::{CancelInvoiceParams, CreateInvoiceParams, GetInvoiceParams, Invoice, UpdateInvoiceParams};
+use kalatori_client::types::{CancelInvoiceParams, CreateInvoiceParams, GetInvoiceParams, UpdateInvoiceParams};
 
-use crate::types::InvoiceWithReceivedAmount;
+use crate::types::{TransactionType, PublicInvoice, InvoiceStatus};
 use crate::dao::DaoInvoiceError;
 
 use super::ApiState;
@@ -22,17 +21,12 @@ use super::utils::{
 async fn create_invoice(
     State(state): State<ApiState>,
     AppJson(params): AppJson<CreateInvoiceParams>,
-) -> ApiResult<Invoice, DaoInvoiceError> {
+) -> ApiResult<PublicInvoice, DaoInvoiceError> {
     let invoice = state
         .create_invoice(params)
         .await?;
 
-    let with_amount = InvoiceWithReceivedAmount {
-        invoice,
-        total_received_amount: Decimal::ZERO,
-    };
-
-    let result = state.invoice_to_public_invoice(with_amount);
+    let result = state.invoice_to_public_invoice(invoice);
     Ok(result.into())
 }
 
@@ -40,7 +34,7 @@ async fn create_invoice(
 async fn get_invoice(
     State(state): State<ApiState>,
     AppQuery(params): AppQuery<GetInvoiceParams>,
-) -> ApiResult<Invoice, DaoInvoiceError> {
+) -> ApiResult<PublicInvoice, DaoInvoiceError> {
     let invoice = state
         .get_invoice(params.invoice_id)
         .await?
@@ -48,12 +42,22 @@ async fn get_invoice(
             invoice_id: params.invoice_id,
         })?;
 
-    let with_amount = InvoiceWithReceivedAmount {
-        invoice,
-        total_received_amount: Decimal::ZERO,
-    };
+    let mut result = state.invoice_to_public_invoice(invoice);
 
-    let result = state.invoice_to_public_invoice(with_amount);
+    // TODO: filter it on database query level
+    if params.include_transaction && result.status == InvoiceStatus::Waiting {
+        let transactions = state
+            .get_invoice_transactions(params.invoice_id)
+            .await
+            .map_err(|_| DaoInvoiceError::DatabaseError)?
+            .into_iter()
+            .filter(|trans| trans.transaction_type == TransactionType::Incoming)
+            .map(From::from)
+            .collect();
+
+        result.transactions = transactions;
+    }
+
     Ok(result.into())
 }
 
@@ -61,18 +65,12 @@ async fn get_invoice(
 async fn update_invoice(
     State(state): State<ApiState>,
     AppJson(params): AppJson<UpdateInvoiceParams>,
-) -> ApiResult<Invoice, DaoInvoiceError> {
+) -> ApiResult<PublicInvoice, DaoInvoiceError> {
     let invoice = state
         .update_invoice(params)
         .await?;
 
-    let with_amount = InvoiceWithReceivedAmount {
-        invoice,
-        // we allow to update only unpaid invoices, so the received amount is zero
-        total_received_amount: Decimal::ZERO,
-    };
-
-    let result = state.invoice_to_public_invoice(with_amount);
+    let result = state.invoice_to_public_invoice(invoice);
     Ok(result.into())
 }
 
@@ -80,18 +78,27 @@ async fn update_invoice(
 async fn cancel_invoice(
     State(state): State<ApiState>,
     AppJson(params): AppJson<CancelInvoiceParams>,
-) -> ApiResult<Invoice, DaoInvoiceError> {
+) -> ApiResult<PublicInvoice, DaoInvoiceError> {
     let invoice = state
         .cancel_invoice_admin(params.invoice_id)
         .await?;
 
-    let with_amount = InvoiceWithReceivedAmount {
-        invoice,
-        // we allow to cancel only unpaid invoices, so the received amount is zero
-        total_received_amount: Decimal::ZERO,
-    };
+    let mut result = state.invoice_to_public_invoice(invoice);
 
-    let result = state.invoice_to_public_invoice(with_amount);
+    // TODO: filter it on database query level
+    if params.include_transaction && result.status == InvoiceStatus::Waiting {
+        let transactions = state
+            .get_invoice_transactions(params.invoice_id)
+            .await
+            .map_err(|_| DaoInvoiceError::DatabaseError)?
+            .into_iter()
+            .filter(|trans| trans.transaction_type == TransactionType::Incoming)
+            .map(From::from)
+            .collect();
+
+        result.transactions = transactions;
+    }
+
     Ok(result.into())
 }
 

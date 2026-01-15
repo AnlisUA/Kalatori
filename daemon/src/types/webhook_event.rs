@@ -3,12 +3,11 @@ use chrono::{DateTime, Utc};
 
 pub use kalatori_client::types::{
     GenericEvent,
-    EventEntity,
     InvoiceEventType,
     KalatoriEventExt,
 };
 
-#[derive(sqlx::FromRow)]
+#[derive(Debug, sqlx::FromRow)]
 pub struct WebhookEvent {
     pub id: Uuid,
     pub entity_id: Uuid,
@@ -52,6 +51,7 @@ pub fn default_webhook_event(invoice_id: Uuid) -> GenericEvent<super::PublicInvo
         created_at: Utc::now(),
         updated_at: Utc::now(),
         total_received_amount: rust_decimal::Decimal::ZERO,
+        transactions: vec![]
     };
 
     invoice.build_event(InvoiceEventType::Created)

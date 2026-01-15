@@ -25,44 +25,14 @@ use crate::dao::{
 use crate::types::{
     ChainType,
     IncomingTransaction,
-    Invoice,
     InvoiceStatus,
     InvoiceWithReceivedAmount,
     Payout,
 };
 
-// TODO: it seems to be equivalent to InvoiceWithIncomingAmount
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InvoiceRegistryRecord {
-    // TODO: store something smaller? Most fields are not needed for matching
-    pub invoice: Invoice,
-    pub filled_amount: Decimal,
-}
-
-impl InvoiceRegistryRecord {
-    pub fn new(
-        invoice: Invoice,
-        filled_amount: Decimal,
-    ) -> Self {
-        InvoiceRegistryRecord {
-            invoice,
-            filled_amount,
-        }
-    }
-}
-
-impl From<InvoiceWithReceivedAmount> for InvoiceRegistryRecord {
-    fn from(value: InvoiceWithReceivedAmount) -> Self {
-        InvoiceRegistryRecord {
-            invoice: value.invoice,
-            filled_amount: value.total_received_amount,
-        }
-    }
-}
-
 #[derive(Clone)]
 pub struct InvoiceRegistry {
-    invoices: Arc<RwLock<HashMap<Uuid, InvoiceRegistryRecord>>>,
+    invoices: Arc<RwLock<HashMap<Uuid, InvoiceWithReceivedAmount>>>,
 }
 
 impl InvoiceRegistry {
@@ -74,7 +44,7 @@ impl InvoiceRegistry {
 
     pub async fn add_invoice(
         &self,
-        record: InvoiceRegistryRecord,
+        record: InvoiceWithReceivedAmount,
     ) {
         let mut invoices = self.invoices.write().await;
         invoices.insert(record.invoice.id, record);
@@ -82,7 +52,7 @@ impl InvoiceRegistry {
 
     pub async fn add_invoices(
         &self,
-        records: Vec<InvoiceRegistryRecord>,
+        records: Vec<InvoiceWithReceivedAmount>,
     ) {
         let mut invoices_map = self.invoices.write().await;
 
@@ -94,9 +64,9 @@ impl InvoiceRegistry {
     pub async fn remove_invoice(
         &self,
         invoice_id: &Uuid,
-    ) {
+    ) -> Option<InvoiceWithReceivedAmount> {
         let mut invoices = self.invoices.write().await;
-        invoices.remove(invoice_id);
+        invoices.remove(invoice_id)
     }
 
     pub async fn remove_invoices(
@@ -113,7 +83,7 @@ impl InvoiceRegistry {
     pub async fn get_invoice(
         &self,
         invoice_id: &Uuid,
-    ) -> Option<InvoiceRegistryRecord> {
+    ) -> Option<InvoiceWithReceivedAmount> {
         let invoices = self.invoices.read().await;
         invoices.get(invoice_id).cloned()
     }
@@ -123,7 +93,7 @@ impl InvoiceRegistry {
         address: &str,
         chain: ChainType,
         asset_id: &str,
-    ) -> Option<InvoiceRegistryRecord> {
+    ) -> Option<InvoiceWithReceivedAmount> {
         let invoices = self.invoices.read().await;
 
         invoices
@@ -144,7 +114,7 @@ impl InvoiceRegistry {
         let mut invoices = self.invoices.write().await;
 
         if let Some(record) = invoices.get_mut(invoice_id) {
-            record.filled_amount = new_filled_amount;
+            record.total_received_amount = new_filled_amount;
         }
     }
 
@@ -311,9 +281,9 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
             0,
         );
 
-        if let Some(InvoiceRegistryRecord {
+        if let Some(InvoiceWithReceivedAmount {
             invoice,
-            mut filled_amount,
+            mut total_received_amount,
         }) = self
             .registry
             .find_invoice_by_address(
@@ -334,17 +304,17 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
             );
 
             let transaction = IncomingTransaction::from_chain_transfer(invoice.id, transfer);
-            filled_amount += transaction.transfer_info.amount;
+            total_received_amount += transaction.transfer_info.amount;
 
             // TODO: handle overpayments
-            let updated_status = if filled_amount >= invoice.amount {
+            let updated_status = if total_received_amount >= invoice.amount {
                 InvoiceStatus::Paid
             } else {
                 InvoiceStatus::PartiallyPaid
             };
 
             match self
-                .store_transaction(transaction, updated_status, filled_amount)
+                .store_transaction(transaction, updated_status, total_received_amount)
                 .await
             {
                 Ok(()) if updated_status == InvoiceStatus::Paid => {
@@ -360,12 +330,12 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
                 Ok(()) if updated_status == InvoiceStatus::PartiallyPaid => {
                     tracing::info!(
                         invoice_id = %invoice.id,
-                        filled_amount = %filled_amount,
+                        filled_amount = %total_received_amount,
                         "Invoice has been partially paid, updating filled amount in registry"
                     );
 
                     self.registry
-                        .update_filled_amount(&invoice.id, filled_amount)
+                        .update_filled_amount(&invoice.id, total_received_amount)
                         .await;
                 },
                 Ok(()) => {
@@ -378,7 +348,7 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
                     );
 
                     self.registry
-                        .update_filled_amount(&invoice.id, filled_amount)
+                        .update_filled_amount(&invoice.id, total_received_amount)
                         .await;
                 },
                 // TODO: handle different errors separately. Behavior may differ based on the error
@@ -392,7 +362,7 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
                     );
 
                     self.registry
-                        .update_filled_amount(&invoice.id, filled_amount)
+                        .update_filled_amount(&invoice.id, total_received_amount)
                         .await;
                 },
             }

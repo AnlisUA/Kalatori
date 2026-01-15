@@ -91,6 +91,12 @@ pub trait DaoInterface: Send + Sync + 'static {
         invoice_id: Uuid,
     ) -> Result<Option<Invoice>, DaoInvoiceError>;
 
+    /// Get an invoice with sum of related incoming transactions by its unique ID.
+    async fn get_invoice_with_received_amount_by_id(
+        &self,
+        invoice_id: Uuid,
+    ) -> Result<Option<InvoiceWithReceivedAmount>, DaoInvoiceError>;
+
     /// Get all active invoices (Waiting or `PartiallyPaid` status) along with
     /// their incoming amounts (sum amounts of related Incoming transaction).
     async fn get_active_invoices_with_amounts(
@@ -227,6 +233,11 @@ pub trait DaoTransactionInterface {
         invoice_id: Uuid,
     ) -> Result<Option<Invoice>, DaoInvoiceError>;
 
+    async fn get_invoice_with_received_amount_by_id(
+        &self,
+        invoice_id: Uuid,
+    ) -> Result<Option<InvoiceWithReceivedAmount>, DaoInvoiceError>;
+
     async fn update_invoice_status(
         &self,
         invoice_id: Uuid,
@@ -342,6 +353,13 @@ impl DaoInterface for DAO {
         invoice_id: Uuid,
     ) -> Result<Option<Invoice>, DaoInvoiceError> {
         DaoInvoiceMethods::get_invoice_by_id(self, invoice_id).await
+    }
+
+    async fn get_invoice_with_received_amount_by_id(
+        &self,
+        invoice_id: Uuid,
+    ) -> Result<Option<InvoiceWithReceivedAmount>, DaoInvoiceError> {
+        DaoInvoiceMethods::get_invoice_with_received_amount_by_id(self, invoice_id).await
     }
 
     async fn get_active_invoices_with_amounts(
@@ -498,6 +516,13 @@ impl DaoTransactionInterface for DaoTransaction {
         invoice_id: Uuid,
     ) -> Result<Option<Invoice>, DaoInvoiceError> {
         DaoInvoiceMethods::get_invoice_by_id(self, invoice_id).await
+    }
+
+    async fn get_invoice_with_received_amount_by_id(
+        &self,
+        invoice_id: Uuid,
+    ) -> Result<Option<InvoiceWithReceivedAmount>, DaoInvoiceError> {
+        DaoInvoiceMethods::get_invoice_with_received_amount_by_id(self, invoice_id).await
     }
 
     async fn update_invoice_status(

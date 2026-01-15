@@ -77,6 +77,7 @@ impl InvoiceWithReceivedAmount {
             created_at: self.invoice.created_at,
             updated_at: self.invoice.updated_at,
             total_received_amount: self.total_received_amount,
+            transactions: vec![],
         }
     }
 }

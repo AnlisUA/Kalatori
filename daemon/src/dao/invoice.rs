@@ -235,6 +235,40 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
             })
     }
 
+    async fn get_invoice_with_received_amount_by_id(
+        &self,
+        invoice_id: Uuid,
+    ) -> Result<Option<InvoiceWithReceivedAmount>, DaoInvoiceError> {
+        let query = sqlx::query_as::<_, InvoiceWithAmountsRow>(
+            "SELECT
+                i.*,
+                CASE
+                    WHEN COUNT(t.amount) = 0 THEN '[]'
+                    ELSE json_group_array(t.amount)
+                END as amounts
+            FROM invoices i
+            LEFT JOIN transactions t
+                ON i.id = t.invoice_id
+                AND t.transaction_type = 'Incoming'
+            WHERE i.id = ?
+            GROUP BY i.id",
+        )
+        .bind(invoice_id);
+
+        self.fetch_optional(query)
+            .await
+            .map_err(|e| {
+                tracing::debug!(
+                    error.category = "dao.invoice",
+                    error.operation = "get_invoice_with_received_amount_by_id",
+                    %invoice_id,
+                    error.source = ?e,
+                    "Failed to fetch invoice with received amount"
+                );
+                DaoInvoiceError::DatabaseError
+            })
+    }
+
     /// Get all active invoices that need to be monitored and total amount of
     /// received incoming transactions. We suppose that invoices with status
     /// 'Waiting' or '`PartiallyPaid`' don't have outgoing transactions,
@@ -737,7 +771,7 @@ mod tests {
         );
 
         // Update amount to 150.00
-        let mut update_data = default_update_invoice_data(invoice_id);
+        let update_data = default_update_invoice_data(invoice_id);
         let expected_cart = update_data.cart.clone();
 
         let updated = dao
