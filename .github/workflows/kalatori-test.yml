@@ -55,5 +55,7 @@ jobs:
         run: make copy-configs
       - name: Run the daemon and chopsticks in background
         run: make run &
+      - name: Wait for the daemon to start in background
+        run: sleep 10
       - name: Run examples which will act like integration tests
         run: make run-test-examples
