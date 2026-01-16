@@ -1,12 +1,21 @@
-use std::pin::Pin;
 use std::collections::HashSet;
+use std::pin::Pin;
 
+use futures::stream::{
+    FuturesUnordered,
+    StreamExt,
+};
+use tokio::time::{
+    Duration,
+    interval,
+};
 use tokio_util::sync::CancellationToken;
-use tokio::time::{interval, Duration};
-use futures::stream::{FuturesUnordered, StreamExt};
 use uuid::Uuid;
 
-use kalatori_client::utils::{add_headers_to_reqwest, HmacConfig};
+use kalatori_client::utils::{
+    HmacConfig,
+    add_headers_to_reqwest,
+};
 
 use crate::dao::DaoInterface;
 use crate::types::WebhookEvent;
@@ -41,7 +50,10 @@ async fn send_webhook(
         Ok(response) => {
             let status = response.status();
             let response_text = response.text().await;
-            println!("Response non200 text: {:#?}", response_text);
+            println!(
+                "Response non200 text: {:#?}",
+                response_text
+            );
 
             tracing::warn!(
                 event_id = %event_id,
@@ -65,7 +77,7 @@ async fn send_webhook(
                 event_id,
                 is_ok: false,
             }
-        }
+        },
     }
 }
 
@@ -96,7 +108,8 @@ impl<D: DaoInterface + 'static> WebhookSender<D> {
         &self,
         event: WebhookEvent,
     ) -> Pin<Box<dyn Future<Output = SendWebhookResult> + Send + 'static>> {
-        let mut request = self.client
+        let mut request = self
+            .client
             .post(&self.webhook_url)
             .json(&event.payload)
             .build()
@@ -105,11 +118,15 @@ impl<D: DaoInterface + 'static> WebhookSender<D> {
 
         add_headers_to_reqwest(&self.hmac_config, &mut request);
 
-        Box::pin(send_webhook(self.client.clone(), request, event.id))
+        Box::pin(send_webhook(
+            self.client.clone(),
+            request,
+            event.id,
+        ))
     }
 
     async fn prepare_webhook_events(
-        &mut self,
+        &mut self
     ) -> Vec<Pin<Box<dyn Future<Output = SendWebhookResult> + Send + 'static>>> {
         let limit = WEBHOOK_SENDER_MAX_CONCURRENT_REQUESTS - self.processing_events_ids.len();
 
@@ -117,8 +134,9 @@ impl<D: DaoInterface + 'static> WebhookSender<D> {
             return Vec::new();
         }
 
-        let events = self.dao
-            .get_webhook_events_to_send(limit as u32)
+        let events = self
+            .dao
+            .get_webhook_events_to_send(u32::try_from(limit).unwrap_or_default())
             .await
             .inspect_err(|_| {
                 tracing::warn!(
@@ -131,10 +149,11 @@ impl<D: DaoInterface + 'static> WebhookSender<D> {
 
         events
             .into_iter()
-            .filter_map(|event| self.processing_events_ids
-                .insert(event.id)
-                .then_some(self.build_future(event))
-            )
+            .filter_map(|event| {
+                self.processing_events_ids
+                    .insert(event.id)
+                    .then_some(self.build_future(event))
+            })
             .collect()
     }
 
@@ -142,24 +161,24 @@ impl<D: DaoInterface + 'static> WebhookSender<D> {
         &mut self,
         result: SendWebhookResult,
     ) {
-        self.processing_events_ids.remove(&result.event_id);
+        self.processing_events_ids
+            .remove(&result.event_id);
 
-        if result.is_ok {
-            if let Err(_) = self.dao
-                .mark_webhook_event_as_sent(result.event_id)
-                .await
-            {
-                tracing::warn!(
-                    event_id = %result.event_id,
-                    error.category = "webhook_sender",
-                    error.operation = "handle_send_webhook_result",
-                    "Failed to mark webhook event as sent in database. It might be resent"
-                )
-            };
-        }
-        // TODO: for now we do nothing on failure, the event will be retried later.
-        // Later we might want to implement some retry strategy with backoff and
-        // max attempts count
+        if result.is_ok && self.dao
+            .mark_webhook_event_as_sent(result.event_id)
+            .await
+            .is_err()
+        {
+            tracing::warn!(
+                event_id = %result.event_id,
+                error.category = "webhook_sender",
+                error.operation = "handle_send_webhook_result",
+                "Failed to mark webhook event as sent in database. It might be resent"
+            )
+        };
+        // TODO: for now we do nothing on failure, the event will be retried
+        // later. Later we might want to implement some retry strategy
+        // with backoff and max attempts count
     }
 
     async fn perform(

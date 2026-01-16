@@ -1,9 +1,15 @@
 use std::fmt::Display;
 
+use chrono::{
+    DateTime,
+    Utc,
+};
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
 use super::InvoiceCart;
 
@@ -16,8 +22,15 @@ pub struct ApiError {
 }
 
 impl Display for ApiError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} ({}): {}", self.code, self.category, self.message)
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        write!(
+            f,
+            "{} ({}): {}",
+            self.code, self.category, self.message
+        )
     }
 }
 
@@ -26,12 +39,8 @@ impl std::error::Error for ApiError {}
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ApiResultStructured<T> {
-    Ok {
-        result: T,
-    },
-    Err {
-        error: ApiError,
-    },
+    Ok { result: T },
+    Err { error: ApiError },
 }
 
 pub type ApiResult<T> = Result<T, ApiError>;
@@ -39,8 +48,12 @@ pub type ApiResult<T> = Result<T, ApiError>;
 impl<T> From<ApiResultStructured<T>> for ApiResult<T> {
     fn from(value: ApiResultStructured<T>) -> Self {
         match value {
-            ApiResultStructured::Ok { result } => Ok(result),
-            ApiResultStructured::Err { error } => Err(error),
+            ApiResultStructured::Ok {
+                result,
+            } => Ok(result),
+            ApiResultStructured::Err {
+                error,
+            } => Err(error),
         }
     }
 }
@@ -100,7 +113,10 @@ pub trait KalatoriEventExt: Serialize + Sized {
 
     const ENTITY: EventEntity;
 
-    fn build_event(self, event_type: Self::EventType) -> GenericEvent<Self> {
+    fn build_event(
+        self,
+        event_type: Self::EventType,
+    ) -> GenericEvent<Self> {
         GenericEvent {
             id: Uuid::new_v4(),
             event_entity: Self::ENTITY,

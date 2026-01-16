@@ -104,7 +104,8 @@ pub enum ChainPayoutRequestTyped {
     AssetHub(ChainPayoutRequest<AssetHubChainConfig>),
 }
 
-// TODO: perhaps it might be just `From`? Used `TryFrom` when had `chain` field as string
+// TODO: perhaps it might be just `From`? Used `TryFrom` when had `chain` field
+// as string
 impl TryFrom<Payout> for ChainPayoutRequestTyped {
     // TODO: handle errors properly
     type Error = ();
@@ -120,12 +121,14 @@ impl TryFrom<Payout> for ChainPayoutRequestTyped {
             "Preparing payout request for processing",
         );
         let request = match value.transfer_info.chain {
-            ChainType::PolkadotAssetHub => ChainPayoutRequestTyped::AssetHub(ChainPayoutRequest::new(
-                value.id,
-                value.invoice_id,
-                value.transfer_info,
-                value.retry_meta,
-            )?),
+            ChainType::PolkadotAssetHub => {
+                ChainPayoutRequestTyped::AssetHub(ChainPayoutRequest::new(
+                    value.id,
+                    value.invoice_id,
+                    value.transfer_info,
+                    value.retry_meta,
+                )?)
+            },
         };
 
         Ok(request)
@@ -371,7 +374,7 @@ impl<D: DaoInterface + 'static, AH: BlockChainClient<AssetHubChainConfig> + 'sta
             transfer_info: TransferInfo {
                 asset_id: request.asset_id.to_string(),
                 asset_name: request.asset_name.clone(),
-                chain: request.chain.clone(),
+                chain: request.chain,
                 amount: request.amount,
                 source_address: request.source_address.to_string(),
                 destination_address: request.destination_address.to_string(),

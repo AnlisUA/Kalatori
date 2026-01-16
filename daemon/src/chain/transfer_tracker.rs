@@ -3,7 +3,10 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use futures::StreamExt;
-use kalatori_client::types::{InvoiceEventType, KalatoriEventExt};
+use kalatori_client::types::{
+    InvoiceEventType,
+    KalatoriEventExt,
+};
 use rust_decimal::Decimal;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
@@ -80,6 +83,7 @@ impl InvoiceRegistry {
         }
     }
 
+    #[cfg_attr(not(test), expect(dead_code))]
     pub async fn get_invoice(
         &self,
         invoice_id: &Uuid,
@@ -125,7 +129,7 @@ impl InvoiceRegistry {
         for record in invoices.values() {
             asset_ids_map
                 .entry(record.invoice.chain)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(record.invoice.asset_id.clone());
         }
 
@@ -231,7 +235,11 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
         if invoice_status == InvoiceStatus::Paid {
             let payout = Payout::from_invoice(
                 invoice,
-                self.config.recipient.get(&chain).unwrap().clone(),
+                self.config
+                    .recipient
+                    .get(&chain)
+                    .unwrap()
+                    .clone(),
             );
 
             dao_transaction
@@ -314,7 +322,11 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
             };
 
             match self
-                .store_transaction(transaction, updated_status, total_received_amount)
+                .store_transaction(
+                    transaction,
+                    updated_status,
+                    total_received_amount,
+                )
                 .await
             {
                 Ok(()) if updated_status == InvoiceStatus::Paid => {

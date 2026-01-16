@@ -7,25 +7,26 @@ use serde::{
     Deserialize,
     Serialize,
 };
+use sqlx::FromRow;
 use sqlx::types::{
     Json,
     Text,
 };
-use sqlx::FromRow;
 use uuid::Uuid;
 
 use super::ChainType;
 
 // Re-export types from kalatori_client for consistency
 pub use kalatori_client::types::{
+    Invoice as PublicInvoice,
     InvoiceCart,
     InvoiceStatus,
-    Invoice as PublicInvoice,
 };
 
-// TODO: the main difference between Invoice and PublicInvoice (from kalatori_client crate)
-// is that Invoice doesn't have `payment_url` field. Need to think how we can unify these types
-// and make Invoice a subset of PublicInvoice.
+// TODO: the main difference between Invoice and PublicInvoice (from
+// kalatori_client crate) is that Invoice doesn't have `payment_url` field. Need
+// to think how we can unify these types and make Invoice a subset of
+// PublicInvoice.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Invoice {
     pub id: Uuid,
@@ -45,7 +46,10 @@ pub struct Invoice {
 }
 
 impl Invoice {
-    pub fn with_amount(self, total_received_amount: Decimal) -> InvoiceWithReceivedAmount {
+    pub fn with_amount(
+        self,
+        total_received_amount: Decimal,
+    ) -> InvoiceWithReceivedAmount {
         InvoiceWithReceivedAmount {
             invoice: self,
             total_received_amount,
@@ -60,7 +64,10 @@ pub struct InvoiceWithReceivedAmount {
 }
 
 impl InvoiceWithReceivedAmount {
-    pub fn into_public_invoice(self, payment_url_base: &str) -> PublicInvoice {
+    pub fn into_public_invoice(
+        self,
+        payment_url_base: &str,
+    ) -> PublicInvoice {
         PublicInvoice {
             id: self.invoice.id,
             order_id: self.invoice.order_id,
@@ -70,7 +77,11 @@ impl InvoiceWithReceivedAmount {
             amount: self.invoice.amount,
             payment_address: self.invoice.payment_address,
             status: self.invoice.status,
-            payment_url: format!("{}/public?invoice_id={}", payment_url_base.trim_end_matches('/'), self.invoice.id),
+            payment_url: format!(
+                "{}/public?invoice_id={}",
+                payment_url_base.trim_end_matches('/'),
+                self.invoice.id
+            ),
             redirect_url: self.invoice.redirect_url,
             cart: self.invoice.cart,
             valid_till: self.invoice.valid_till,

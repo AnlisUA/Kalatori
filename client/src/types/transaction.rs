@@ -1,7 +1,13 @@
-use uuid::Uuid;
-use chrono::{DateTime, Utc};
+use chrono::{
+    DateTime,
+    Utc,
+};
 use rust_decimal::Decimal;
-use serde::{Serialize, Deserialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
+use uuid::Uuid;
 
 use crate::types::ChainType;
 

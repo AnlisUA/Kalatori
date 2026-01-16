@@ -1,4 +1,7 @@
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::{
+    IpAddr,
+    Ipv4Addr,
+};
 
 use kalatori_client::types::ChainType;
 

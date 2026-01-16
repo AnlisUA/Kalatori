@@ -76,7 +76,7 @@ pub trait DaoPayoutMethods: DaoExecutor + 'static {
             .bind(payout.invoice_id)
             .bind(payout.transfer_info.asset_id)
             .bind(payout.transfer_info.asset_name)
-            .bind(&payout.transfer_info.chain)
+            .bind(payout.transfer_info.chain)
             .bind(&payout.transfer_info.source_address)
             .bind(&payout.transfer_info.destination_address)
             .bind(Text(payout.transfer_info.amount))

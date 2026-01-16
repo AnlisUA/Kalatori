@@ -2,19 +2,19 @@ use std::collections::HashMap;
 use std::net::IpAddr;
 use std::str::FromStr;
 
-use serde::Deserialize;
 use secrecy::SecretString;
+use serde::Deserialize;
 
 use crate::chain::utils::to_base58_string;
 use crate::types::ChainType;
 
 use super::consts::{
-    DEFAULT_INVOICE_LIFETIME_MILLIS,
     DEFAULT_ALLOW_INSECURE_ENDPOINTS,
     DEFAULT_ASSET_HUB_ASSET_ID,
     DEFAULT_CHAIN,
     DEFAULT_DATABASE_DIR,
     DEFAULT_HOST,
+    DEFAULT_INVOICE_LIFETIME_MILLIS,
     DEFAULT_POLKADOT_ASSET_HUB_ENDPOINTS,
     DEFAULT_PORT,
     DEFAULT_SIGNATURE_MAX_AGE_SECS,
@@ -24,7 +24,8 @@ use super::consts::{
 pub struct SecretsConfig {
     /// IMPORTANT: we use the same seed for all chains for simplicity
     pub seed: SecretString,
-    /// API secret key for securing API endpoints. Should be the same as in the e-commerce platform
+    /// API secret key for securing API endpoints. Should be the same as in the
+    /// e-commerce platform
     pub api_secret_key: SecretString,
 }
 
@@ -38,10 +39,11 @@ pub struct ChainConfig {
     /// RPC endpoints for the chain node. Can be left empty to use defaults.
     #[serde(default)]
     pub endpoints: Vec<String>,
-    /// List of asset IDs to monitor on this chain. Can be left empty. By default
-    /// the default asset ID for the chain will be added. If the default asset ID
-    /// is changed in PaymentsConfig but in database there are not finished invoices,
-    /// the old asset ID will be also added automatically.
+    /// List of asset IDs to monitor on this chain. Can be left empty. By
+    /// default the default asset ID for the chain will be added. If the
+    /// default asset ID is changed in PaymentsConfig but in database there
+    /// are not finished invoices, the old asset ID will be also added
+    /// automatically.
     #[serde(default)]
     pub assets: Vec<String>,
     #[serde(default = "default_allow_insecure_endpoints")]
@@ -62,22 +64,36 @@ impl ChainsConfig {
         default_asset_ids: &HashMap<ChainType, String>,
     ) {
         for chain_type in ChainType::iter() {
-            let default_asset_id = default_asset_ids.get(&chain_type).unwrap();
-            let chain_config = self.chains.get_mut(&chain_type).unwrap();
+            let default_asset_id = default_asset_ids
+                .get(&chain_type)
+                .unwrap();
+            let chain_config = self
+                .chains
+                .get_mut(&chain_type)
+                .unwrap();
 
-            if !chain_config.assets.contains(default_asset_id) {
-                chain_config.assets.push(default_asset_id.clone());
+            if !chain_config
+                .assets
+                .contains(default_asset_id)
+            {
+                chain_config
+                    .assets
+                    .push(default_asset_id.clone());
             }
         }
     }
 
-    /// Extend chains config with asset IDs of restored invoices from the database
+    /// Extend chains config with asset IDs of restored invoices from the
+    /// database
     pub fn add_restored_asset_ids(
         &mut self,
         restored_asset_ids: HashMap<ChainType, Vec<String>>,
     ) {
         for (chain_type, asset_ids) in restored_asset_ids {
-            let chain_config = self.chains.get_mut(&chain_type).unwrap();
+            let chain_config = self
+                .chains
+                .get_mut(&chain_type)
+                .unwrap();
 
             for asset_id in asset_ids {
                 if !chain_config.assets.contains(&asset_id) {
@@ -89,18 +105,20 @@ impl ChainsConfig {
 
     pub(super) fn set_default_chains_if_missing(&mut self) {
         for chain in ChainType::iter() {
-            let chain_config = self.chains
+            let chain_config = self
+                .chains
                 .entry(chain)
-                .or_insert_with(|| {
-                    ChainConfig::default()
-                });
+                .or_default();
 
             if chain_config.endpoints.is_empty() {
                 let endpoints = match chain {
                     ChainType::PolkadotAssetHub => DEFAULT_POLKADOT_ASSET_HUB_ENDPOINTS,
                 };
 
-                chain_config.endpoints = endpoints.iter().map(|s| s.to_string()).collect();
+                chain_config.endpoints = endpoints
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect();
             }
         }
     }
@@ -119,8 +137,9 @@ fn default_invoice_lifetime_millis() -> u64 {
 pub struct PaymentsConfig {
     /// Address to which payments will be sent after invoice paid,
     /// separate address per chain. Should always be set for default chain.
-    /// If default chain is changed but there are not finished invoices in the database,
-    /// the old default chain's recipient address will be also required.
+    /// If default chain is changed but there are not finished invoices in the
+    /// database, the old default chain's recipient address will be also
+    /// required.
     pub recipient: HashMap<ChainType, String>,
     /// Invoice lifetime in milliseconds. Default is 24 hours.
     #[serde(default = "default_invoice_lifetime_millis")]
@@ -148,22 +167,40 @@ impl PaymentsConfig {
         }
     }
 
-    /// Validate that all recipient addresses are valid for their respective chains
-    pub fn validate_recipients(&mut self, chains: &[ChainType]) -> Result<(), String> {
+    /// Validate that all recipient addresses are valid for their respective
+    /// chains
+    pub fn validate_recipients(
+        &mut self,
+        chains: &[ChainType],
+    ) -> Result<(), String> {
         for chain in chains {
-            let recipient = self.recipient.get(chain).ok_or_else(|| {
-                format!("Recipient address for chain {:?} is missing", chain)
-            })?;
+            let recipient = self
+                .recipient
+                .get(chain)
+                .ok_or_else(|| {
+                    format!(
+                        "Recipient address for chain {:?} is missing",
+                        chain
+                    )
+                })?;
 
             match chain {
                 ChainType::PolkadotAssetHub => {
                     // Validate Polkadot address (prefix 0)
-                    let account_id = subxt::utils::AccountId32::from_str(recipient)
-                        .map_err(|_| format!("Invalid Polkadot address: {}", recipient))?;
+                    let account_id =
+                        subxt::utils::AccountId32::from_str(recipient).map_err(|_| {
+                            format!(
+                                "Invalid Polkadot address: {}",
+                                recipient
+                            )
+                        })?;
 
                     // Re-encode to ensure correct format
-                    self.recipient.insert(*chain, to_base58_string(account_id.0, 0));
-                }
+                    self.recipient.insert(
+                        *chain,
+                        to_base58_string(account_id.0, 0),
+                    );
+                },
             }
         }
 

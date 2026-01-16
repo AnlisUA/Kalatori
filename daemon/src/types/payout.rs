@@ -18,10 +18,10 @@ use uuid::Uuid;
 
 use super::{
     InitiatorType,
+    Invoice,
     RetryMeta,
     TransferInfo,
     TransferInfoRow,
-    Invoice,
 };
 
 /// Payout status

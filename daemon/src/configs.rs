@@ -25,7 +25,7 @@ pub fn secrets_config_with_prefix(
         std::env::remove_var(format!("{env_prefix}_API_SECRET_KEY"));
     }
 
-    config.into()
+    config
 }
 
 pub fn chains_config_with_prefix(
@@ -84,8 +84,8 @@ pub fn shop_config_with_prefix(
 //     use serial_test::serial;
 //     use subxt_signer::ExposeSecret;
 
-//     // TODO: those tests suppose that `make copy-configs` was executed. Need somehow
-//     // ensure that it happend
+//     // TODO: those tests suppose that `make copy-configs` was executed. Need
+// somehow     // ensure that it happend
 
 //     #[test]
 //     #[serial]
@@ -95,12 +95,12 @@ pub fn shop_config_with_prefix(
 //             let config = seed_config_with_prefix("", "");
 //             assert_eq!(
 //                 config.seed.expose_secret(),
-//                 "bottom drive obey lake curtain smoke basket hold race lonely fit walk"
-//             );
+//                 "bottom drive obey lake curtain smoke basket hold race lonely
+// fit walk"             );
 //         }
 
-//         // override seed with env var and ensure this env var was removed after config
-//         // load
+//         // override seed with env var and ensure this env var was removed
+// after config         // load
 //         {
 //             let value = "test seed";
 //             unsafe {
@@ -116,8 +116,8 @@ pub fn shop_config_with_prefix(
 //             ));
 //         }
 
-//         // same as previous + override env var prefix. Also set some different dir which
-//         // shouldn't affect anything in this case
+//         // same as previous + override env var prefix. Also set some
+// different dir which         // shouldn't affect anything in this case
 //         {
 //             let value = "test seed 2";
 //             unsafe {
@@ -150,8 +150,8 @@ pub fn shop_config_with_prefix(
 
 //             assert_eq!(
 //                 config.recipient,
-//                 // It's base58 representation of Alice address with prefix 0 (Polkadot)
-//                 "15oF4uVJwmo4TdGW7VfQxNLavjCXviqxT9S1MgbjMNHr6Sp5"
+//                 // It's base58 representation of Alice address with prefix 0
+// (Polkadot)                 "15oF4uVJwmo4TdGW7VfQxNLavjCXviqxT9S1MgbjMNHr6Sp5"
 //             );
 //         }
 
@@ -163,11 +163,13 @@ pub fn shop_config_with_prefix(
 //                     "PAYMENTS_RECIPIENT",
 //                     "14E5nqKAp3oAJcmzgZhUD2RcptBeUBScxKHgJKU4HPNcKVf3",
 //                 );
-//                 std::env::set_var("PAYMENTS_DEFAULT_CHAIN", "PolkadotAssetHub");
+//                 std::env::set_var("PAYMENTS_DEFAULT_CHAIN",
+//                     "PolkadotAssetHub");
 //                 std::env::set_var("PAYMENTS_DEFAULT_ASSET_ID", "1337");
 //             }
 
-//             let config = payments_config_with_prefix("somewhere-nowhere", "");
+//             let config = payments_config_with_prefix("somewhere-nowhere",
+// "");
 
 //             assert_eq!(
 //                 config.account_lifetime_millis,
@@ -197,8 +199,8 @@ pub fn shop_config_with_prefix(
 
 //             assert_eq!(
 //                 config.recipient,
-//                 // It's base58 representation of Alice address with prefix 0 (Polkadot)
-//                 "15oF4uVJwmo4TdGW7VfQxNLavjCXviqxT9S1MgbjMNHr6Sp5"
+//                 // It's base58 representation of Alice address with prefix 0
+// (Polkadot)                 "15oF4uVJwmo4TdGW7VfQxNLavjCXviqxT9S1MgbjMNHr6Sp5"
 //             );
 //         }
 //     }
@@ -261,7 +263,8 @@ pub fn shop_config_with_prefix(
 
 //     #[test]
 //     #[should_panic(
-//         expected = "Failed to parse config file: somewhere-nowhere/chain.json. Error: missing configuration field \"name\""
+//         expected = "Failed to parse config file:
+// somewhere-nowhere/chain.json. Error: missing configuration field \"name\""
 //     )]
 //     #[serial]
 //     fn test_panic_on_unexisting_config() {
@@ -281,11 +284,11 @@ pub fn shop_config_with_prefix(
 //             assert_eq!(config.port, 16726);
 //         }
 
-//         // override config dir to unexisting one but as long as all config fields are
-//         // optional it should work
+//         // override config dir to unexisting one but as long as all config
+// fields are         // optional it should work
 //         {
-//             let config = web_server_config_with_prefix("somewhere-nowhere", "");
-//             assert_eq!(
+//             let config = web_server_config_with_prefix("somewhere-nowhere",
+// "");             assert_eq!(
 //                 config.host,
 //                 IpAddr::V4(Ipv4Addr::UNSPECIFIED)
 //             );
@@ -334,11 +337,11 @@ pub fn shop_config_with_prefix(
 //             assert!(!config.temporary);
 //         }
 
-//         // override configs dir to unexisting one but as long as all config fields are
-//         // optional it should work
+//         // override configs dir to unexisting one but as long as all config
+// fields are         // optional it should work
 //         {
-//             let config = database_config_with_prefix("somewhere-nowhere", "");
-//             assert_eq!(config.path, "kalatori.db".to_string());
+//             let config = database_config_with_prefix("somewhere-nowhere",
+// "");             assert_eq!(config.path, "kalatori.db".to_string());
 //             assert!(!config.temporary);
 //         }
 

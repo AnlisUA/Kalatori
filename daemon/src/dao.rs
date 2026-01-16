@@ -41,7 +41,6 @@ pub use interface::{
 
 // Export mocks only in test builds
 #[cfg(test)]
-#[cfg_attr(test, expect(unused_imports))]
 pub use interface::{
     MockDaoInterface,
     MockDaoTransactionInterface,

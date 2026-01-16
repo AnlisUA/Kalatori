@@ -1,22 +1,29 @@
-/// API server implementation
-///
-/// API namespaces:
-/// - `/public`: Publicly accessible endpoints that do not require authentication. Should return only sanitized data
-/// without sensitive information and details about the internal state.
-/// - `/private`: Endpoints that require authentication and are intended for internal use. Should return only sanitized
-/// data without sensitive information and details about the internal state.
-/// - `/dev`: Development and testing endpoints. May include endpoints that are not intended for production use. Allowed
-/// to return raw data including sensitive information and internal state details for debugging purposes. Should not be
-/// exposed in production environments.
-///
-/// Error handling principles:
-/// - For invalid or malformed JSON, query parameters, or request structure, return structured JSON error response.
-/// - For authentication errors, return structured JSON error response.
-/// - For application-level errors (e.g., entity not found, validation errors), return structured JSON error response.
-/// - For unexpected server errors, return structured JSON error response with a generic message.
-/// - For invalid routes or methods under `/private` and `/dev` namespaces, return structured JSON error response,
-/// while `/public` namespace returns standard 404 HTML response.
-
+//! API server implementation
+//!
+//! API namespaces:
+//! - `/public`: Publicly accessible endpoints that do not require
+//!   authentication. Should return only sanitized data
+//!   without sensitive information and details about the internal state.
+//! - `/private`: Endpoints that require authentication and are intended for
+//!   internal use. Should return only sanitized
+//!   data without sensitive information and details about the internal state.
+//! - `/dev`: Development and testing endpoints. May include endpoints that are
+//!   not intended for production use. Allowed
+//!   to return raw data including sensitive information and internal state
+//!   details for debugging purposes. Should not be exposed in production
+//!   environments.
+//!
+//! Error handling principles:
+//! - For invalid or malformed JSON, query parameters, or request structure,
+//!   return structured JSON error response.
+//! - For authentication errors, return structured JSON error response.
+//! - For application-level errors (e.g., entity not found, validation errors),
+//!   return structured JSON error response.
+//! - For unexpected server errors, return structured JSON error response with a
+//!   generic message.
+//! - For invalid routes or methods under `/private` and `/dev` namespaces,
+//!   return structured JSON error response,
+//!   while `/public` namespace returns standard 404 HTML response.
 #[cfg(feature = "dev_api")]
 mod dev;
 mod private;
@@ -26,11 +33,22 @@ mod utils;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::http::{HeaderName, Method, StatusCode};
+use axum::http::{
+    HeaderName,
+    Method,
+    StatusCode,
+};
 use tokio::net::TcpListener;
+use tower_http::cors::{
+    Any,
+    CorsLayer,
+};
+use tower_http::request_id::{
+    MakeRequestUuid,
+    PropagateRequestIdLayer,
+    SetRequestIdLayer,
+};
 use tower_http::trace::TraceLayer;
-use tower_http::request_id::{SetRequestIdLayer, PropagateRequestIdLayer, MakeRequestUuid};
-use tower_http::cors::{CorsLayer, Any};
 
 use kalatori_client::types::ApiError;
 use kalatori_client::utils::HmacConfig;
@@ -48,7 +66,7 @@ pub trait ApiErrorExt: std::error::Error {
     fn message(&self) -> &str;
     fn http_status_code(&self) -> StatusCode;
 
-    fn into_api_error(&self) -> ApiError {
+    fn to_api_error(&self) -> ApiError {
         ApiError {
             category: self.category().to_string(),
             code: self.code().to_string(),
@@ -84,15 +102,13 @@ pub async fn api_server(
         .nest("/public", public::routes())
         .layer(
             tower::ServiceBuilder::new()
+                .layer(SetRequestIdLayer::new(
+                    REQUEST_ID_HEADER,
+                    MakeRequestUuid,
+                ))
                 .layer(
-                    SetRequestIdLayer::new(
-                        REQUEST_ID_HEADER,
-                        MakeRequestUuid,
-                    )
-                )
-                .layer(
-                    TraceLayer::new_for_http()
-                        .make_span_with(|request: &axum::http::Request<_>| {
+                    TraceLayer::new_for_http().make_span_with(
+                        |request: &axum::http::Request<_>| {
                             let request_id = request
                                 .headers()
                                 .get(REQUEST_ID_HEADER)
@@ -105,16 +121,17 @@ pub async fn api_server(
                                 path = %request.uri().path(),
                                 request_id = %request_id,
                             )
-                        })
+                        },
+                    ),
                 )
-                .layer(
-                    PropagateRequestIdLayer::new(REQUEST_ID_HEADER)
-                )
+                .layer(PropagateRequestIdLayer::new(
+                    REQUEST_ID_HEADER,
+                ))
                 .layer(
                     CorsLayer::new()
                         .allow_methods([Method::GET, Method::POST])
-                        .allow_origin(Any)
-                )
+                        .allow_origin(Any),
+                ),
         )
         .with_state(api_state);
 

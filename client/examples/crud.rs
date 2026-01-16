@@ -1,5 +1,5 @@
-use uuid::Uuid;
 use rust_decimal::Decimal;
+use uuid::Uuid;
 
 use kalatori_client::KalatoriClient;
 use kalatori_client::types::{
@@ -25,8 +25,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         redirect_url: "http://example.com/redirect".to_string(),
     };
 
-    let created_invoice = client.create_invoice(create_params).await??;
-    println!("Created Invoice: {:#?}", created_invoice);
+    let created_invoice = client
+        .create_invoice(create_params)
+        .await??;
+    println!(
+        "Created Invoice: {:#?}",
+        created_invoice
+    );
 
     // Get the invoice
     let get_params = GetInvoiceParams {
@@ -35,22 +40,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let fetched_invoice = client.get_invoice(get_params).await??;
-    println!("Fetched Invoice: {:#?}", fetched_invoice);
+    println!(
+        "Fetched Invoice: {:#?}",
+        fetched_invoice
+    );
 
     assert_eq!(created_invoice, fetched_invoice);
 
     let cart = InvoiceCart {
-        items: vec![
-            InvoiceCartItem {
-                name: "Updated Item 1".to_string(),
-                quantity: 100,
-                price: Decimal::TEN,
-                product_url: None,
-                image_url: None,
-                tax: None,
-                discount: None,
-            },
-        ],
+        items: vec![InvoiceCartItem {
+            name: "Updated Item 1".to_string(),
+            quantity: 100,
+            price: Decimal::TEN,
+            product_url: None,
+            image_url: None,
+            tax: None,
+            discount: None,
+        }],
     };
 
     // Update the invoice
@@ -60,8 +66,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cart,
     };
 
-    let updated_invoice = client.update_invoice(update_params).await??;
-    println!("Updated Invoice: {:#?}", updated_invoice);
+    let updated_invoice = client
+        .update_invoice(update_params)
+        .await??;
+    println!(
+        "Updated Invoice: {:#?}",
+        updated_invoice
+    );
 
     assert_ne!(created_invoice, updated_invoice);
     assert!(!updated_invoice.cart.is_empty());
@@ -72,8 +83,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         include_transaction: false,
     };
 
-    let canceled_invoice = client.cancel_invoice(cancel_params).await??;
-    println!("Canceled Invoice: {:#?}", canceled_invoice);
+    let canceled_invoice = client
+        .cancel_invoice(cancel_params)
+        .await??;
+    println!(
+        "Canceled Invoice: {:#?}",
+        canceled_invoice
+    );
 
     assert!(canceled_invoice.status.is_canceled());
 
@@ -83,8 +99,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         include_transaction: false,
     };
 
-    let result = client.get_invoice(get_params).await?.unwrap_err();
-    println!("Expected error fetching non-existing invoice: {:#?}", result);
+    let result = client
+        .get_invoice(get_params)
+        .await?
+        .unwrap_err();
+    println!(
+        "Expected error fetching non-existing invoice: {:#?}",
+        result
+    );
 
     Ok(())
 }

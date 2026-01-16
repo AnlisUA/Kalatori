@@ -1,5 +1,8 @@
+use chrono::{
+    DateTime,
+    Utc,
+};
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
 pub use kalatori_client::types::{
     GenericEvent,
@@ -19,7 +22,8 @@ pub struct WebhookEvent {
 
 impl<T: KalatoriEventExt> From<GenericEvent<T>> for WebhookEvent {
     fn from(event: GenericEvent<T>) -> Self {
-        let payload = serde_json::to_value(&event).expect("Failed to serialize webhook event payload");
+        let payload =
+            serde_json::to_value(&event).expect("Failed to serialize webhook event payload");
 
         Self {
             id: event.id,
@@ -46,12 +50,14 @@ pub fn default_webhook_event(invoice_id: Uuid) -> GenericEvent<super::PublicInvo
         status: super::InvoiceStatus::Waiting,
         payment_url: "https://app.kalatori.com/invoice/test".to_string(),
         redirect_url: "https://example.com/thank-you".to_string(),
-        cart: kalatori_client::types::InvoiceCart { items: vec![] },
+        cart: kalatori_client::types::InvoiceCart {
+            items: vec![],
+        },
         valid_till: Utc::now() + chrono::Duration::hours(24),
         created_at: Utc::now(),
         updated_at: Utc::now(),
         total_received_amount: rust_decimal::Decimal::ZERO,
-        transactions: vec![]
+        transactions: vec![],
     };
 
     invoice.build_event(InvoiceEventType::Created)

@@ -76,11 +76,11 @@ run-release: # Run kalatori daemon with --release flag without starting chopstic
 ##############
 
 cargo-check: # Run cargo check for all targets
-	cargo check --all-targets
+	cargo check --all-targets --all-features
 
 # Keep same as in CI
 cargo-clippy: # Run cargo clippy checks
-	cargo clippy --all-targets -- -D warnings -D clippy::pedantic -D clippy::correctness -D clippy::complexity -D clippy::perf
+	RUSTFLAGS="-Dwarnings" cargo clippy --all-targets --all-features
 
 cargo-fmt: # Run cargo fmt checks
 	cargo +nightly fmt --all -- --check

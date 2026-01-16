@@ -1,7 +1,5 @@
 //! Transaction types for `SQLite` schema
 
-use std::fmt;
-
 use chrono::{
     DateTime,
     Utc,
@@ -10,22 +8,22 @@ use serde::{
     Deserialize,
     Serialize,
 };
-use sqlx::types::Json;
 use sqlx::FromRow;
+use sqlx::types::Json;
 use uuid::Uuid;
 
 use crate::chain_client::GeneralChainTransfer;
 
 pub use kalatori_client::types::{
-    TransactionType,
-    TransactionStatus,
     Transaction as PublicTransaction,
+    TransactionStatus,
+    TransactionType,
 };
 
 use super::common::{
+    ChainType,
     TransferInfo,
     TransferInfoRow,
-    ChainType,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, FromRow)]
@@ -72,7 +70,6 @@ impl TransactionOrigin {
         }
     }
 
-    #[expect(dead_code)]
     pub fn refund(refund_id: Uuid) -> Self {
         Self {
             refund_id: Some(refund_id),
@@ -80,7 +77,6 @@ impl TransactionOrigin {
         }
     }
 
-    #[expect(dead_code)]
     pub fn internal_transfer(internal_transfer_id: Uuid) -> Self {
         Self {
             internal_transfer_id: Some(internal_transfer_id),
@@ -147,9 +143,15 @@ impl From<Transaction> for PublicTransaction {
                 // return an error if we trying to turn into PublicTransaction not finished
                 // Outgoing transaction
                 "https://assethub-polkadot.subscan.io/extrinsic/{}-{}",
-                value.transaction_id.block_number.unwrap_or_default(),
-                value.transaction_id.position_in_block.unwrap_or_default(),
-            )
+                value
+                    .transaction_id
+                    .block_number
+                    .unwrap_or_default(),
+                value
+                    .transaction_id
+                    .position_in_block
+                    .unwrap_or_default(),
+            ),
         };
 
         PublicTransaction {
@@ -170,12 +172,6 @@ impl From<Transaction> for PublicTransaction {
             status: value.status,
             transaction_link,
         }
-    }
-}
-
-impl Transaction {
-    fn into_public_transaction(self) -> PublicTransaction {
-        self.into()
     }
 }
 

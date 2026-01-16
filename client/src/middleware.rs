@@ -1,11 +1,21 @@
 #[cfg(feature = "axum-middleware")]
 mod axum;
 
-use http::{HeaderMap, HeaderValue, Method, Uri};
 use hmac::Mac;
+use http::{
+    HeaderMap,
+    HeaderValue,
+    Method,
+    Uri,
+};
 
 use crate::utils::{
-    HmacConfig, SIGNATURE_HEADER, TIMESTAMP_HEADER, hmac_from_request_parts, timestamp_secs, HmacSha256,
+    HmacConfig,
+    HmacSha256,
+    SIGNATURE_HEADER,
+    TIMESTAMP_HEADER,
+    hmac_from_request_parts,
+    timestamp_secs,
 };
 
 #[cfg(feature = "axum-middleware")]
@@ -33,7 +43,10 @@ pub enum HmacValidationError {
 }
 
 /// Extracts a header value as a string
-fn extract_header<'a>(headers: &'a HeaderMap<HeaderValue>, name: &str) -> Option<&'a str> {
+fn extract_header<'a>(
+    headers: &'a HeaderMap<HeaderValue>,
+    name: &str,
+) -> Option<&'a str> {
     headers.get(name)?.to_str().ok()
 }
 
@@ -75,22 +88,22 @@ fn validate_timestamp_and_signature(
 
 pub(crate) fn validate_request(
     config: &HmacConfig,
-    uri: Uri,
+    uri: &Uri,
     method: &Method,
     headers: &HeaderMap<HeaderValue>,
     body_bytes: &[u8],
 ) -> Result<(), HmacValidationError> {
     // Extract and validate signature header
-    let signature_hex = extract_header(&headers, SIGNATURE_HEADER)
-        .ok_or(HmacValidationError::MissingSignature)?;
+    let signature_hex =
+        extract_header(headers, SIGNATURE_HEADER).ok_or(HmacValidationError::MissingSignature)?;
 
     // Decode signature from hex
     let expected_signature = const_hex::decode(signature_hex)
         .map_err(|_| HmacValidationError::InvalidSignatureFormat)?;
 
     // Extract timestamp
-    let timestamp = extract_header(&headers, TIMESTAMP_HEADER)
-        .ok_or(HmacValidationError::MissingTimestamp)?;
+    let timestamp =
+        extract_header(headers, TIMESTAMP_HEADER).ok_or(HmacValidationError::MissingTimestamp)?;
 
     let path = uri.path();
     let query_params = uri.query();
@@ -103,7 +116,7 @@ pub(crate) fn validate_request(
         body_bytes,
         timestamp,
     )
-        .ok_or_else(|| HmacValidationError::MethodNotAllowed)?;
+    .ok_or(HmacValidationError::MethodNotAllowed)?;
 
     validate_timestamp_and_signature(
         config,

@@ -21,8 +21,9 @@ fn parse_error_with_statuses<S>(
     db_error: &sqlx::Error,
     prefix: &str,
 ) -> Option<(Option<S>, Option<S>)>
-where S: FromStr,
-      S::Err: std::fmt::Debug,
+where
+    S: FromStr,
+    S::Err: std::fmt::Debug,
 {
     if let sqlx::Error::Database(err) = db_error {
         let msg = err.message();
@@ -62,8 +63,7 @@ where
     S: FromStr,
     S::Err: std::fmt::Debug,
 {
-    let (old_status_opt, new_status_opt) =
-        parse_error_with_statuses::<S>(db_error, prefix)?;
+    let (old_status_opt, new_status_opt) = parse_error_with_statuses::<S>(db_error, prefix)?;
 
     if let (Some(old_status), Some(new_status)) = (old_status_opt, new_status_opt) {
         Some(StatusTriggerError {
@@ -79,8 +79,9 @@ pub fn parse_update_not_allowed_error<S>(
     db_error: &sqlx::Error,
     prefix: &str,
 ) -> Option<S>
-where S: FromStr,
-      S::Err: std::fmt::Debug,
+where
+    S: FromStr,
+    S::Err: std::fmt::Debug,
 {
     parse_error_with_statuses(db_error, prefix)?.0
 }

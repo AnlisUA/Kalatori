@@ -1,15 +1,15 @@
+use secrecy::SecretSlice;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use secrecy::SecretSlice;
 
 use crate::types::{
     ApiResult,
     ApiResultStructured,
-    GetInvoiceParams,
-    CreateInvoiceParams,
     CancelInvoiceParams,
-    UpdateInvoiceParams,
+    CreateInvoiceParams,
+    GetInvoiceParams,
     Invoice,
+    UpdateInvoiceParams,
 };
 use crate::utils::{
     HmacConfig,
@@ -46,7 +46,10 @@ impl From<KalatoriHttpMethod> for http::Method {
 
 impl KalatoriClient {
     // TODO: add host validation
-    pub fn new(base_url: String, secret_key: impl Into<SecretSlice<u8>>) -> Self {
+    pub fn new(
+        base_url: String,
+        secret_key: impl Into<SecretSlice<u8>>,
+    ) -> Self {
         let config = HmacConfig::new(secret_key, 0);
 
         Self {
@@ -65,7 +68,10 @@ impl KalatoriClient {
         self
     }
 
-    fn build_url(&self, path: &str) -> String {
+    fn build_url(
+        &self,
+        path: &str,
+    ) -> String {
         let modified_path = (self.modify_path)(path);
         format!("{}{}", self.base_url, modified_path)
     }
@@ -79,8 +85,16 @@ impl KalatoriClient {
         let url = self.build_url(path);
 
         let mut request = match method {
-            KalatoriHttpMethod::Get => self.client.get(url).query(&payload).build()?,
-            KalatoriHttpMethod::Post => self.client.post(url).json(&payload).build()?,
+            KalatoriHttpMethod::Get => self
+                .client
+                .get(url)
+                .query(&payload)
+                .build()?,
+            KalatoriHttpMethod::Post => self
+                .client
+                .post(url)
+                .json(&payload)
+                .build()?,
         };
 
         add_headers_to_reqwest(&self.config, &mut request);
@@ -92,7 +106,8 @@ impl KalatoriClient {
         &self,
         request: reqwest::Request,
     ) -> Result<ApiResult<T>, reqwest::Error> {
-        let result = self.client
+        let result = self
+            .client
             .execute(request)
             .await?
             .json::<ApiResultStructured<T>>()
@@ -101,7 +116,10 @@ impl KalatoriClient {
         Ok(result.into())
     }
 
-    pub async fn get_invoice(&self, payload: GetInvoiceParams) -> Result<ApiResult<Invoice>, reqwest::Error> {
+    pub async fn get_invoice(
+        &self,
+        payload: GetInvoiceParams,
+    ) -> Result<ApiResult<Invoice>, reqwest::Error> {
         let request = self.build_request(
             KalatoriHttpMethod::Get,
             GET_INVOICE_PATH,
@@ -111,7 +129,10 @@ impl KalatoriClient {
         self.execute_request(request).await
     }
 
-    pub async fn create_invoice(&self, payload: CreateInvoiceParams) -> Result<ApiResult<Invoice>, reqwest::Error> {
+    pub async fn create_invoice(
+        &self,
+        payload: CreateInvoiceParams,
+    ) -> Result<ApiResult<Invoice>, reqwest::Error> {
         let request = self.build_request(
             KalatoriHttpMethod::Post,
             CREATE_INVOICE_PATH,
@@ -121,7 +142,10 @@ impl KalatoriClient {
         self.execute_request(request).await
     }
 
-    pub async fn update_invoice(&self, payload: UpdateInvoiceParams) -> Result<ApiResult<Invoice>, reqwest::Error> {
+    pub async fn update_invoice(
+        &self,
+        payload: UpdateInvoiceParams,
+    ) -> Result<ApiResult<Invoice>, reqwest::Error> {
         let request = self.build_request(
             KalatoriHttpMethod::Post,
             UPDATE_INVOICE_PATH,
@@ -131,7 +155,10 @@ impl KalatoriClient {
         self.execute_request(request).await
     }
 
-    pub async fn cancel_invoice(&self, payload: CancelInvoiceParams) -> Result<ApiResult<Invoice>, reqwest::Error> {
+    pub async fn cancel_invoice(
+        &self,
+        payload: CancelInvoiceParams,
+    ) -> Result<ApiResult<Invoice>, reqwest::Error> {
         let request = self.build_request(
             KalatoriHttpMethod::Post,
             CANCEL_INVOICE_PATH,

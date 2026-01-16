@@ -1,7 +1,16 @@
-use hmac::{Hmac, Mac};
-use http::{Method, HeaderValue};
+use hmac::{
+    Hmac,
+    Mac,
+};
+use http::{
+    HeaderValue,
+    Method,
+};
+use secrecy::{
+    ExposeSecret,
+    SecretSlice,
+};
 use sha2::Sha256;
-use secrecy::{SecretSlice, ExposeSecret};
 
 /// HMAC-SHA256 signature validator
 pub(crate) type HmacSha256 = Hmac<Sha256>;
@@ -19,7 +28,10 @@ pub struct HmacConfig {
 }
 
 impl HmacConfig {
-    pub fn new(secret_key: impl Into<SecretSlice<u8>>, max_age_seconds: u64) -> Self {
+    pub fn new(
+        secret_key: impl Into<SecretSlice<u8>>,
+        max_age_seconds: u64,
+    ) -> Self {
         Self {
             secret_key: secret_key.into(),
             max_age_seconds,
@@ -64,7 +76,7 @@ fn sorted_query_string(query: &str) -> String {
 
     pairs
         .into_iter()
-        .map(|(k, v)| format!("{}={}", k, v))
+        .map(|(k, v)| format!("{k}={v}"))
         .collect::<Vec<_>>()
         .join("&")
 }
@@ -115,16 +127,22 @@ pub fn add_headers_to_reqwest(
         request.url().query(),
         request
             .body()
-            .map(|b| b.as_bytes())
-            .flatten()
+            .and_then(|b| b.as_bytes())
             .unwrap_or(&[]),
         &timestamp,
-    ).unwrap();
+    )
+    .unwrap();
 
     let encoded_signature = const_hex::encode(signature.finalize().into_bytes());
 
     let headers = request.headers_mut();
 
-    headers.insert(TIMESTAMP_HEADER, HeaderValue::from_str(&timestamp).unwrap());
-    headers.insert(SIGNATURE_HEADER, HeaderValue::from_str(&encoded_signature).unwrap());
+    headers.insert(
+        TIMESTAMP_HEADER,
+        HeaderValue::from_str(&timestamp).unwrap(),
+    );
+    headers.insert(
+        SIGNATURE_HEADER,
+        HeaderValue::from_str(&encoded_signature).unwrap(),
+    );
 }

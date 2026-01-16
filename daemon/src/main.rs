@@ -15,10 +15,10 @@ use std::process::ExitCode;
 
 use kalatori_client::types::ChainType;
 use kalatori_client::utils::HmacConfig;
+use secrecy::ExposeSecret;
 use tokio::runtime::Runtime;
 use tokio_util::sync::CancellationToken;
 use tracing::Level;
-use secrecy::ExposeSecret;
 use zeroize::Zeroize;
 
 use chain::{
@@ -32,14 +32,14 @@ use chain_client::{
     Keyring,
 };
 use configs::{
+    ChainsConfig,
+    PaymentsConfig,
     chains_config_with_prefix,
     database_config_with_prefix,
     payments_config_with_prefix,
     secrets_config_with_prefix,
-    web_server_config_with_prefix,
     shop_config_with_prefix,
-    PaymentsConfig,
-    ChainsConfig,
+    web_server_config_with_prefix,
 };
 use dao::DAO;
 use error::{
@@ -131,18 +131,13 @@ fn try_main(shutdown_notification: ShutdownNotification) -> Result<(), Error> {
         .block_on(async_try_main(shutdown_notification))
 }
 
-async fn init_invoice_registry(
-    dao: &impl DaoInterface,
-) -> Result<InvoiceRegistry, Error> {
+async fn init_invoice_registry(dao: &impl DaoInterface) -> Result<InvoiceRegistry, Error> {
     let invoice_registry = InvoiceRegistry::new();
 
     let restore_invoices = dao
         .get_active_invoices_with_amounts()
         .await
-        .map_err(|_| Error::Fatal)?
-        .into_iter()
-        .map(From::from)
-        .collect();
+        .map_err(|_| Error::Fatal)?;
 
     invoice_registry
         .add_invoices(restore_invoices)
@@ -156,14 +151,20 @@ fn validate_and_extend_configs(
     payments_config: &mut PaymentsConfig,
     restored_asset_ids: HashMap<ChainType, Vec<String>>,
 ) -> Result<(), Error> {
-    // Ensure that we have recipients for all chains from restored invoices and for default chain
-    let mut required_recipients: Vec<_> = restored_asset_ids.keys().cloned().collect();
+    // Ensure that we have recipients for all chains from restored invoices and for
+    // default chain
+    let mut required_recipients: Vec<_> = restored_asset_ids
+        .keys()
+        .cloned()
+        .collect();
 
     if !required_recipients.contains(&payments_config.default_chain) {
         required_recipients.push(payments_config.default_chain);
     }
 
-    payments_config.validate_recipients(&required_recipients).map_err(|_| Error::Fatal)?;
+    payments_config
+        .validate_recipients(&required_recipients)
+        .map_err(|_| Error::Fatal)?;
 
     // Extend chains config with default and restored asset IDs
     chains_config.add_default_asset_ids(&payments_config.default_asset_id);
@@ -200,7 +201,11 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
     let shop_config = shop_config_with_prefix(&configs_path, &env_prefix);
 
     let hmac_config = HmacConfig::new(
-        secrets_config.api_secret_key.expose_secret().as_bytes().to_vec(),
+        secrets_config
+            .api_secret_key
+            .expose_secret()
+            .as_bytes()
+            .to_vec(),
         shop_config.signature_max_age_secs,
     );
 
@@ -219,9 +224,13 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
         invoice_registry.used_asset_ids().await,
     )?;
 
-    let asset_hub_chain_config = chains_config.chains.get(&ChainType::PolkadotAssetHub).unwrap();
+    let asset_hub_chain_config = chains_config
+        .chains
+        .get(&ChainType::PolkadotAssetHub)
+        .unwrap();
 
-    let assets = chains_config.chains
+    let assets = chains_config
+        .chains
         .get(&ChainType::PolkadotAssetHub)
         .unwrap()
         .assets
@@ -296,7 +305,8 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
         hmac_config,
         app_state,
         shutdown_notification.token.clone(),
-    ).await;
+    )
+    .await;
 
     let shutdown_completed = CancellationToken::new();
     let mut shutdown_listener = tokio::spawn(shutdown::listener(

@@ -91,7 +91,8 @@ pub trait DaoInterface: Send + Sync + 'static {
         invoice_id: Uuid,
     ) -> Result<Option<Invoice>, DaoInvoiceError>;
 
-    /// Get an invoice with sum of related incoming transactions by its unique ID.
+    /// Get an invoice with sum of related incoming transactions by its unique
+    /// ID.
     async fn get_invoice_with_received_amount_by_id(
         &self,
         invoice_id: Uuid,

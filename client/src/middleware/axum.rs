@@ -1,13 +1,27 @@
-use axum::middleware::Next;
-use axum::extract::{Request, State, OriginalUri, Json};
-use axum::response::{IntoResponse, Response};
 use axum::body::Body;
+use axum::extract::{
+    Json,
+    OriginalUri,
+    Request,
+    State,
+};
 use axum::http::StatusCode;
+use axum::middleware::Next;
+use axum::response::{
+    IntoResponse,
+    Response,
+};
 
-use crate::types::{ApiError, ApiResultStructured};
+use crate::types::{
+    ApiError,
+    ApiResultStructured,
+};
 use crate::utils::HmacConfig;
 
-use super::{HmacValidationError, validate_request};
+use super::{
+    HmacValidationError,
+    validate_request,
+};
 
 impl IntoResponse for HmacValidationError {
     fn into_response(self) -> Response {
@@ -43,28 +57,26 @@ impl IntoResponse for HmacValidationError {
                 "Invalid timestamp format",
             ),
             // TODO: add details about expiration time
-            Self::RequestExpired { .. } => (
+            Self::RequestExpired {
+                ..
+            } => (
                 StatusCode::UNAUTHORIZED,
                 "AUTHENTICATION_FAILED",
                 "REQUEST_SIGNATURE_EXPIRED",
                 "Request signature expired",
             ),
-            Self::BodyReadError => {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "INTERNAL_ERROR",
-                    "INTERNAL_ERROR",
-                    "Failed to read request body",
-                )
-            },
-            Self::MethodNotAllowed => {
-                (
-                    StatusCode::METHOD_NOT_ALLOWED,
-                    "INVALID_REQUEST",
-                    "METHOD_NOT_ALLOWED",
-                    "Only GET and POST methods are allowed",
-                )
-            },
+            Self::BodyReadError => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                "INTERNAL_ERROR",
+                "Failed to read request body",
+            ),
+            Self::MethodNotAllowed => (
+                StatusCode::METHOD_NOT_ALLOWED,
+                "INVALID_REQUEST",
+                "METHOD_NOT_ALLOWED",
+                "Only GET and POST methods are allowed",
+            ),
         };
 
         let error = ApiError {
@@ -73,7 +85,13 @@ impl IntoResponse for HmacValidationError {
             message: message.to_string(),
         };
 
-        (status, Json(ApiResultStructured::<()>::Err { error })).into_response()
+        (
+            status,
+            Json(ApiResultStructured::<()>::Err {
+                error,
+            }),
+        )
+            .into_response()
     }
 }
 
@@ -91,7 +109,7 @@ pub async fn axum_hmac_validator(
 
     validate_request(
         &config,
-        original_uri,
+        &original_uri,
         &parts.method,
         &parts.headers,
         &body_bytes,

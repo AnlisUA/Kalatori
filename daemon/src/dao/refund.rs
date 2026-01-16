@@ -76,7 +76,7 @@ pub trait DaoRefundMethods: DaoExecutor + 'static {
             .bind(refund.invoice_id)
             .bind(refund.transfer_info.asset_id)
             .bind(&refund.transfer_info.asset_name)
-            .bind(&refund.transfer_info.chain)
+            .bind(refund.transfer_info.chain)
             .bind(Text(refund.transfer_info.amount))
             .bind(&refund.transfer_info.source_address)
             .bind(&refund.transfer_info.destination_address)

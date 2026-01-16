@@ -47,6 +47,6 @@ sqlx-types = ["sqlx"]
 [lints]
 workspace = true
 
-[[examples]]
+[[example]]
 name = "webhook"
 required-features = ["axum-middleware"]

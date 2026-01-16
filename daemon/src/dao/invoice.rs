@@ -29,9 +29,7 @@ use super::error_parsing::{
 pub enum DaoInvoiceError {
     /// Invoice not found by ID or `order_id`
     #[error("Invoice not found: {invoice_id}")]
-    NotFound {
-        invoice_id: Uuid,
-    },
+    NotFound { invoice_id: Uuid },
 
     /// Update not allowed due to status
     #[error("Invoice {invoice_id} cannot be updated in its current status: {current_status}")]
@@ -60,46 +58,72 @@ impl crate::api::ApiErrorExt for DaoInvoiceError {
     // TODO: create enum for categories and codes
     fn category(&self) -> &str {
         match self {
-            DaoInvoiceError::NotFound { .. } => "ENTITY_NOT_FOUND",
-            DaoInvoiceError::UpdateNotAllowed { .. } => "UPDATE_NOT_ALLOWED",
-            DaoInvoiceError::StatusConstraintViolation { .. } => "STATUS_CONSTRAINT_VIOLATION",
-            DaoInvoiceError::DuplicateOrderId { .. } => "DUPLICATE_ENTITY",
+            DaoInvoiceError::NotFound {
+                ..
+            } => "ENTITY_NOT_FOUND",
+            DaoInvoiceError::UpdateNotAllowed {
+                ..
+            } => "UPDATE_NOT_ALLOWED",
+            DaoInvoiceError::StatusConstraintViolation {
+                ..
+            } => "STATUS_CONSTRAINT_VIOLATION",
+            DaoInvoiceError::DuplicateOrderId {
+                ..
+            } => "DUPLICATE_ENTITY",
             DaoInvoiceError::DatabaseError => "INTERNAL_SERVER_ERROR",
         }
     }
 
     fn code(&self) -> &str {
         match self {
-            DaoInvoiceError::NotFound { .. } => "INVOICE_NOT_FOUND",
-            DaoInvoiceError::UpdateNotAllowed { .. } => "INVOICE_UPDATE_NOT_ALLOWED",
-            DaoInvoiceError::StatusConstraintViolation { .. } => "INVOICE_STATUS_CONSTRAINT_VIOLATION",
-            DaoInvoiceError::DuplicateOrderId { .. } => "INVOICE_DUPLICATE_ORDER_ID",
+            DaoInvoiceError::NotFound {
+                ..
+            } => "INVOICE_NOT_FOUND",
+            DaoInvoiceError::UpdateNotAllowed {
+                ..
+            } => "INVOICE_UPDATE_NOT_ALLOWED",
+            DaoInvoiceError::StatusConstraintViolation {
+                ..
+            } => "INVOICE_STATUS_CONSTRAINT_VIOLATION",
+            DaoInvoiceError::DuplicateOrderId {
+                ..
+            } => "INVOICE_DUPLICATE_ORDER_ID",
             DaoInvoiceError::DatabaseError => "INTERNAL_SERVER_ERROR",
         }
     }
 
     fn message(&self) -> &str {
         match self {
-            DaoInvoiceError::NotFound { .. } => "The requested invoice was not found.",
-            DaoInvoiceError::UpdateNotAllowed { .. } => {
-                "Invoice cannot be updated in its current status."
-            }
-            DaoInvoiceError::StatusConstraintViolation { .. } => {
-                "The requested status transition is not allowed."
-            }
-            DaoInvoiceError::DuplicateOrderId { .. } => {
-                "An invoice with the specified order ID already exists."
-            }
+            DaoInvoiceError::NotFound {
+                ..
+            } => "The requested invoice was not found.",
+            DaoInvoiceError::UpdateNotAllowed {
+                ..
+            } => "Invoice cannot be updated in its current status.",
+            DaoInvoiceError::StatusConstraintViolation {
+                ..
+            } => "The requested status transition is not allowed.",
+            DaoInvoiceError::DuplicateOrderId {
+                ..
+            } => "An invoice with the specified order ID already exists.",
             DaoInvoiceError::DatabaseError => "A database error occurred.",
         }
     }
 
     fn http_status_code(&self) -> reqwest::StatusCode {
         match self {
-            DaoInvoiceError::NotFound { .. } => reqwest::StatusCode::NOT_FOUND,
-            DaoInvoiceError::UpdateNotAllowed { .. } => reqwest::StatusCode::CONFLICT,
-            DaoInvoiceError::StatusConstraintViolation { .. } => reqwest::StatusCode::BAD_REQUEST,
-            DaoInvoiceError::DuplicateOrderId { .. } => reqwest::StatusCode::CONFLICT,
+            DaoInvoiceError::NotFound {
+                ..
+            } => reqwest::StatusCode::NOT_FOUND,
+            DaoInvoiceError::UpdateNotAllowed {
+                ..
+            } => reqwest::StatusCode::CONFLICT,
+            DaoInvoiceError::StatusConstraintViolation {
+                ..
+            } => reqwest::StatusCode::BAD_REQUEST,
+            DaoInvoiceError::DuplicateOrderId {
+                ..
+            } => reqwest::StatusCode::CONFLICT,
             DaoInvoiceError::DatabaseError => reqwest::StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -171,7 +195,7 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
             .bind(&invoice.order_id)
             .bind(invoice.asset_id)
             .bind(invoice.asset_name)
-            .bind(&invoice.chain)
+            .bind(invoice.chain)
             .bind(Text(invoice.amount))
             .bind(&invoice.payment_address)
             .bind(invoice.status)
@@ -210,6 +234,7 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
             })
     }
 
+    #[cfg_attr(not(test), expect(dead_code))]
     async fn get_invoice_by_id(
         &self,
         invoice_id: Uuid,
@@ -379,7 +404,9 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
                 );
 
                 // Not a trigger error, check if RowNotFound
-                if let Some(current_status) = parse_update_not_allowed_error(&e, "INVOICE_UPDATE_NOT_ALLOWED|") {
+                if let Some(current_status) =
+                    parse_update_not_allowed_error(&e, "INVOICE_UPDATE_NOT_ALLOWED|")
+                {
                     return DaoInvoiceError::UpdateNotAllowed {
                         invoice_id: data.invoice_id,
                         current_status,
@@ -486,9 +513,12 @@ mod tests {
             .await
             .unwrap();
 
-        dao.update_invoice_status(invoice2_id, InvoiceStatus::PartiallyPaid)
-            .await
-            .unwrap();
+        dao.update_invoice_status(
+            invoice2_id,
+            InvoiceStatus::PartiallyPaid,
+        )
+        .await
+        .unwrap();
 
         let mut tx3 = Transaction {
             id: Uuid::new_v4(),

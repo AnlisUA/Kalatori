@@ -1,14 +1,17 @@
 use std::time::Duration;
 
 use kalatori_client::types::KalatoriEventExt;
+use rust_decimal::Decimal;
 use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
-use rust_decimal::Decimal;
 
 use crate::chain::InvoiceRegistry;
 use crate::configs::PaymentsConfig;
 use crate::dao::DaoInterface;
-use crate::types::{Invoice, InvoiceEventType};
+use crate::types::{
+    Invoice,
+    InvoiceEventType,
+};
 
 const EXPIRATION_CHECK_INTERVAL_MILLIS: u64 = 1000;
 
@@ -90,10 +93,15 @@ impl<D: DaoInterface + 'static> ExpirationDetector<D> {
                 .build_event(InvoiceEventType::Expired)
                 .into();
 
-            // TODO: handle errors properly, maybe set back invoice status if webhook creation fails?
-            // Have to think about it. We don't really want to use transaction here cause we'll make
-            // relatively slow requests to RPC endpoints.
-            if let Err(e) = self.dao.create_webhook_event(event).await {
+            // TODO: handle errors properly, maybe set back invoice status if webhook
+            // creation fails? Have to think about it. We don't really want to
+            // use transaction here cause we'll make relatively slow requests to
+            // RPC endpoints.
+            if let Err(e) = self
+                .dao
+                .create_webhook_event(event)
+                .await
+            {
                 tracing::warn!(
                     invoice_id = %invoice_id,
                     error.category = "expiration_detector",

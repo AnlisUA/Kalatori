@@ -247,7 +247,8 @@ impl KeyringMessage {
     }
 }
 
-// Client is wrapped into a separate module to allow mocking and easily doubling.
+// Client is wrapped into a separate module to allow mocking and easily
+// doubling.
 #[cfg_attr(test, expect(dead_code))]
 mod client {
     use super::*;
@@ -259,7 +260,9 @@ mod client {
 
     impl KeyringClient {
         pub(super) fn new(tx: mpsc::Sender<KeyringMessage>) -> Self {
-            Self { tx }
+            Self {
+                tx,
+            }
         }
 
         async fn send_message_with_response<R: 'static>(
@@ -306,7 +309,7 @@ mod client {
     }
 
     #[cfg(test)]
-    mockall::mock!{
+    mockall::mock! {
         pub KeyringClient {
             pub(super) fn new(tx: mpsc::Sender<KeyringMessage>) -> Self;
 

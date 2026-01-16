@@ -8,28 +8,31 @@ use rust_decimal::Decimal;
 use uuid::Uuid;
 
 use kalatori_client::types::{
-    CreateInvoiceParams, Invoice as PublicInvoice, InvoiceStatus, UpdateInvoiceParams
+    CreateInvoiceParams,
+    Invoice as PublicInvoice,
+    InvoiceStatus,
+    UpdateInvoiceParams,
 };
 
-use crate::chain::utils::to_base58_string;
 use crate::chain::InvoiceRegistry;
+use crate::chain::utils::to_base58_string;
 use crate::chain_client::KeyringClient;
 use crate::configs::PaymentsConfig;
 use crate::dao::{
     DAO,
     DaoInterface,
-    DaoTransactionInterface,
     DaoInvoiceError,
     DaoTransactionError,
+    DaoTransactionInterface,
 };
 use crate::types::{
     ChainType,
     CreateInvoiceData,
-    InvoiceWithReceivedAmount,
     InvoiceEventType,
+    InvoiceWithReceivedAmount,
+    KalatoriEventExt,
     Transaction,
     UpdateInvoiceData,
-    KalatoriEventExt,
 };
 
 pub struct AppState<D: DaoInterface = DAO> {
@@ -83,17 +86,18 @@ impl<D: DaoInterface> AppState<D> {
         let id = Uuid::new_v4();
         // Later we can extend CreateInvoiceParams to include optional chain and
         // asset_id
-        let chain = self
-            .payments_config
-            .default_chain;
+        let chain = self.payments_config.default_chain;
 
-        let asset_id = self.payments_config
+        let asset_id = self
+            .payments_config
             .default_asset_id
             .get(&chain)
             .unwrap()
             .clone();
 
-        let asset_name = self.asset_names_map.get(&asset_id)
+        let asset_name = self
+            .asset_names_map
+            .get(&asset_id)
             .cloned()
             // This should never happen, but just in case
             .unwrap_or_else(|| "UNKNOWN".to_string());
@@ -141,7 +145,8 @@ impl<D: DaoInterface> AppState<D> {
         };
 
         // TODO: handle errors properly
-        let dao_transaction = self.dao
+        let dao_transaction = self
+            .dao
             .begin_transaction()
             .await
             .map_err(|_| DaoInvoiceError::DatabaseError)?;
@@ -151,10 +156,19 @@ impl<D: DaoInterface> AppState<D> {
             .await?;
 
         let invoice_with_amount = invoice.with_amount(Decimal::ZERO);
-        let event = self.invoice_to_public_invoice(invoice_with_amount.clone()).build_event(InvoiceEventType::Created).into();
+        let event = self
+            .invoice_to_public_invoice(invoice_with_amount.clone())
+            .build_event(InvoiceEventType::Created)
+            .into();
 
-        dao_transaction.create_webhook_event(event).await.map_err(|_| DaoInvoiceError::DatabaseError)?;
-        dao_transaction.commit().await.map_err(|_| DaoInvoiceError::DatabaseError)?;
+        dao_transaction
+            .create_webhook_event(event)
+            .await
+            .map_err(|_| DaoInvoiceError::DatabaseError)?;
+        dao_transaction
+            .commit()
+            .await
+            .map_err(|_| DaoInvoiceError::DatabaseError)?;
 
         tracing::info!(
             invoice_id = %invoice_with_amount.invoice.id,
@@ -185,17 +199,32 @@ impl<D: DaoInterface> AppState<D> {
                 ),
         };
 
-        let dao_transaction = self.dao
+        let dao_transaction = self
+            .dao
             .begin_transaction()
             .await
             .map_err(|_| DaoInvoiceError::DatabaseError)?;
 
-        let result = self.dao.update_invoice_data(data).await?;
-        let invoice_with_amount = result.clone().with_amount(Decimal::ZERO);
-        let event = self.invoice_to_public_invoice(invoice_with_amount).build_event(InvoiceEventType::Updated).into();
+        let result = self
+            .dao
+            .update_invoice_data(data)
+            .await?;
+        let invoice_with_amount = result
+            .clone()
+            .with_amount(Decimal::ZERO);
+        let event = self
+            .invoice_to_public_invoice(invoice_with_amount)
+            .build_event(InvoiceEventType::Updated)
+            .into();
 
-        dao_transaction.create_webhook_event(event).await.map_err(|_| DaoInvoiceError::DatabaseError)?;
-        dao_transaction.commit().await.map_err(|_| DaoInvoiceError::DatabaseError)?;
+        dao_transaction
+            .create_webhook_event(event)
+            .await
+            .map_err(|_| DaoInvoiceError::DatabaseError)?;
+        dao_transaction
+            .commit()
+            .await
+            .map_err(|_| DaoInvoiceError::DatabaseError)?;
 
         tracing::info!(
             invoice_id = %result.id,
@@ -213,33 +242,59 @@ impl<D: DaoInterface> AppState<D> {
         invoice_id: Uuid,
     ) -> Result<InvoiceWithReceivedAmount, DaoInvoiceError> {
         // TODO: if invoice has been partially paid, we need to also handle refunds
-        let dao_transaction = self.dao
+        let dao_transaction = self
+            .dao
             .begin_transaction()
             .await
             .map_err(|_| DaoInvoiceError::DatabaseError)?;
 
-        // TODO: refactor it. If invoice not in registry, it probably has non-active status and can not be canceled anymore
-        let result = if let Some(invoice_with_amount) = self.registry.remove_invoice(&invoice_id).await {
-            let result = self.dao
+        // TODO: refactor it. If invoice not in registry, it probably has non-active
+        // status and can not be canceled anymore
+        let result = if let Some(invoice_with_amount) = self
+            .registry
+            .remove_invoice(&invoice_id)
+            .await
+        {
+            let result = self
+                .dao
                 .update_invoice_status(invoice_id, InvoiceStatus::AdminCanceled)
                 .await?;
 
             let invoice_with_amount = result.with_amount(invoice_with_amount.total_received_amount);
-            let event = self.invoice_to_public_invoice(invoice_with_amount.clone()).build_event(InvoiceEventType::AdminCanceled).into();
+            let event = self
+                .invoice_to_public_invoice(invoice_with_amount.clone())
+                .build_event(InvoiceEventType::AdminCanceled)
+                .into();
 
-            dao_transaction.create_webhook_event(event).await.map_err(|_| DaoInvoiceError::DatabaseError)?;
-            dao_transaction.commit().await.map_err(|_| DaoInvoiceError::DatabaseError)?;
+            dao_transaction
+                .create_webhook_event(event)
+                .await
+                .map_err(|_| DaoInvoiceError::DatabaseError)?;
+            dao_transaction
+                .commit()
+                .await
+                .map_err(|_| DaoInvoiceError::DatabaseError)?;
             invoice_with_amount
         } else {
-            let result = self.dao
+            let result = self
+                .dao
                 .update_invoice_status(invoice_id, InvoiceStatus::AdminCanceled)
                 .await?;
 
             let invoice_with_amount = result.with_amount(Decimal::ZERO);
-            let event = self.invoice_to_public_invoice(invoice_with_amount.clone()).build_event(InvoiceEventType::AdminCanceled).into();
+            let event = self
+                .invoice_to_public_invoice(invoice_with_amount.clone())
+                .build_event(InvoiceEventType::AdminCanceled)
+                .into();
 
-            dao_transaction.create_webhook_event(event).await.map_err(|_| DaoInvoiceError::DatabaseError)?;
-            dao_transaction.commit().await.map_err(|_| DaoInvoiceError::DatabaseError)?;
+            dao_transaction
+                .create_webhook_event(event)
+                .await
+                .map_err(|_| DaoInvoiceError::DatabaseError)?;
+            dao_transaction
+                .commit()
+                .await
+                .map_err(|_| DaoInvoiceError::DatabaseError)?;
             invoice_with_amount
         };
 
@@ -268,8 +323,15 @@ mod tests {
     use mockall::predicate::eq;
 
     use crate::chain_client::KeyringError;
-    use crate::dao::{MockDaoInterface, MockDaoTransactionInterface};
-    use crate::types::{Invoice, InvoiceCart, default_invoice};
+    use crate::dao::{
+        MockDaoInterface,
+        MockDaoTransactionInterface,
+    };
+    use crate::types::{
+        Invoice,
+        InvoiceCart,
+        default_invoice,
+    };
 
     use super::*;
 
@@ -281,13 +343,15 @@ mod tests {
 
         let config = PaymentsConfig {
             default_chain: ChainType::PolkadotAssetHub,
-            default_asset_id: HashMap::from([
-                (ChainType::PolkadotAssetHub, 1337.to_string()),
-            ]),
+            default_asset_id: HashMap::from([(
+                ChainType::PolkadotAssetHub,
+                1337.to_string(),
+            )]),
             invoice_lifetime_millis: 600_000,
-            recipient: HashMap::from([
-                (ChainType::PolkadotAssetHub, "5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty".to_string()),
-            ]),
+            recipient: HashMap::from([(
+                ChainType::PolkadotAssetHub,
+                "5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty".to_string(),
+            )]),
             payment_url_base: "https://payments.example.com".to_string(),
         };
 
@@ -321,9 +385,9 @@ mod tests {
             && expected.valid_till.timestamp() == actual.valid_till.timestamp()
     }
 
-    // TODO: we'll replace expected id with returned one (already done) and add method for invoice to strip
-    // dates (hidden behind `#[cfg(test)]`) and we'll be able to compare them using Eq trait and get rid of
-    // this function
+    // TODO: we'll replace expected id with returned one (already done) and add
+    // method for invoice to strip dates (hidden behind `#[cfg(test)]`) and
+    // we'll be able to compare them using Eq trait and get rid of this function
     fn compare_created_invoice(
         expected: &Invoice,
         actual: &Invoice,
@@ -354,11 +418,13 @@ mod tests {
         let invoice = Invoice {
             id: invoice_id,
             ..default_invoice()
-        }.with_amount(Decimal::ONE);
+        }
+        .with_amount(Decimal::ONE);
 
         let returning_invoice = invoice.clone();
 
-        app_state.dao
+        app_state
+            .dao
             .expect_get_invoice_with_received_amount_by_id()
             .once()
             .with(eq(invoice_id))
@@ -374,7 +440,8 @@ mod tests {
         // Test case 2: Invoice not found
         let invoice_id = Uuid::new_v4();
 
-        app_state.dao
+        app_state
+            .dao
             .expect_get_invoice_with_received_amount_by_id()
             .once()
             .with(eq(invoice_id))
@@ -390,17 +457,19 @@ mod tests {
         // Test case 3: Database error
         let invoice_id = Uuid::new_v4();
 
-        app_state.dao
+        app_state
+            .dao
             .expect_get_invoice_with_received_amount_by_id()
             .once()
             .with(eq(invoice_id))
             .returning(|_| Err(DaoInvoiceError::DatabaseError));
 
-        let result = app_state
-            .get_invoice(invoice_id)
-            .await;
+        let result = app_state.get_invoice(invoice_id).await;
 
-        assert!(matches!(result, Err(DaoInvoiceError::DatabaseError)));
+        assert!(matches!(
+            result,
+            Err(DaoInvoiceError::DatabaseError)
+        ));
     }
 
     #[tokio::test]
@@ -427,13 +496,14 @@ mod tests {
             redirect_url: "https://redirect.url".to_string(),
         };
 
-        app_state.keyring
+        app_state
+            .keyring
             .expect_generate_asset_hub_address()
             .once()
-            .withf(|data|
+            .withf(|data| {
                 data.derivation_params.len() == 1
-                && Uuid::from_str(&data.derivation_params[0]).is_ok()
-            )
+                    && Uuid::from_str(&data.derivation_params[0]).is_ok()
+            })
             .returning(move |_| Ok(bob_account_id_1.clone()));
 
         let expected_create_invoice_data = {
@@ -447,13 +517,20 @@ mod tests {
                 asset_name: "USDC".to_string(),
                 chain: ChainType::PolkadotAssetHub,
                 payment_address: to_base58_string(account_id.0, 0),
-                valid_till: Utc::now() + Duration::milliseconds(app_state.payments_config.invoice_lifetime_millis as i64),
+                valid_till: Utc::now()
+                    + Duration::milliseconds(
+                        app_state
+                            .payments_config
+                            .invoice_lifetime_millis as i64,
+                    ),
             }
         };
 
-        let expected_invoice: Invoice = expected_create_invoice_data.clone().into();
-        let mut expected_invoice_with_amount = expected_invoice.with_amount(Decimal::ZERO);
+        let expected_invoice: Invoice = expected_create_invoice_data
+            .clone()
+            .into();
 
+        let mut expected_invoice_with_amount = expected_invoice.with_amount(Decimal::ZERO);
         let mut dao_transaction = MockDaoTransactionInterface::default();
 
         dao_transaction
@@ -466,14 +543,16 @@ mod tests {
             .expect_create_webhook_event()
             // we can not compare event here because of entity ID which we don't know at this point
             .once()
-            .returning(|data| Ok(data));
+            .returning(Ok);
 
         dao_transaction
             .expect_commit()
             .once()
             .returning(|| Ok(()));
 
-        app_state.dao.expect_begin_transaction()
+        app_state
+            .dao
+            .expect_begin_transaction()
             .once()
             .return_once(move || Ok(dao_transaction));
 
@@ -483,11 +562,22 @@ mod tests {
             .unwrap();
 
         expected_invoice_with_amount.invoice.id = result.invoice.id; // Set the ID to match for comparison
-        assert!(compare_created_invoice(&expected_invoice_with_amount.invoice, &result.invoice));
+        assert!(compare_created_invoice(
+            &expected_invoice_with_amount.invoice,
+            &result.invoice
+        ));
 
-        let registry_record = app_state.registry.get_invoice(&result.invoice.id).await.unwrap();
+        let registry_record = app_state
+            .registry
+            .get_invoice(&result.invoice.id)
+            .await
+            .unwrap();
         assert_eq!(registry_record, result);
-        assert!(registry_record.total_received_amount.is_zero());
+        assert!(
+            registry_record
+                .total_received_amount
+                .is_zero()
+        );
 
         // Test case 2: Keyring error
         // Expected:
@@ -502,21 +592,28 @@ mod tests {
             redirect_url: "https://redirect.url".to_string(),
         };
 
-        app_state.keyring
+        app_state
+            .keyring
             .expect_generate_asset_hub_address()
             .once()
-            .withf(|data|
+            .withf(|data| {
                 data.derivation_params.len() == 1
-                && Uuid::from_str(&data.derivation_params[0]).is_ok()
-            )
+                    && Uuid::from_str(&data.derivation_params[0]).is_ok()
+            })
             .returning(move |_| Err(KeyringError::InvalidSeed));
 
         let result = app_state
             .create_invoice(params.clone())
             .await;
 
-        assert!(matches!(result, Err(DaoInvoiceError::DatabaseError)));
-        let registry_records_count = app_state.registry.invoices_count().await;
+        assert!(matches!(
+            result,
+            Err(DaoInvoiceError::DatabaseError)
+        ));
+        let registry_records_count = app_state
+            .registry
+            .invoices_count()
+            .await;
         assert_eq!(registry_records_count, 1); // Only the previous successful invoice is present
 
         // Test case 3: DAO error
@@ -544,17 +641,23 @@ mod tests {
                 asset_name: "USDC".to_string(),
                 chain: ChainType::PolkadotAssetHub,
                 payment_address: to_base58_string(account_id.0, 0),
-                valid_till: Utc::now() + Duration::milliseconds(app_state.payments_config.invoice_lifetime_millis as i64),
+                valid_till: Utc::now()
+                    + Duration::milliseconds(
+                        app_state
+                            .payments_config
+                            .invoice_lifetime_millis as i64,
+                    ),
             }
         };
 
-        app_state.keyring
+        app_state
+            .keyring
             .expect_generate_asset_hub_address()
             .once()
-            .withf(|data|
+            .withf(|data| {
                 data.derivation_params.len() == 1
-                && Uuid::from_str(&data.derivation_params[0]).is_ok()
-            )
+                    && Uuid::from_str(&data.derivation_params[0]).is_ok()
+            })
             .returning(move |_| Ok(bob_account_id_2.clone()));
 
         let mut dao_transaction = MockDaoTransactionInterface::default();
@@ -565,17 +668,22 @@ mod tests {
             .withf(move |data| compare_create_invoice_data(&expected_create_invoice_data, data))
             .returning(|_| Err(DaoInvoiceError::DatabaseError));
 
-        app_state.dao
+        app_state
+            .dao
             .expect_begin_transaction()
             .once()
             .return_once(|| Ok(dao_transaction));
 
-        let result = app_state
-            .create_invoice(params)
-            .await;
+        let result = app_state.create_invoice(params).await;
 
-        assert!(matches!(result, Err(DaoInvoiceError::DatabaseError)));
-        let registry_records_count = app_state.registry.invoices_count().await;
+        assert!(matches!(
+            result,
+            Err(DaoInvoiceError::DatabaseError)
+        ));
+        let registry_records_count = app_state
+            .registry
+            .invoices_count()
+            .await;
         assert_eq!(registry_records_count, 1); // Only the first successful invoice is present
     }
 }
