@@ -105,10 +105,7 @@ impl ChainsConfig {
 
     pub(super) fn set_default_chains_if_missing(&mut self) {
         for chain in ChainType::iter() {
-            let chain_config = self
-                .chains
-                .entry(chain)
-                .or_default();
+            let chain_config = self.chains.entry(chain).or_default();
 
             if chain_config.endpoints.is_empty() {
                 let endpoints = match chain {

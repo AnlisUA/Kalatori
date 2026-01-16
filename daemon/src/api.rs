@@ -2,16 +2,15 @@
 //!
 //! API namespaces:
 //! - `/public`: Publicly accessible endpoints that do not require
-//!   authentication. Should return only sanitized data
-//!   without sensitive information and details about the internal state.
+//!   authentication. Should return only sanitized data without sensitive
+//!   information and details about the internal state.
 //! - `/private`: Endpoints that require authentication and are intended for
-//!   internal use. Should return only sanitized
-//!   data without sensitive information and details about the internal state.
+//!   internal use. Should return only sanitized data without sensitive
+//!   information and details about the internal state.
 //! - `/dev`: Development and testing endpoints. May include endpoints that are
-//!   not intended for production use. Allowed
-//!   to return raw data including sensitive information and internal state
-//!   details for debugging purposes. Should not be exposed in production
-//!   environments.
+//!   not intended for production use. Allowed to return raw data including
+//!   sensitive information and internal state details for debugging purposes.
+//!   Should not be exposed in production environments.
 //!
 //! Error handling principles:
 //! - For invalid or malformed JSON, query parameters, or request structure,
@@ -22,8 +21,8 @@
 //! - For unexpected server errors, return structured JSON error response with a
 //!   generic message.
 //! - For invalid routes or methods under `/private` and `/dev` namespaces,
-//!   return structured JSON error response,
-//!   while `/public` namespace returns standard 404 HTML response.
+//!   return structured JSON error response, while `/public` namespace returns
+//!   standard 404 HTML response.
 #[cfg(feature = "dev_api")]
 mod dev;
 mod private;

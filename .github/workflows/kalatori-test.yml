@@ -53,9 +53,14 @@ jobs:
           pkg-config --libs sqlite3
       - name: Create configs to run the daemon
         run: make copy-configs
+      - name: Install subxt-cli
+        run: make install-subxt-cli
+      - name: Download chain metadata
+        run: make download-node-metadata-ci
+      - run: mkdir database
       - name: Run the daemon and chopsticks in background
         run: make run &
       - name: Wait for the daemon to start in background
-        run: sleep 10
+        run: sleep 300
       - name: Run examples which will act like integration tests
         run: make run-test-examples

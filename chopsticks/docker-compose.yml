@@ -11,8 +11,6 @@ services:
     volumes:
       - ./pd-ah.yml:/app/config.yml
     command: ["chopsticks", "-c", "/app/config.yml", "--port", "9000", "--host", "0.0.0.0"]
-    networks:
-      - kalatori-network
 
   chopsticks-asset-hub-2:
     build:
@@ -24,10 +22,3 @@ services:
     volumes:
       - ./pd-ah-2.yml:/app/config.yml
     command: [ "chopsticks", "-c", "/app/config.yml", "--port", "9500", "--host", "0.0.0.0" ]
-    networks:
-      - kalatori-network
-
-
-networks:
-  kalatori-network:
-    external: true

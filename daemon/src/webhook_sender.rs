@@ -164,10 +164,12 @@ impl<D: DaoInterface + 'static> WebhookSender<D> {
         self.processing_events_ids
             .remove(&result.event_id);
 
-        if result.is_ok && self.dao
-            .mark_webhook_event_as_sent(result.event_id)
-            .await
-            .is_err()
+        if result.is_ok
+            && self
+                .dao
+                .mark_webhook_event_as_sent(result.event_id)
+                .await
+                .is_err()
         {
             tracing::warn!(
                 event_id = %result.event_id,

@@ -37,9 +37,6 @@ copy-configs: # Copy .example configs to actual configs
 		cp "$$i" "$${i%.*}"; \
 	done
 
-create-network: # Create docker network `kalatori-network` required for docker compose services
-	docker network create kalatori-network || true
-
 #####################
 ### Build and run ###
 #####################
