@@ -71,6 +71,10 @@ run: start-chopsticks # Ensure that chopsticks is started and run kalatori daemo
 run-release: # Run kalatori daemon with --release flag without starting chopsticks
 	cargo run --release
 
+run-test-examples:
+	cargo run --example crud; \
+    cargo run --example webhook
+
 ##############
 ### Checks ###
 ##############

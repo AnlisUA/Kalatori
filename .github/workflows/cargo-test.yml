@@ -17,10 +17,7 @@ jobs:
         with:
           access_token: ${{ github.token }}
       - name: Checkout sources
-        uses: actions/checkout@v4.2.2
-        with:
-          fetch-depth: 50
-          submodules: 'recursive'
+        uses: actions/checkout@v5
       - name: Build and install SQLite 3.51.0 from source
         run: |
           cd /tmp
@@ -54,12 +51,6 @@ jobs:
           sqlite3 --version
           pkg-config --modversion sqlite3
           pkg-config --libs sqlite3
-      - name: Install Rust stable toolchain
-        uses: actions-rs/toolchain@v1.0.7
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
       - name: Install cargo-nextest
         uses: baptiste0928/cargo-install@v3
         with:
@@ -71,8 +62,6 @@ jobs:
         run: make install-subxt-cli
       - name: Download chain metadata
         run: make download-node-metadata-ci
-      - name: Copy configs
-        run: make copy-configs
       - name: cargo nextest
         run: cargo nextest run
         env:

@@ -17,32 +17,43 @@ jobs:
         with:
           access_token: ${{ github.token }}
       - name: Checkout sources
-        uses: actions/checkout@v4.2.2
-        with:
-          fetch-depth: 50
-          submodules: recursive
-      - name: Initialize Git Submodules
-        run: git submodule update --init --recursive
-      - name: Verify directory structure
-        run: ls -R
-      - name: Install Docker using Docker's official script
+        uses: actions/checkout@v5
+      - name: Build and install SQLite 3.51.0 from source
         run: |
-          curl -fsSL https://get.docker.com -o get-docker.sh
-          sudo sh get-docker.sh
-      - name: Build Containers
-        working-directory: ./tests
+          cd /tmp
+          curl -LO https://www.sqlite.org/2025/sqlite-autoconf-3510000.tar.gz
+          tar xzf sqlite-autoconf-3510000.tar.gz
+          cd sqlite-autoconf-3510000
+          CFLAGS="-DSQLITE_ENABLE_UNLOCK_NOTIFY=1 -DSQLITE_ENABLE_COLUMN_METADATA=1 -DSQLITE_ENABLE_DBSTAT_VTAB=1 -DSQLITE_ENABLE_FTS3=1 -DSQLITE_ENABLE_FTS3_PARENTHESIS=1 -DSQLITE_ENABLE_FTS5=1 -DSQLITE_ENABLE_JSON1=1 -DSQLITE_ENABLE_RTREE=1 -DSQLITE_ENABLE_STAT4=1" \
+            ./configure --prefix=/usr/local --enable-shared --enable-static
+          make -j$(nproc)
+          sudo make install
+          sudo ldconfig
+          rm -rf /tmp/sqlite-autoconf*
+      - name: Create pkg-config file for SQLite
         run: |
-          docker compose build
-      - name: Create Network
-        working-directory: ./tests
+          sudo mkdir -p /usr/local/lib/pkgconfig
+          sudo tee /usr/local/lib/pkgconfig/sqlite3.pc > /dev/null << 'EOF'
+          prefix=/usr/local
+          exec_prefix=${prefix}
+          libdir=${exec_prefix}/lib
+          includedir=${prefix}/include
+
+          Name: SQLite
+          Description: SQL database engine
+          Version: 3.51.0
+          Libs: -L${libdir} -lsqlite3
+          Libs.private: -lm -ldl -lpthread
+          Cflags: -I${includedir}
+          EOF
+      - name: Verify SQLite installation
         run: |
-          docker network create kalatori-network
-      - name: Run Tests
-        working-directory: ./tests
-        run: |
-          docker compose up --exit-code-from tests --abort-on-container-exit tests
-      - name: Tear Down Containers
-        working-directory: ./tests
-        if: always()
-        run: |
-          docker compose down
+          sqlite3 --version
+          pkg-config --modversion sqlite3
+          pkg-config --libs sqlite3
+      - name: Create configs to run the daemon
+        run: make copy-configs
+      - name: Run the daemon and chopsticks in background
+        run: make run &
+      - name: Run examples which will act like integration tests
+        run: make run-test-examples
