@@ -1,0 +1,111 @@
+[package]
+name = "kalatori"
+version = "0.4.1"
+edition = "2024"
+description = "A non-castodial crypto payment-gateway daemon."
+homepage = "https://github.com/Kalapaja/Kalatori"
+documentation = "https://docs.rs/Kalatori"
+rust-version = "1.85"
+license.workspace = true
+authors.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+repository.workspace = true
+
+[dependencies]
+kalatori-client = { path = "../client", features = ["axum-middleware", "sqlx-types"] }
+
+# Types and data serialization utils
+uuid = { version = "1", features = ["v4", "serde"] }
+rust_decimal = { version = "1", features = ["serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1", features = ["derive", "rc"] }
+serde_json = { version = "1", features = ["raw_value"] }
+secrecy = { version = "0.10", features = ["serde"] }
+base58 = "0.2.0"
+blake2b_simd = "1.0"
+const-hex = "1"
+
+# Async runtime and utils
+tokio = { version = "1", features = ["rt-multi-thread", "signal", "time"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+async-lock = "3"
+async-stream = "0.3"
+futures = "0.3"
+
+# Web server
+axum = { version = "0.8", default-features = false, features = [
+    "tokio",
+    "http1",
+    "query",
+    "json",
+    "matched-path",
+    "original-uri",
+    "macros",
+] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace", "request-id", "cors"] }
+
+# Database
+# On update sqlx version, plase also update sqlx-cli to corresponding version in Makefile
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio",
+    "sqlite-unbundled",
+    "macros",
+    "migrate",
+    "chrono",
+    "uuid",
+    "json"
+] }
+
+# Asset Hub chain
+# On update subxt version, plase also update subxt-cli to corresponding version in Makefile
+subxt = "0.44"
+subxt-signer = "0.44"
+# Subxt-signer uses bip39 and moreover re-exports it, but for some reason it doesn't have zeroize feature enabled
+bip39 = { version = "2", features = ["zeroize"] }
+# This dependency is required by subxt in order to compile the runtime types
+# and specifically to derive Encode trait (using macro) to MultiLocation type used
+# as AssetId in order to support fee payment in the same asset as transferred one.
+parity-scale-codec = { version = "3", features = ["derive"] }
+
+# Tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "time", "json"] }
+
+# Utils
+config = "0.15"
+# Please keep reqwest version in sync with the one in kalatori-client
+reqwest = { version = "0.13", features = ["json"] }
+zeroize = "1"
+# Don't forget to update me in `[build-dependencies]`!
+shadow-rs = { version = "0.36", default-features = false }
+thiserror = "2"
+trait-variant = "0.1"
+hmac = "0.12"
+sha2 = "0.10"
+
+[dev-dependencies]
+mockall = "0.14"
+mockall_double = "0.3"
+indoc = "2"
+serial_test = "3.2"
+
+[build-dependencies]
+# Don't forget to update me in `[dependencies]`!
+shadow-rs = { version = "0.36", default-features = false }
+
+[features]
+default = []
+dev_api = []
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+panic = "abort"
+overflow-checks = true
+
+[lints]
+workspace = true

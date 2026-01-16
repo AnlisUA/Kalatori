@@ -1,0 +1,52 @@
+[package]
+name = "kalatori-client"
+version = "0.1.0"
+edition = "2024"
+description = "A client for non-castodial crypto payment-gateway Kalatori."
+license.workspace = true
+authors.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Signature
+hmac = "0.12"
+sha2 = "0.10"
+const-hex = "1"
+
+# Types
+uuid = { version = "1", features = ["v4", "serde"] }
+rust_decimal = "1"
+chrono = { version = "0.4", features = ["serde"] }
+serde_json = "1"
+secrecy = "0.10"
+
+# Client
+serde = { version = "1", features = ["derive"] }
+http = "1"
+# Please keep reqwest version in sync with the one in daemon/Cargo.toml
+reqwest = { version = "0.13", features = ["json", "query"], optional = true }
+
+# Middlewares
+axum = { version = "*", features = ["original-uri"], optional = true }
+
+# Database
+sqlx = { version = "*", optional = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+
+[features]
+default = ["client"]
+client = ["reqwest"]
+axum-middleware = ["axum"]
+sqlx-types = ["sqlx"]
+
+[lints]
+workspace = true
+
+[[example]]
+name = "webhook"
+required-features = ["axum-middleware"]

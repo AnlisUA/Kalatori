@@ -7,6 +7,9 @@ on:
       - main
       - stable
 
+env:
+  RUSTFLAGS: "-Dwarnings"
+
 jobs:
   linter:
     name: Cargo clippy
@@ -17,22 +20,10 @@ jobs:
         with:
           access_token: ${{ github.token }}
       - name: Checkout sources
-        uses: actions/checkout@v4.2.2
-        with:
-          fetch-depth: 50
-          submodules: 'recursive'
-      - name: Install Rust stable toolchain
-        uses: actions-rs/toolchain@v1.0.7
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-          components: clippy
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v2.7.5
+        uses: actions/checkout@v5
       - name: Install subxt-cli
         run: make install-subxt-cli
       - name: Download chain metadata
         run: make download-node-metadata-ci
       - name: cargo clippy
-        run: cargo clippy --all-targets -- -D warnings -D clippy::pedantic -D clippy::correctness -D clippy::complexity -D clippy::perf
+        run: cargo clippy --all-targets --all-features

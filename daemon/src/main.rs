@@ -1,0 +1,350 @@
+mod api;
+mod chain;
+mod chain_client;
+mod configs;
+mod dao;
+mod error;
+mod expiration_detector;
+mod state;
+mod types;
+mod utils;
+mod webhook_sender;
+
+use std::collections::HashMap;
+use std::process::ExitCode;
+
+use kalatori_client::types::ChainType;
+use kalatori_client::utils::HmacConfig;
+use secrecy::ExposeSecret;
+use tokio::runtime::Runtime;
+use tokio_util::sync::CancellationToken;
+use tracing::Level;
+use zeroize::Zeroize;
+
+use chain::{
+    InvoiceRegistry,
+    TransfersExecutor,
+    TransfersTracker,
+};
+use chain_client::{
+    AssetHubClient,
+    BlockChainClient,
+    Keyring,
+};
+use configs::{
+    ChainsConfig,
+    PaymentsConfig,
+    chains_config_with_prefix,
+    database_config_with_prefix,
+    payments_config_with_prefix,
+    secrets_config_with_prefix,
+    shop_config_with_prefix,
+    web_server_config_with_prefix,
+};
+use dao::DAO;
+use error::{
+    Error,
+    PrettyCause,
+};
+use expiration_detector::ExpirationDetector;
+use state::AppState;
+use utils::logger;
+use utils::shutdown::{
+    self,
+    ShutdownNotification,
+    ShutdownOutcome,
+};
+use utils::task_tracker::TaskTracker;
+
+use crate::dao::DaoInterface;
+
+const DEFAULT_ENV_PREFIX: &str = "KALATORI";
+
+fn main() -> ExitCode {
+    let shutdown_notification = ShutdownNotification::new();
+
+    // Sets the panic hook to print directly to the standard error because the
+    // logger isn't initialized yet.
+    shutdown::set_panic_hook(
+        |panic| eprintln!("{panic}"),
+        shutdown_notification.clone(),
+    );
+
+    let result = try_main(shutdown_notification.clone());
+
+    if let Err(error) = result {
+        // TODO: https://github.com/rust-lang/rust/issues/92698
+        // An equilibristic to conditionally print an error message without storing it
+        // as `String` on the heap.
+        let print = |message| {
+            if tracing::event_enabled!(Level::ERROR) {
+                tracing::error!("{message}");
+            } else {
+                eprintln!("{message}");
+            }
+        };
+
+        print(format_args!(
+            "Badbye! The daemon's got an error during the initialization:{}",
+            error.pretty_cause()
+        ));
+
+        ExitCode::FAILURE
+    } else {
+        match *shutdown_notification
+            .outcome
+            .read_blocking()
+        {
+            ShutdownOutcome::UserRequested => {
+                tracing::info!("Goodbye!");
+
+                ExitCode::SUCCESS
+            },
+            ShutdownOutcome::UnrecoverableError {
+                panic,
+            } => {
+                tracing::error!(
+                    "Badbye! The daemon's shut down with errors{}.",
+                    if panic { " due to internal bugs" } else { "" }
+                );
+
+                ExitCode::FAILURE
+            },
+        }
+    }
+}
+
+fn try_main(shutdown_notification: ShutdownNotification) -> Result<(), Error> {
+    logger::initialize("")?;
+    shutdown::set_panic_hook(
+        |panic| tracing::error!("{panic}"),
+        shutdown_notification.clone(),
+    );
+
+    tracing::info!(
+        "Kalatori {} is starting...",
+        env!("CARGO_PKG_VERSION")
+    );
+
+    Runtime::new()
+        .map_err(Error::Runtime)?
+        .block_on(async_try_main(shutdown_notification))
+}
+
+async fn init_invoice_registry(dao: &impl DaoInterface) -> Result<InvoiceRegistry, Error> {
+    let invoice_registry = InvoiceRegistry::new();
+
+    let restore_invoices = dao
+        .get_active_invoices_with_amounts()
+        .await
+        .map_err(|_| Error::Fatal)?;
+
+    invoice_registry
+        .add_invoices(restore_invoices)
+        .await;
+
+    Ok(invoice_registry)
+}
+
+fn validate_and_extend_configs(
+    chains_config: &mut ChainsConfig,
+    payments_config: &mut PaymentsConfig,
+    restored_asset_ids: HashMap<ChainType, Vec<String>>,
+) -> Result<(), Error> {
+    // Ensure that we have recipients for all chains from restored invoices and for
+    // default chain
+    let mut required_recipients: Vec<_> = restored_asset_ids
+        .keys()
+        .cloned()
+        .collect();
+
+    if !required_recipients.contains(&payments_config.default_chain) {
+        required_recipients.push(payments_config.default_chain);
+    }
+
+    payments_config
+        .validate_recipients(&required_recipients)
+        .map_err(|_| Error::Fatal)?;
+
+    // Extend chains config with default and restored asset IDs
+    chains_config.add_default_asset_ids(&payments_config.default_asset_id);
+    chains_config.add_restored_asset_ids(restored_asset_ids);
+
+    Ok(())
+}
+
+#[expect(clippy::too_many_lines)]
+async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(), Error> {
+    // Planned start order
+    // 1. Load configs
+    // 2. Init database
+    // 3. Load data from old database to the new one
+    // 4. Get info about required chains and assets from database and configs
+    // 5. Start keyring (background task)
+    // 6. Start chain monitoring (incoming transactions, background task)
+    // 7. Fetch balances of "pending" payments, ensure balance equals to expected
+    //    (can be made in background)
+    //  7.1 If balance > sum(related transactions amount), fetch related
+    // transactions using API and update Invoice statuses respectively
+    // 8. Start payments executor (background task)
+    // 9. Start API (background task)
+    let env_prefix =
+        std::env::var("KALATORI_APP_ENV_PREFIX").unwrap_or_else(|_| DEFAULT_ENV_PREFIX.to_string());
+
+    let configs_path = std::env::var(format!("{env_prefix}_CONFIG_DIR_PATH")).unwrap_or_default();
+
+    let mut secrets_config = secrets_config_with_prefix(&configs_path, &env_prefix);
+    let mut chains_config = chains_config_with_prefix(&configs_path, &env_prefix);
+    let mut payments_config = payments_config_with_prefix(&configs_path, &env_prefix);
+    let web_server_config = web_server_config_with_prefix(&configs_path, &env_prefix);
+    let database_config = database_config_with_prefix(&configs_path, &env_prefix);
+    let shop_config = shop_config_with_prefix(&configs_path, &env_prefix);
+
+    let hmac_config = HmacConfig::new(
+        secrets_config
+            .api_secret_key
+            .expose_secret()
+            .as_bytes()
+            .to_vec(),
+        shop_config.signature_max_age_secs,
+    );
+
+    secrets_config.api_secret_key.zeroize();
+
+    // Initialize DAO for SQLite database operations
+    let dao = DAO::new(database_config.clone())
+        .await
+        .map_err(error::DaoError::Sqlx)?;
+
+    let invoice_registry = init_invoice_registry(&dao).await?;
+
+    validate_and_extend_configs(
+        &mut chains_config,
+        &mut payments_config,
+        invoice_registry.used_asset_ids().await,
+    )?;
+
+    let asset_hub_chain_config = chains_config
+        .chains
+        .get(&ChainType::PolkadotAssetHub)
+        .unwrap();
+
+    let assets = chains_config
+        .chains
+        .get(&ChainType::PolkadotAssetHub)
+        .unwrap()
+        .assets
+        .as_ref();
+
+    let asset_hub_client = AssetHubClient::new(asset_hub_chain_config)
+        .await
+        .map_err(|_| Error::Fatal)?;
+
+    asset_hub_client
+        .init_asset_info(assets)
+        .await
+        .map_err(|_| Error::Fatal)?;
+
+    let asset_names_map = asset_hub_client
+        .asset_info_store()
+        .asset_names_map()
+        .await;
+
+    let keyring = Keyring::new(secrets_config.seed);
+    // Please don't keep keyring_client in this scope, it must be moved in order to
+    // keep graceful shutdown working.
+    let (keyring_handle, keyring_client) = keyring.ignite();
+
+    let expiration_detector = ExpirationDetector::new(
+        dao.clone(),
+        invoice_registry.clone(),
+        payments_config.clone(),
+    );
+
+    let expiration_detector_handle =
+        expiration_detector.ignite(shutdown_notification.token.clone());
+
+    let transfers_tracker = TransfersTracker::new(
+        asset_hub_client.clone(),
+        dao.clone(),
+        invoice_registry.clone(),
+        payments_config.clone(),
+    );
+
+    let transfers_tracker_handle = transfers_tracker.ignite(
+        assets,
+        shutdown_notification.token.clone(),
+    );
+
+    let transfer_executor = TransfersExecutor::new(
+        asset_hub_client,
+        dao.clone(),
+        keyring_client.clone(),
+    );
+
+    let transfer_executor_handle = transfer_executor.ignite(shutdown_notification.token.clone());
+
+    let webhook_sender = webhook_sender::WebhookSender::new(
+        dao.clone(),
+        shop_config.invoices_webhook_url,
+        hmac_config.clone(),
+    );
+
+    let webhook_sender_handle = webhook_sender.ignite(shutdown_notification.token.clone());
+
+    let app_state = AppState::new(
+        keyring_client,
+        dao,
+        invoice_registry,
+        asset_names_map,
+        payments_config,
+    );
+
+    let api_handle = api::api_server(
+        web_server_config,
+        hmac_config,
+        app_state,
+        shutdown_notification.token.clone(),
+    )
+    .await;
+
+    let shutdown_completed = CancellationToken::new();
+    let mut shutdown_listener = tokio::spawn(shutdown::listener(
+        shutdown_notification.token.clone(),
+        shutdown_completed.clone(),
+    ));
+
+    tracing::info!("The initialization has been completed.");
+    let (task_tracker, error_rx) = TaskTracker::new();
+
+    // Start the main loop and wait for it to gracefully end or the early
+    // termination signal.
+    tokio::select! {
+        biased;
+        () = task_tracker.wait_and_shutdown(error_rx, shutdown_notification) => {
+            shutdown_completed.cancel();
+
+            let (
+                shutdown_result,
+                _keyring_result,
+                _transfer_executor_result,
+                _expiration_detector_result,
+                _transfers_tracker_result,
+                _webhook_sender_result,
+                _api_server_result,
+            ) = tokio::join!(
+                shutdown_listener,
+                keyring_handle,
+                transfer_executor_handle,
+                expiration_detector_handle,
+                transfers_tracker_handle,
+                webhook_sender_handle,
+                api_handle,
+            );
+
+            shutdown_result
+        }
+        shutdown_listener_result = &mut shutdown_listener => shutdown_listener_result
+    }
+    .expect("shutdown listener shouldn't panic")
+}

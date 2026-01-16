@@ -1,13 +1,8 @@
 {
-    "name": "statemint",
+  "PolkadotAssetHub": {
     "endpoints": [
-        "ws://localhost:9000"
+      "ws://localhost:9000"
     ],
-    "assets": [{
-        "name": "USDC",
-        "id": 1337
-    }, {
-        "name": "USDt",
-        "id": 1984
-    }]
+    "allow_insecure_endpoints": true
+  }
 }

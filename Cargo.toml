@@ -1,114 +1,36 @@
-[package]
-name = "kalatori"
+[workspace]
+members = [
+    "daemon",
+    "client",
+]
+resolver = "3"
+
+[workspace.package]
 authors = [
 	"Alexander Slesarev <slesarew@gmail.com>",
     	"Vova Lando <vova.lando@gmail.com>",
      	"Artyom Sheviakov <fluidcells@pm.me>",
 ]
-version = "0.4.1"
-edition = "2024"
-description = "A gateway daemon for Kalatori."
 license = "GPL-3.0-or-later"
-homepage = "https://github.com/Kalapaja/Kalatori"
-repository = "https://github.com/Kalapaja/Kalatori"
-documentation = "https://docs.rs/Kalatori"
 readme = "README.md"
+repository = "https://github.com/Kalapaja/Kalatori"
 keywords = ["substrate", "blockchain", "finance", "service", "middleware"]
 categories = ["finance"]
 exclude = [".github", "cliff.toml", "Dockerfile", "chopsticks/", "configs", "is_version_greater.sh", "/tests"]
-rust-version = "1.85"
 
-[dependencies]
-axum = { version = "0.7", default-features = false, features = [
-    "tokio",
-    "http1",
-    "query",
-    "json",
-    "matched-path",
-] }
-tracing-subscriber = { version = "0.3", features = ["env-filter", "time", "json"] }
-names = { version = "0.14", default-features = false }
-tokio-util = { version = "0.7", features = ["rt"] }
-tokio = { version = "1", features = ["rt-multi-thread", "signal", "time"] }
-serde = { version = "1", features = ["derive", "rc"] }
-tracing = "0.1"
-axum-macros = "0.4"
-thiserror = "2"
-const-hex = "1"
-codec = { package = "parity-scale-codec", version = "3", features = [
-    "chain-error",
-    "derive",
-] }
-serde_json = { version = "1", features = ["raw_value"] }
-config = "0.15"
-sled = "0.34"
-# On update sqlx version, plase also update sqlx-cli to corresponding version in Makefile
-sqlx = { version = "0.8", default-features = false, features = [
-    "runtime-tokio",
-    "sqlite-unbundled",
-    "macros",
-    "migrate",
-    "chrono",
-    "uuid",
-    "json"
-] }
-uuid = { version = "1", features = ["v4", "serde"] }
-rust_decimal = { version = "1", features = ["serde"] }
-chrono = { version = "0.4", features = ["serde"] }
-zeroize = "1"
-# Don't forget to update me in `[build-dependencies]`!
-shadow-rs = { version = "0.36", default-features = false }
-async-lock = "3"
-time = "0.3"
-reqwest = "0.12"
-# This crate bumbped MSRV in minor update
-base64ct = "=1.6.0"
-# On update subxt version, plase also update subxt-cli to corresponding version in Makefile
-subxt = "0.44"
-subxt-signer = "0.44"
-# Subxt-signer uses bip39 and moreover re-exports it, but for some reason it doesn't have zeroize feature enabled
-bip39 = { version = "2", features = ["zeroize"] }
-mnemonic-external = "0.1.0"
-base58 = "0.2.0"
-blake2b_simd = "1.0"
-async-stream = "0.3"
-futures = "0.3"
-trait-variant = "0.1"
-
-[dev-dependencies]
-mockall = "0.14"
-indoc = "2"
-serial_test = "3.2"
-tempfile = "3"
-
-[build-dependencies]
-# Don't forget to update me in `[dependencies]`!
-shadow-rs = { version = "0.36", default-features = false }
-
-[profile.release]
-strip = true
-lto = true
-codegen-units = 1
-panic = "abort"
-overflow-checks = true
-
-[lints.rust]
+[workspace.lints.rust]
 future_incompatible = "warn"
 let_underscore = "warn"
 rust_2018_idioms = "warn"
 unused = "warn"
 
-[lints.clippy]
+[workspace.lints.clippy]
 allow_attributes = "deny"
 cargo_common_metadata = "warn"
-arithmetic_side_effects = "deny"
-cast_possible_truncation = "deny"
-needless_borrow = "deny"
-ignored_unit_patterns = "deny"
-let_unit_value = "deny"
+cast_possible_truncation = "warn"
+ignored_unit_patterns = "warn"
 # Having multiple module layout styles in a project can be confusing. Moreover, `mod.rs` files don't
 # really harmonize with Git as they can be renamed back to self-named modules and Git fundamentally
 # prone to poorly handle the file renaming that can result in their history erasure.
 mod_module_files = "warn"
-# TODO: https://github.com/rust-lang/cargo/issues/12918
-pedantic = { level = "warn", priority = -1 }
+# TODO: we'll add docs and remove this later

@@ -37,20 +37,6 @@ copy-configs: # Copy .example configs to actual configs
 		cp "$$i" "$${i%.*}"; \
 	done
 
-copy-configs-ci: # Copy .ci configs to actual configs
-	cd configs; \
-	for i in ./*.ci; \
-	do \
-		cp "$$i" "$${i%.*}"; \
-	done
-
-copy-ah-production-config: # Copy chain.json.example_asset_hub config to actual chain.json config
-	cd configs; \
-	cp chain.json.example_asset_hub chain.json
-
-create-network: # Create docker network `kalatori-network` required for docker compose services
-	docker network create kalatori-network || true
-
 #####################
 ### Build and run ###
 #####################
@@ -82,16 +68,20 @@ run: start-chopsticks # Ensure that chopsticks is started and run kalatori daemo
 run-release: # Run kalatori daemon with --release flag without starting chopsticks
 	cargo run --release
 
+run-test-examples:
+	cargo run --example crud; \
+    cargo run --example webhook
+
 ##############
 ### Checks ###
 ##############
 
 cargo-check: # Run cargo check for all targets
-	cargo check --all-targets
+	cargo check --all-targets --all-features
 
 # Keep same as in CI
 cargo-clippy: # Run cargo clippy checks
-	cargo clippy --all-targets -- -D warnings -D clippy::pedantic -D clippy::correctness -D clippy::complexity -D clippy::perf
+	RUSTFLAGS="-Dwarnings" cargo clippy --all-targets --all-features
 
 cargo-fmt: # Run cargo fmt checks
 	cargo +nightly fmt --all -- --check
