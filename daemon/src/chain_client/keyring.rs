@@ -1,25 +1,18 @@
+use alloy::consensus::SignableTransaction;
+use alloy::network::{TransactionBuilder, TxSignerSync};
+use alloy::primitives::Address as EthAddress;
+use alloy::signers::local::{MnemonicBuilder, PrivateKeySigner};
 use bip39::Mnemonic;
 use subxt_signer::sr25519::Keypair;
-use subxt_signer::{
-    DeriveJunction,
-    ExposeSecret,
-    SecretString,
-};
+use subxt_signer::{DeriveJunction, ExposeSecret, SecretString};
 use thiserror::Error;
-use tokio::sync::{
-    mpsc,
-    oneshot,
-};
+use tokio::sync::{mpsc, oneshot};
 use tracing::instrument;
-use zeroize::{
-    Zeroize,
-    ZeroizeOnDrop,
-};
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use super::asset_hub::{
-    AssetHubAccountId,
-    AssetHubSignedTransaction,
-    AssetHubUnsignedTransaction,
+use super::asset_hub::{AssetHubAccountId, AssetHubSignedTransaction, AssetHubUnsignedTransaction};
+use super::polygon::{
+    PolygonSignedTransaction, PolygonUnsignedTransaction, derive_eth_path_from_params,
 };
 
 #[cfg_attr(test, mockall_double::double)]
@@ -40,9 +33,7 @@ pub struct GenerateAddressData {
 
 impl From<DerivationParams> for GenerateAddressData {
     fn from(derivation_params: DerivationParams) -> Self {
-        Self {
-            derivation_params,
-        }
+        Self { derivation_params }
     }
 }
 
@@ -55,21 +46,22 @@ pub enum KeyringError {
     #[expect(dead_code)]
     #[error("Timeout while send request to Keyring")]
     ResponseTimeout,
+    #[error("Transaction signing failed")]
+    SigningFailed,
 }
 
 pub type KeyringResult<T> = Result<T, KeyringError>;
 
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct Keyring {
-    asset_hub_seed: SecretString,
+    /// Seed phrase used for both Asset Hub (sr25519) and Polygon (secp256k1)
+    seed: SecretString,
 }
 
 impl Keyring {
     // TODO: receive secrets config
     pub fn new(seed: SecretString) -> Self {
-        Self {
-            asset_hub_seed: seed,
-        }
+        Self { seed }
     }
 
     pub fn ignite(
@@ -93,12 +85,16 @@ impl Keyring {
         (handle, client)
     }
 
+    // ========================================================================
+    // Asset Hub (sr25519) Key Derivation
+    // ========================================================================
+
     fn generate_asset_hub_derived_keypair(
         &self,
         params: DerivationParams,
     ) -> KeyringResult<Keypair> {
-        let mut mnemonic = Mnemonic::parse(self.asset_hub_seed.expose_secret())
-            .map_err(|_| KeyringError::InvalidSeed)?;
+        let mut mnemonic =
+            Mnemonic::parse(self.seed.expose_secret()).map_err(|_| KeyringError::InvalidSeed)?;
 
         let keypair =
             Keypair::from_phrase(&mnemonic, None).map_err(|_| KeyringError::InvalidSeed)?;
@@ -136,6 +132,109 @@ impl Keyring {
             .to_account_id())
     }
 
+    // ========================================================================
+    // Polygon (secp256k1) Key Derivation
+    // ========================================================================
+
+    fn generate_polygon_derived_signer(
+        &self,
+        params: DerivationParams,
+    ) -> KeyringResult<PrivateKeySigner> {
+        let mnemonic_str = self.seed.expose_secret();
+
+        // Derive BIP44 path from params
+        let path = derive_eth_path_from_params(&params);
+
+        // Use alloy's MnemonicBuilder to create a signer with derivation path
+        let signer = MnemonicBuilder::<alloy::signers::local::coins_bip39::English>::default()
+            .phrase(mnemonic_str)
+            .derivation_path(&path)
+            .map_err(|e| {
+                tracing::debug!(
+                    error.category = crate::utils::logging::category::CHAIN_CLIENT,
+                    error.source = ?e,
+                    path = %path,
+                    "Invalid derivation path"
+                );
+                KeyringError::InvalidSeed
+            })?
+            .build()
+            .map_err(|e| {
+                tracing::debug!(
+                    error.category = crate::utils::logging::category::CHAIN_CLIENT,
+                    error.source = ?e,
+                    path = %path,
+                    "Failed to derive Polygon signer from mnemonic"
+                );
+                KeyringError::InvalidSeed
+            })?;
+
+        Ok(signer)
+    }
+
+    fn process_sign_polygon_transaction(
+        &self,
+        data: SignTransactionRequestData<PolygonUnsignedTransaction>,
+    ) -> KeyringResult<PolygonSignedTransaction> {
+        let SignTransactionRequestData {
+            transaction,
+            derivation_params,
+        } = data;
+
+        let signer = self.generate_polygon_derived_signer(derivation_params)?;
+
+        // Build and sign the transaction using alloy's TransactionBuilder
+        // First convert to typed transaction
+        let mut tx_envelope = transaction
+            .build_unsigned()
+            .map_err(|e| {
+                tracing::debug!(
+                    error.category = crate::utils::logging::category::CHAIN_CLIENT,
+                    error.source = ?e,
+                    "Failed to build unsigned transaction"
+                );
+                KeyringError::SigningFailed
+            })?;
+
+        // Sign the transaction
+        let signature = signer
+            .sign_transaction_sync(&mut tx_envelope)
+            .map_err(|e| {
+                tracing::debug!(
+                    error.category = crate::utils::logging::category::CHAIN_CLIENT,
+                    error.source = ?e,
+                    "Failed to sign Polygon transaction"
+                );
+                KeyringError::SigningFailed
+            })?;
+
+        // Compute transaction hash
+        let tx_hash = tx_envelope.tx_hash(&signature);
+
+        // Encode the signed transaction
+        let signed_tx = tx_envelope.into_signed(signature);
+        let mut raw_tx = Vec::new();
+        use alloy::eips::eip2718::Encodable2718;
+        signed_tx.encode_2718(&mut raw_tx);
+
+        Ok(PolygonSignedTransaction {
+            raw_transaction: raw_tx.into(),
+            tx_hash,
+        })
+    }
+
+    fn process_generate_polygon_address(
+        &self,
+        data: GenerateAddressData,
+    ) -> KeyringResult<EthAddress> {
+        let signer = self.generate_polygon_derived_signer(data.derivation_params)?;
+        Ok(signer.address())
+    }
+
+    // ========================================================================
+    // Message Processing
+    // ========================================================================
+
     fn process_message(
         &self,
         msg: KeyringMessage,
@@ -144,13 +243,21 @@ impl Keyring {
             KeyringMessage::SignAssetHubTransaction(envelope) => {
                 let (req, resp) = envelope.unpack();
                 let result = self.process_sign_asset_hub_transaction(req);
-                // TODO: add logs
                 let _unused = resp.send(result);
             },
             KeyringMessage::GenerateAssetHubAddress(envelope) => {
                 let (req, resp) = envelope.unpack();
                 let result = self.process_generate_asset_hub_address(req);
-                // TODO: add logs
+                let _unused = resp.send(result);
+            },
+            KeyringMessage::SignPolygonTransaction(envelope) => {
+                let (req, resp) = envelope.unpack();
+                let result = self.process_sign_polygon_transaction(req);
+                let _unused = resp.send(result);
+            },
+            KeyringMessage::GeneratePolygonAddress(envelope) => {
+                let (req, resp) = envelope.unpack();
+                let result = self.process_generate_polygon_address(req);
                 let _unused = resp.send(result);
             },
         }
@@ -166,23 +273,15 @@ impl<T, R> Envelope<T, R> {
     pub fn new(request: T) -> (Self, ResponseReceiver<R>) {
         let (responder, receiver) = oneshot::channel();
 
-        let envelope = Envelope {
-            request,
-            responder,
-        };
+        let envelope = Envelope { request, responder };
 
-        let response_receiver = ResponseReceiver {
-            receiver,
-        };
+        let response_receiver = ResponseReceiver { receiver };
 
         (envelope, response_receiver)
     }
 
     pub fn unpack(self) -> (T, oneshot::Sender<KeyringResult<R>>) {
-        let Envelope {
-            request,
-            responder,
-        } = self;
+        let Envelope { request, responder } = self;
         (request, responder)
     }
 }
@@ -209,7 +308,9 @@ impl<R> ResponseReceiver<R> {
 }
 
 // adding new operations can be simplified using macros
+#[expect(clippy::large_enum_variant)]
 enum KeyringMessage {
+    // Asset Hub messages
     SignAssetHubTransaction(
         Envelope<
             SignTransactionRequestData<AssetHubUnsignedTransaction>,
@@ -217,6 +318,12 @@ enum KeyringMessage {
         >,
     ),
     GenerateAssetHubAddress(Envelope<GenerateAddressData, AssetHubAccountId>),
+
+    // Polygon messages
+    SignPolygonTransaction(
+        Envelope<SignTransactionRequestData<PolygonUnsignedTransaction>, PolygonSignedTransaction>,
+    ),
+    GeneratePolygonAddress(Envelope<GenerateAddressData, EthAddress>),
 }
 
 impl KeyringMessage {
@@ -245,6 +352,29 @@ impl KeyringMessage {
             response_receiver,
         )
     }
+
+    fn new_sign_polygon_transaction(
+        data: SignTransactionRequestData<PolygonUnsignedTransaction>
+    ) -> (
+        Self,
+        ResponseReceiver<PolygonSignedTransaction>,
+    ) {
+        let (envelope, response_receiver) = Envelope::new(data);
+        (
+            Self::SignPolygonTransaction(envelope),
+            response_receiver,
+        )
+    }
+
+    fn new_generate_polygon_address(
+        data: GenerateAddressData
+    ) -> (Self, ResponseReceiver<EthAddress>) {
+        let (envelope, response_receiver) = Envelope::new(data);
+        (
+            Self::GeneratePolygonAddress(envelope),
+            response_receiver,
+        )
+    }
 }
 
 // Client is wrapped into a separate module to allow mocking and easily
@@ -260,9 +390,7 @@ mod client {
 
     impl KeyringClient {
         pub(super) fn new(tx: mpsc::Sender<KeyringMessage>) -> Self {
-            Self {
-                tx,
-            }
+            Self { tx }
         }
 
         async fn send_message_with_response<R: 'static>(
@@ -287,6 +415,10 @@ mod client {
             response_receiver.receive().await
         }
 
+        // ====================================================================
+        // Asset Hub Methods
+        // ====================================================================
+
         #[instrument(skip(self, data))]
         pub async fn sign_asset_hub_transaction(
             &self,
@@ -306,6 +438,30 @@ mod client {
             self.send_message_with_response(params.0, params.1)
                 .await
         }
+
+        // ====================================================================
+        // Polygon Methods
+        // ====================================================================
+
+        #[instrument(skip(self, data))]
+        pub async fn sign_polygon_transaction(
+            &self,
+            data: SignTransactionRequestData<PolygonUnsignedTransaction>,
+        ) -> KeyringResult<PolygonSignedTransaction> {
+            let params = KeyringMessage::new_sign_polygon_transaction(data);
+            self.send_message_with_response(params.0, params.1)
+                .await
+        }
+
+        #[instrument(skip(self, data))]
+        pub async fn generate_polygon_address(
+            &self,
+            data: GenerateAddressData,
+        ) -> KeyringResult<EthAddress> {
+            let params = KeyringMessage::new_generate_polygon_address(data);
+            self.send_message_with_response(params.0, params.1)
+                .await
+        }
     }
 
     #[cfg(test)]
@@ -322,6 +478,16 @@ mod client {
                 &self,
                 data: GenerateAddressData,
             ) -> KeyringResult<AssetHubAccountId>;
+
+            pub async fn sign_polygon_transaction(
+                &self,
+                data: SignTransactionRequestData<PolygonUnsignedTransaction>,
+            ) -> KeyringResult<PolygonSignedTransaction>;
+
+            pub async fn generate_polygon_address(
+                &self,
+                data: GenerateAddressData,
+            ) -> KeyringResult<EthAddress>;
         }
 
         impl Clone for KeyringClient {

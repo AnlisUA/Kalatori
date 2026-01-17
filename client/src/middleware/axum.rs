@@ -1,27 +1,13 @@
 use axum::body::Body;
-use axum::extract::{
-    Json,
-    OriginalUri,
-    Request,
-    State,
-};
+use axum::extract::{Json, OriginalUri, Request, State};
 use axum::http::StatusCode;
 use axum::middleware::Next;
-use axum::response::{
-    IntoResponse,
-    Response,
-};
+use axum::response::{IntoResponse, Response};
 
-use crate::types::{
-    ApiError,
-    ApiResultStructured,
-};
+use crate::types::{ApiError, ApiResultStructured};
 use crate::utils::HmacConfig;
 
-use super::{
-    HmacValidationError,
-    validate_request,
-};
+use super::{HmacValidationError, validate_request};
 
 impl IntoResponse for HmacValidationError {
     fn into_response(self) -> Response {
@@ -57,9 +43,7 @@ impl IntoResponse for HmacValidationError {
                 "Invalid timestamp format",
             ),
             // TODO: add details about expiration time
-            Self::RequestExpired {
-                ..
-            } => (
+            Self::RequestExpired { .. } => (
                 StatusCode::UNAUTHORIZED,
                 "AUTHENTICATION_FAILED",
                 "REQUEST_SIGNATURE_EXPIRED",
@@ -87,9 +71,7 @@ impl IntoResponse for HmacValidationError {
 
         (
             status,
-            Json(ApiResultStructured::<()>::Err {
-                error,
-            }),
+            Json(ApiResultStructured::<()>::Err { error }),
         )
             .into_response()
     }

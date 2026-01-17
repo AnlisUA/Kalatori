@@ -1,52 +1,19 @@
 use std::collections::HashMap;
 
-use futures::{
-    StreamExt,
-    stream,
-};
-use rust_decimal::prelude::{
-    Decimal,
-    ToPrimitive,
-};
-use subxt::blocks::{
-    Block,
-    ExtrinsicDetails,
-    FoundExtrinsic,
-};
-use subxt::config::{
-    DefaultExtrinsicParams,
-    DefaultExtrinsicParamsBuilder,
-    ExtrinsicParams,
-};
+use futures::{StreamExt, stream};
+use rust_decimal::prelude::{Decimal, ToPrimitive};
+use subxt::blocks::{Block, ExtrinsicDetails, FoundExtrinsic};
+use subxt::config::{DefaultExtrinsicParams, DefaultExtrinsicParamsBuilder, ExtrinsicParams};
 use subxt::utils::H256;
-use subxt::{
-    Config,
-    SubstrateConfig,
-};
-use tracing::{
-    debug,
-    instrument,
-    warn,
-};
+use subxt::{Config, SubstrateConfig};
+use tracing::{debug, instrument, warn};
 
 use crate::types::ChainType;
 
 use super::{
-    AssetInfo,
-    AssetInfoStore,
-    BlockChainClient,
-    BlockChainClientExt,
-    ChainConfig,
-    ChainTransfer,
-    ClientError,
-    GeneralTransactionId,
-    KeyringClient,
-    QueryError,
-    SignedTransaction,
-    SignedTransactionUtils,
-    SubscriptionError,
-    TransactionError,
-    TransfersStream,
+    AssetInfo, AssetInfoStore, BlockChainClient, BlockChainClientExt, ChainConfig, ChainTransfer,
+    ClientError, GeneralTransactionId, KeyringClient, QueryError, SignedTransaction,
+    SignedTransactionUtils, SubscriptionError, TransactionError, TransfersStream,
     UnsignedTransaction,
 };
 
@@ -251,11 +218,7 @@ impl AssetHubClient {
             Ok(e) => e,
             Err(e) => {
                 tracing::error!("Failed to fetch extrinsics for block {block_number}: {e}");
-                return Err(
-                    SubscriptionError::BlockProcessingFailed {
-                        block_number,
-                    },
-                );
+                return Err(SubscriptionError::BlockProcessingFailed { block_number });
             },
         };
 
@@ -626,9 +589,7 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
                 reason: "Failed to create partial transaction".to_string(),
             })?;
 
-        Ok(UnsignedTransaction {
-            transaction,
-        })
+        Ok(UnsignedTransaction { transaction })
     }
 
     #[instrument(skip(self), fields(asset_id = %asset_id))]
@@ -667,9 +628,7 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
                 reason: "Failed to create partial transaction for transfer_all".to_string(),
             })?;
 
-        Ok(UnsignedTransaction {
-            transaction,
-        })
+        Ok(UnsignedTransaction { transaction })
     }
 
     #[instrument(skip(self, transaction, keyring_client))]
@@ -688,9 +647,7 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
             .sign_asset_hub_transaction(data)
             .await?;
 
-        Ok(SignedTransaction {
-            transaction,
-        })
+        Ok(SignedTransaction { transaction })
     }
 
     // TODO: inspect too_many_lines
@@ -700,9 +657,7 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
         &self,
         transaction: SignedTransaction<AssetHubChainConfig>,
     ) -> Result<ChainTransfer<AssetHubChainConfig>, TransactionError<AssetHubChainConfig>> {
-        let SignedTransaction {
-            transaction,
-        } = transaction;
+        let SignedTransaction { transaction } = transaction;
 
         let tx_hash = transaction.hash();
 
@@ -791,9 +746,7 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
                     extrinsic_index = %extrinsic_index,
                     "Failed to decode ExtrinsicFailed event"
                 );
-                TransactionError::TransactionInfoFetchFailed {
-                    transaction_id,
-                }
+                TransactionError::TransactionInfoFetchFailed { transaction_id }
             })?;
 
         // Check if transaction failed on-chain
@@ -802,9 +755,7 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
 
             // Discriminate error types based on runtime error
             if is_insufficient_balance_error(dispatch_error) {
-                return Err(TransactionError::InsufficientBalance {
-                    transaction_id,
-                });
+                return Err(TransactionError::InsufficientBalance { transaction_id });
             }
 
             // Generic execution failure
@@ -828,11 +779,7 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
                     "Failed to decode Transferred event"
                 );
             })
-            .map_err(
-                |_| TransactionError::TransactionInfoFetchFailed {
-                    transaction_id,
-                },
-            )?
+            .map_err(|_| TransactionError::TransactionInfoFetchFailed { transaction_id })?
             .ok_or_else(|| {
                 tracing::debug!(
                     error.category = crate::utils::logging::category::CHAIN_CLIENT,
@@ -842,9 +789,7 @@ impl BlockChainClient<AssetHubChainConfig> for AssetHubClient {
                     extrinsic_index = %extrinsic_index,
                     "No Transferred event found for successful transaction"
                 );
-                TransactionError::TransactionInfoFetchFailed {
-                    transaction_id,
-                }
+                TransactionError::TransactionInfoFetchFailed { transaction_id }
             })?;
 
         let asset_info = self

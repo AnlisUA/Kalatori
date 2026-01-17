@@ -1,20 +1,10 @@
 use axum::extract::FromRequest;
-use axum::extract::rejection::{
-    JsonRejection,
-    QueryRejection,
-};
+use axum::extract::rejection::{JsonRejection, QueryRejection};
 use axum::http::StatusCode;
-use axum::response::{
-    IntoResponse,
-    Json,
-    Response,
-};
+use axum::response::{IntoResponse, Json, Response};
 use serde::Serialize;
 
-use kalatori_client::types::{
-    ApiError,
-    ApiResultStructured,
-};
+use kalatori_client::types::{ApiError, ApiResultStructured};
 
 use super::ApiErrorExt;
 
@@ -31,9 +21,7 @@ impl<T: Serialize> IntoResponse for SuccessWrapper<T> {
     fn into_response(self) -> Response {
         (
             StatusCode::OK,
-            Json(ApiResultStructured::Ok {
-                result: self.0,
-            }),
+            Json(ApiResultStructured::Ok { result: self.0 }),
         )
             .into_response()
     }
@@ -86,9 +74,7 @@ impl IntoResponse for AppExtractorError {
 
         (
             StatusCode::BAD_REQUEST,
-            Json(ApiResultStructured::<()>::Err {
-                error: api_error,
-            }),
+            Json(ApiResultStructured::<()>::Err { error: api_error }),
         )
             .into_response()
     }

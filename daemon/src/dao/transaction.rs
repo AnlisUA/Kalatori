@@ -1,26 +1,12 @@
-use chrono::{
-    DateTime,
-    Utc,
-};
-use sqlx::types::{
-    Json,
-    Text,
-};
+use chrono::{DateTime, Utc};
+use sqlx::types::{Json, Text};
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::types::{
-    GeneralTransactionId,
-    Transaction,
-    TransactionRow,
-    TransactionStatus,
-};
+use crate::types::{GeneralTransactionId, Transaction, TransactionRow, TransactionStatus};
 
 use super::DaoExecutor;
-use super::error_parsing::{
-    StatusTransitionError,
-    StatusTriggerError,
-};
+use super::error_parsing::{StatusTransitionError, StatusTriggerError};
 
 // ============================================================================
 // Transaction Domain Errors
@@ -170,9 +156,7 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
                 }
 
                 match e {
-                    sqlx::Error::RowNotFound => DaoTransactionError::NotFound {
-                        transaction_id,
-                    },
+                    sqlx::Error::RowNotFound => DaoTransactionError::NotFound { transaction_id },
                     _ => DaoTransactionError::DatabaseError,
                 }
             })
@@ -224,9 +208,7 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
                 }
 
                 match e {
-                    sqlx::Error::RowNotFound => DaoTransactionError::NotFound {
-                        transaction_id,
-                    },
+                    sqlx::Error::RowNotFound => DaoTransactionError::NotFound { transaction_id },
                     _ => DaoTransactionError::DatabaseError,
                 }
             })
@@ -322,13 +304,8 @@ mod tests {
     use crate::dao::invoice::DaoInvoiceMethods;
 
     use crate::types::{
-        OutgoingTransactionMeta,
-        Transaction,
-        TransactionOrigin,
-        TransactionStatus,
-        TransactionType,
-        default_create_invoice_data,
-        default_transaction,
+        OutgoingTransactionMeta, Transaction, TransactionOrigin, TransactionStatus,
+        TransactionType, default_create_invoice_data, default_transaction,
     };
 
     use super::*;
@@ -454,9 +431,7 @@ mod tests {
         // Should fail with InvoiceNotFound error
         assert!(result.is_err());
         match result.unwrap_err() {
-            DaoTransactionError::InvoiceNotFound {
-                invoice_id,
-            } => {
+            DaoTransactionError::InvoiceNotFound { invoice_id } => {
                 assert_eq!(invoice_id, fake_invoice_id);
             },
             err => panic!("Expected InvoiceNotFound, got: {err:?}"),
@@ -780,9 +755,7 @@ mod tests {
         // Should fail with NotFound
         assert!(result.is_err());
         match result.unwrap_err() {
-            DaoTransactionError::NotFound {
-                ..
-            } => { /* Expected */ },
+            DaoTransactionError::NotFound { .. } => { /* Expected */ },
             err => panic!("Expected NotFound, got: {err:?}"),
         }
     }

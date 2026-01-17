@@ -1,25 +1,15 @@
-use sqlx::types::{
-    Json,
-    Text,
-};
+use sqlx::types::{Json, Text};
 use thiserror::Error;
 use uuid::Uuid;
 
 use crate::dao::error_parsing::parse_update_not_allowed_error;
 use crate::types::{
-    CreateInvoiceData,
-    Invoice,
-    InvoiceRow,
-    InvoiceStatus,
-    InvoiceWithReceivedAmount,
+    CreateInvoiceData, Invoice, InvoiceRow, InvoiceStatus, InvoiceWithReceivedAmount,
     UpdateInvoiceData,
 };
 
 use super::DaoExecutor;
-use super::error_parsing::{
-    StatusTransitionError,
-    StatusTriggerError,
-};
+use super::error_parsing::{StatusTransitionError, StatusTriggerError};
 
 // ============================================================================
 // Invoice Domain Errors
@@ -58,72 +48,48 @@ impl crate::api::ApiErrorExt for DaoInvoiceError {
     // TODO: create enum for categories and codes
     fn category(&self) -> &str {
         match self {
-            DaoInvoiceError::NotFound {
-                ..
-            } => "ENTITY_NOT_FOUND",
-            DaoInvoiceError::UpdateNotAllowed {
-                ..
-            } => "UPDATE_NOT_ALLOWED",
-            DaoInvoiceError::StatusConstraintViolation {
-                ..
-            } => "STATUS_CONSTRAINT_VIOLATION",
-            DaoInvoiceError::DuplicateOrderId {
-                ..
-            } => "DUPLICATE_ENTITY",
+            DaoInvoiceError::NotFound { .. } => "ENTITY_NOT_FOUND",
+            DaoInvoiceError::UpdateNotAllowed { .. } => "UPDATE_NOT_ALLOWED",
+            DaoInvoiceError::StatusConstraintViolation { .. } => "STATUS_CONSTRAINT_VIOLATION",
+            DaoInvoiceError::DuplicateOrderId { .. } => "DUPLICATE_ENTITY",
             DaoInvoiceError::DatabaseError => "INTERNAL_SERVER_ERROR",
         }
     }
 
     fn code(&self) -> &str {
         match self {
-            DaoInvoiceError::NotFound {
-                ..
-            } => "INVOICE_NOT_FOUND",
-            DaoInvoiceError::UpdateNotAllowed {
-                ..
-            } => "INVOICE_UPDATE_NOT_ALLOWED",
-            DaoInvoiceError::StatusConstraintViolation {
-                ..
-            } => "INVOICE_STATUS_CONSTRAINT_VIOLATION",
-            DaoInvoiceError::DuplicateOrderId {
-                ..
-            } => "INVOICE_DUPLICATE_ORDER_ID",
+            DaoInvoiceError::NotFound { .. } => "INVOICE_NOT_FOUND",
+            DaoInvoiceError::UpdateNotAllowed { .. } => "INVOICE_UPDATE_NOT_ALLOWED",
+            DaoInvoiceError::StatusConstraintViolation { .. } => {
+                "INVOICE_STATUS_CONSTRAINT_VIOLATION"
+            },
+            DaoInvoiceError::DuplicateOrderId { .. } => "INVOICE_DUPLICATE_ORDER_ID",
             DaoInvoiceError::DatabaseError => "INTERNAL_SERVER_ERROR",
         }
     }
 
     fn message(&self) -> &str {
         match self {
-            DaoInvoiceError::NotFound {
-                ..
-            } => "The requested invoice was not found.",
-            DaoInvoiceError::UpdateNotAllowed {
-                ..
-            } => "Invoice cannot be updated in its current status.",
-            DaoInvoiceError::StatusConstraintViolation {
-                ..
-            } => "The requested status transition is not allowed.",
-            DaoInvoiceError::DuplicateOrderId {
-                ..
-            } => "An invoice with the specified order ID already exists.",
+            DaoInvoiceError::NotFound { .. } => "The requested invoice was not found.",
+            DaoInvoiceError::UpdateNotAllowed { .. } => {
+                "Invoice cannot be updated in its current status."
+            },
+            DaoInvoiceError::StatusConstraintViolation { .. } => {
+                "The requested status transition is not allowed."
+            },
+            DaoInvoiceError::DuplicateOrderId { .. } => {
+                "An invoice with the specified order ID already exists."
+            },
             DaoInvoiceError::DatabaseError => "A database error occurred.",
         }
     }
 
     fn http_status_code(&self) -> reqwest::StatusCode {
         match self {
-            DaoInvoiceError::NotFound {
-                ..
-            } => reqwest::StatusCode::NOT_FOUND,
-            DaoInvoiceError::UpdateNotAllowed {
-                ..
-            } => reqwest::StatusCode::CONFLICT,
-            DaoInvoiceError::StatusConstraintViolation {
-                ..
-            } => reqwest::StatusCode::BAD_REQUEST,
-            DaoInvoiceError::DuplicateOrderId {
-                ..
-            } => reqwest::StatusCode::CONFLICT,
+            DaoInvoiceError::NotFound { .. } => reqwest::StatusCode::NOT_FOUND,
+            DaoInvoiceError::UpdateNotAllowed { .. } => reqwest::StatusCode::CONFLICT,
+            DaoInvoiceError::StatusConstraintViolation { .. } => reqwest::StatusCode::BAD_REQUEST,
+            DaoInvoiceError::DuplicateOrderId { .. } => reqwest::StatusCode::CONFLICT,
             DaoInvoiceError::DatabaseError => reqwest::StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -366,9 +332,7 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
                 println!("Error: {:?}", e);
 
                 match e {
-                    sqlx::Error::RowNotFound => DaoInvoiceError::NotFound {
-                        invoice_id,
-                    },
+                    sqlx::Error::RowNotFound => DaoInvoiceError::NotFound { invoice_id },
                     _ => DaoInvoiceError::DatabaseError,
                 }
             })
@@ -410,7 +374,7 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
                     return DaoInvoiceError::UpdateNotAllowed {
                         invoice_id: data.invoice_id,
                         current_status,
-                    }
+                    };
                 }
 
                 match e {
@@ -454,10 +418,7 @@ mod tests {
     use crate::dao::create_test_dao;
     use crate::dao::transaction::DaoTransactionMethods;
     use crate::types::{
-        Transaction,
-        TransactionType,
-        default_create_invoice_data,
-        default_transaction,
+        Transaction, TransactionType, default_create_invoice_data, default_transaction,
         default_update_invoice_data,
     };
 
@@ -729,9 +690,7 @@ mod tests {
         // Should fail with DuplicateOrderId error
         assert!(result.is_err());
         match result.unwrap_err() {
-            DaoInvoiceError::DuplicateOrderId {
-                order_id: oid,
-            } => {
+            DaoInvoiceError::DuplicateOrderId { order_id: oid } => {
                 assert_eq!(oid, order_id);
             },
             err => panic!("Expected DuplicateOrderId error, got: {err:?}"),
@@ -776,9 +735,7 @@ mod tests {
         // Should fail with NotFound
         assert!(result.is_err());
         match result.unwrap_err() {
-            DaoInvoiceError::NotFound {
-                ..
-            } => { /* Expected */ },
+            DaoInvoiceError::NotFound { .. } => { /* Expected */ },
             err => panic!("Expected NotFound, got: {err:?}"),
         }
     }
@@ -879,9 +836,7 @@ mod tests {
         // Should fail with NotFound
         assert!(result2.is_err());
         match result2.unwrap_err() {
-            DaoInvoiceError::NotFound {
-                invoice_id,
-            } => {
+            DaoInvoiceError::NotFound { invoice_id } => {
                 assert_eq!(invoice_id, id2);
             },
             err => panic!("Expected NotFound, got: {err:?}"),

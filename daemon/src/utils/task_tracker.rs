@@ -3,34 +3,18 @@
 //! Contains utilities for orchestrating crucial initialization & loop tasks,
 //! and logic for handling errors occurring in them.
 use std::error::Error as StdError;
-use std::fmt::{
-    Debug,
-    Display,
-};
+use std::fmt::{Debug, Display};
 use std::future::Future;
 
 use async_lock::RwLockUpgradableReadGuard;
 use tokio::sync::mpsc::error::TrySendError;
-use tokio::sync::mpsc::{
-    self,
-    Receiver,
-    Sender,
-    UnboundedReceiver,
-    UnboundedSender,
-};
+use tokio::sync::mpsc::{self, Receiver, Sender, UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle;
 use tokio_util::task::TaskTracker as InnerTaskTracker;
 
-use crate::error::{
-    Error,
-    PrettyCause,
-    TaskError,
-};
+use crate::error::{Error, PrettyCause, TaskError};
 
-use super::shutdown::{
-    ShutdownNotification,
-    ShutdownOutcome,
-};
+use super::shutdown::{ShutdownNotification, ShutdownOutcome};
 
 /// Needed to place [`TaskName`]s in error types.
 pub trait Print: Display + Debug {}
@@ -141,9 +125,7 @@ impl TaskTracker {
 
                     if matches!(*outcome, ShutdownOutcome::UserRequested) {
                         *RwLockUpgradableReadGuard::upgrade(outcome).await =
-                            ShutdownOutcome::UnrecoverableError {
-                                panic: false,
-                            };
+                            ShutdownOutcome::UnrecoverableError { panic: false };
 
                         shutdown_notification.token.cancel();
                     }

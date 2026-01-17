@@ -1,49 +1,26 @@
+use std::future::Future;
 use std::str::FromStr;
 use std::sync::Arc;
 
 use chrono::Utc;
-use futures::stream::{
-    FuturesUnordered,
-    StreamExt,
-};
+use futures::stream::{FuturesUnordered, StreamExt};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
 use thiserror::Error;
-use tokio::time::{
-    Duration,
-    interval,
-};
+use tokio::time::{Duration, interval};
 use tokio_util::sync::CancellationToken;
 use tracing::instrument;
 use uuid::Uuid;
 
 use crate::chain_client::{
-    AssetHubChainConfig,
-    AssetHubClient,
-    BlockChainClient,
-    ChainConfig,
-    GeneralChainTransfer,
-    KeyringClient,
-    SignedTransaction,
-    SignedTransactionUtils,
+    AssetHubChainConfig, AssetHubClient, BlockChainClient, ChainConfig, GeneralChainTransfer,
+    KeyringClient, PolygonChainConfig, PolygonClient, SignedTransaction, SignedTransactionUtils,
     TransactionError,
 };
-use crate::dao::{
-    DAO,
-    DaoInterface,
-    DaoTransactionInterface,
-};
+use crate::dao::{DAO, DaoInterface, DaoTransactionInterface};
 use crate::types::{
-    ChainType,
-    GeneralTransactionId,
-    OutgoingTransaction,
-    Payout,
-    PayoutStatus,
-    RetryMeta,
-    Transaction,
-    TransactionOrigin,
-    TransactionOriginVariant,
-    TransferInfo,
+    ChainType, GeneralTransactionId, OutgoingTransaction, Payout, PayoutStatus, RetryMeta,
+    Transaction, TransactionOrigin, TransactionOriginVariant, TransferInfo,
 };
 
 #[derive(Debug, Error)]
@@ -102,6 +79,7 @@ impl<T: ChainConfig> ChainPayoutRequest<T> {
 #[derive(Debug)]
 pub enum ChainPayoutRequestTyped {
     AssetHub(ChainPayoutRequest<AssetHubChainConfig>),
+    Polygon(ChainPayoutRequest<PolygonChainConfig>),
 }
 
 // TODO: perhaps it might be just `From`? Used `TryFrom` when had `chain` field
@@ -118,6 +96,7 @@ impl TryFrom<Payout> for ChainPayoutRequestTyped {
             destination_address = %value.transfer_info.destination_address,
             asset_id = %value.transfer_info.asset_id,
             amount = %value.transfer_info.amount,
+            chain = ?value.transfer_info.chain,
             "Preparing payout request for processing",
         );
         let request = match value.transfer_info.chain {
@@ -129,6 +108,12 @@ impl TryFrom<Payout> for ChainPayoutRequestTyped {
                     value.retry_meta,
                 )?)
             },
+            ChainType::Polygon => ChainPayoutRequestTyped::Polygon(ChainPayoutRequest::new(
+                value.id,
+                value.invoice_id,
+                value.transfer_info,
+                value.retry_meta,
+            )?),
         };
 
         Ok(request)
@@ -154,8 +139,10 @@ struct TransactionExecutionData {
 pub struct TransfersExecutor<
     D: DaoInterface + 'static = DAO,
     AH: BlockChainClient<AssetHubChainConfig> + 'static = AssetHubClient,
+    PG: BlockChainClient<PolygonChainConfig> + 'static = PolygonClient,
 > {
     asset_hub_client: Arc<AH>,
+    polygon_client: Arc<PG>,
     dao: D,
     keyring_client: KeyringClient,
 }
@@ -211,9 +198,7 @@ async fn send_transfer_request<T: ChainConfig, C: BlockChainClient<T>>(
                 is_retriable: false,
             })
         },
-        Err(TransactionError::TransactionInfoFetchFailed {
-            transaction_id,
-        }) => {
+        Err(TransactionError::TransactionInfoFetchFailed { transaction_id }) => {
             tracing::warn!(
                 invoice_id = %request.invoice_id,
                 payout_id = %request.id,
@@ -229,9 +214,7 @@ async fn send_transfer_request<T: ChainConfig, C: BlockChainClient<T>>(
                 is_retriable: true,
             })
         },
-        Err(TransactionError::InsufficientBalance {
-            transaction_id,
-        }) => {
+        Err(TransactionError::InsufficientBalance { transaction_id }) => {
             tracing::warn!(
                 invoice_id = %request.invoice_id,
                 payout_id = %request.id,
@@ -267,9 +250,7 @@ async fn send_transfer_request<T: ChainConfig, C: BlockChainClient<T>>(
                 is_retriable: false,
             })
         },
-        Err(TransactionError::BuildFailed {
-            ..
-        }) => unreachable!(),
+        Err(TransactionError::BuildFailed { .. }) => unreachable!(),
     };
 
     TransactionExecutionData {
@@ -280,8 +261,11 @@ async fn send_transfer_request<T: ChainConfig, C: BlockChainClient<T>>(
     }
 }
 
-impl<D: DaoInterface + 'static, AH: BlockChainClient<AssetHubChainConfig> + 'static>
-    TransfersExecutor<D, AH>
+impl<
+    D: DaoInterface + 'static,
+    AH: BlockChainClient<AssetHubChainConfig> + 'static,
+    PG: BlockChainClient<PolygonChainConfig> + 'static,
+> TransfersExecutor<D, AH, PG>
 {
     async fn collect_pending_payout_requests(
         &self,
@@ -322,40 +306,41 @@ impl<D: DaoInterface + 'static, AH: BlockChainClient<AssetHubChainConfig> + 'sta
             )
             .await
             .map_err(|e| {
-                tracing::debug!("Building transfer_all chain transaction failed");
-
-                let reason = match e {
-                    TransactionError::BuildFailed {
-                        reason,
-                    } => reason,
-                    // TODO: additional logs for that case? Shouldn't happen normally
-                    _ => "Unexpected error while building transfer".to_string(),
-                };
+                tracing::warn!(
+                    invoice_id = %request.invoice_id,
+                    payout_id = %request.id,
+                    error = ?e,
+                    "Failed to build transfer_all transaction",
+                );
 
                 ChainExecutorError::BuildTransfer {
-                    reason,
+                    reason: format!("Failed to build transfer_all transaction: {e}"),
                 }
             })?;
+
+        // Derivation params: [recipient_address, invoice_id]
+        let derivation_params = vec![
+            request.destination_address.to_string(),
+            request.invoice_id.to_string(),
+        ];
 
         let signed_transaction = client
             .sign_transaction(
                 transaction,
-                vec![request.invoice_id.to_string()],
+                derivation_params,
                 &self.keyring_client,
             )
             .await
             .map_err(|e| {
-                tracing::debug!("Signing transfer chain transaction failed");
-
-                let reason = match e {
-                    TransactionError::BuildFailed {
-                        reason,
-                    } => reason,
-                    _ => "Unexpected error while signing transfer".to_string(),
-                };
+                tracing::warn!(
+                    invoice_id = %request.invoice_id,
+                    payout_id = %request.id,
+                    error = ?e,
+                    "Failed to sign transfer transaction",
+                );
 
                 ChainExecutorError::BuildTransfer {
-                    reason,
+                    reason: format!("Failed to sign transfer transaction: {e}"),
                 }
             })?;
 
@@ -368,13 +353,13 @@ impl<D: DaoInterface + 'static, AH: BlockChainClient<AssetHubChainConfig> + 'sta
         request: &ChainPayoutRequest<T>,
         signed_transaction: &SignedTransaction<T>,
     ) -> Result<Transaction, ChainExecutorError> {
-        let data = OutgoingTransaction {
+        let outgoing = OutgoingTransaction {
             id: Uuid::new_v4(),
             invoice_id: request.invoice_id,
             transfer_info: TransferInfo {
+                chain: request.chain,
                 asset_id: request.asset_id.to_string(),
                 asset_name: request.asset_name.clone(),
-                chain: request.chain,
                 amount: request.amount,
                 source_address: request.source_address.to_string(),
                 destination_address: request.destination_address.to_string(),
@@ -384,12 +369,24 @@ impl<D: DaoInterface + 'static, AH: BlockChainClient<AssetHubChainConfig> + 'sta
             origin: TransactionOrigin::payout(request.id),
         };
 
-        self.dao
-            .create_transaction(data.into())
+        let transaction = self
+            .dao
+            .create_transaction(outgoing.into())
             .await
-            .map_err(|_| ChainExecutorError::BuildTransfer {
-                reason: "Failed to store built transfer in database".to_string(),
-            })
+            .map_err(|e| {
+                tracing::warn!(
+                    invoice_id = %request.invoice_id,
+                    payout_id = %request.id,
+                    error = ?e,
+                    "Failed to store built transfer transaction",
+                );
+
+                ChainExecutorError::DaoTransactionError {
+                    reason: format!("Failed to store built transfer transaction: {e}"),
+                }
+            })?;
+
+        Ok(transaction)
     }
 
     #[instrument(
@@ -397,6 +394,7 @@ impl<D: DaoInterface + 'static, AH: BlockChainClient<AssetHubChainConfig> + 'sta
         fields(
             invoice_id = %request.invoice_id,
             payout_id = %request.id,
+            chain = ?request.chain,
         ),
     )]
     async fn prepare_transfer<T: ChainConfig + 'static, C: BlockChainClient<T> + 'static>(
@@ -436,7 +434,7 @@ impl<D: DaoInterface + 'static, AH: BlockChainClient<AssetHubChainConfig> + 'sta
         );
 
         if limit == 0 {
-            return Ok(())
+            return Ok(());
         }
 
         // Normally we should collect transfers in the next order:
@@ -471,6 +469,7 @@ impl<D: DaoInterface + 'static, AH: BlockChainClient<AssetHubChainConfig> + 'sta
                                 error = %e,
                                 invoice_id = %invoice_id,
                                 payout_id = %payout_id,
+                                chain = "AssetHub",
                                 "Failed to prepare transfer request, it will be skipped",
                             );
                         });
@@ -479,6 +478,35 @@ impl<D: DaoInterface + 'static, AH: BlockChainClient<AssetHubChainConfig> + 'sta
                         tracing::info!(
                             invoice_id = %invoice_id,
                             payout_id = %payout_id,
+                            chain = "AssetHub",
+                            "Scheduled transfer for processing on chain",
+                        );
+                        futures_set.push(transfer);
+                    }
+                },
+                ChainPayoutRequestTyped::Polygon(request) => {
+                    let invoice_id = request.invoice_id;
+                    let payout_id = request.id;
+
+                    let client = self.polygon_client.clone();
+                    let prepared_transfer = self
+                        .prepare_transfer(client, request)
+                        .await
+                        .inspect_err(|e| {
+                            tracing::warn!(
+                                error = %e,
+                                invoice_id = %invoice_id,
+                                payout_id = %payout_id,
+                                chain = "Polygon",
+                                "Failed to prepare transfer request, it will be skipped",
+                            );
+                        });
+
+                    if let Ok(transfer) = prepared_transfer {
+                        tracing::info!(
+                            invoice_id = %invoice_id,
+                            payout_id = %payout_id,
+                            chain = "Polygon",
                             "Scheduled transfer for processing on chain",
                         );
                         futures_set.push(transfer);
@@ -555,13 +583,17 @@ impl<D: DaoInterface + 'static, AH: BlockChainClient<AssetHubChainConfig> + 'sta
                 }
             })?;
 
-        // TODO: log origin? We've got invoice id logged, so it's not critical
-        tracing::info!("Processed successful transfer result",);
+        tracing::info!(
+            transaction_id = %transaction_id,
+            invoice_id = %invoice_id,
+            chain = ?transfer.chain,
+            "Transfer completed successfully",
+        );
 
         Ok(())
     }
 
-    #[instrument(skip(self, dao_transaction, error))]
+    #[instrument(skip(self, dao_transaction, origin, error))]
     async fn handle_transfer_result_error(
         &self,
         dao_transaction: D::Transaction,
@@ -579,7 +611,6 @@ impl<D: DaoInterface + 'static, AH: BlockChainClient<AssetHubChainConfig> + 'sta
                     .failure_message
                     .clone()
                     .unwrap_or_default(),
-                // TODO: use transfer.timestamp
                 Utc::now(),
             )
             .await
@@ -607,14 +638,16 @@ impl<D: DaoInterface + 'static, AH: BlockChainClient<AssetHubChainConfig> + 'sta
                     .map_err(|e| {
                         tracing::error!(
                             error = %e,
-                            "Failed to update payout as failed in database",
+                            "Failed to update payout retry metadata in database",
                         );
 
                         ChainExecutorError::DaoTransactionError {
-                            reason: "Failed to update payout as failed in database".to_string(),
+                            reason: "Failed to update payout retry metadata in database"
+                                .to_string(),
                         }
                     })?;
             },
+            // TODO: should be implemented later, not necessary for now
             _ => {},
         }
 
@@ -624,30 +657,34 @@ impl<D: DaoInterface + 'static, AH: BlockChainClient<AssetHubChainConfig> + 'sta
             .map_err(|e| {
                 tracing::error!(
                     error = %e,
-                    "Failed to commit database transaction while handling failed transfer result",
+                    "Failed to commit database transaction while handling transfer error",
                 );
 
                 ChainExecutorError::DaoTransactionError {
                     reason: "Failed to commit database transaction".to_string(),
                 }
             })?;
-        // TODO: log origin? We've got invoice id logged, so it's not critical
-        tracing::info!("Processed failed transfer result",);
+
+        tracing::warn!(
+            transaction_id = %transaction_id,
+            invoice_id = %invoice_id,
+            is_retriable = error.is_retriable,
+            "Transfer execution failed",
+        );
 
         Ok(())
     }
 
-    // Update the transaction and origin entity based on the result
     #[instrument(
-        skip(self, data),
+        skip(self, result),
         fields(
-            transaction_id = %data.transaction_id,
-            invoice_id = %data.invoice_id,
+            transaction_id = %result.transaction_id,
+            invoice_id = %result.invoice_id,
         ),
     )]
     async fn handle_transfer_result(
         &self,
-        data: TransactionExecutionData,
+        result: TransactionExecutionData,
     ) -> Result<(), ChainExecutorError> {
         let dao_transaction = self
             .dao
@@ -656,28 +693,21 @@ impl<D: DaoInterface + 'static, AH: BlockChainClient<AssetHubChainConfig> + 'sta
             .map_err(|e| {
                 tracing::error!(
                     error = %e,
-                    "Failed to begin database transaction while handling transfer result",
+                    "Failed to start database transaction",
                 );
 
                 ChainExecutorError::DaoTransactionError {
-                    reason: "Failed to begin database transaction".to_string(),
+                    reason: "Failed to start database transaction".to_string(),
                 }
             })?;
 
-        let TransactionExecutionData {
-            transaction_id,
-            invoice_id,
-            origin,
-            result,
-        } = data;
-
-        match result {
+        match result.result {
             Ok(transfer) => {
                 self.handle_transfer_result_sucess(
                     dao_transaction,
-                    transaction_id,
-                    invoice_id,
-                    origin,
+                    result.transaction_id,
+                    result.invoice_id,
+                    result.origin,
                     transfer,
                 )
                 .await
@@ -685,9 +715,9 @@ impl<D: DaoInterface + 'static, AH: BlockChainClient<AssetHubChainConfig> + 'sta
             Err(error) => {
                 self.handle_transfer_result_error(
                     dao_transaction,
-                    transaction_id,
-                    invoice_id,
-                    origin,
+                    result.transaction_id,
+                    result.invoice_id,
+                    result.origin,
                     error,
                 )
                 .await
@@ -696,56 +726,46 @@ impl<D: DaoInterface + 'static, AH: BlockChainClient<AssetHubChainConfig> + 'sta
     }
 
     async fn perform(
-        self,
+        &self,
         token: CancellationToken,
     ) {
-        let mut interval = interval(Duration::from_millis(
+        let mut futures_set: FuturesUnordered<BoxedTransferFuture> = FuturesUnordered::new();
+        let mut polling_interval = interval(Duration::from_millis(
             POLLING_INTERVAL_MILLIS,
         ));
 
-        let mut shutdown_expected = false;
-        let mut futures_set = FuturesUnordered::new();
+        tracing::info!("Transfers executor started for AssetHub and Polygon chains.");
 
         loop {
             tokio::select! {
-                _ = interval.tick(), if !shutdown_expected => {
-                    if let Err(e) = self.schedule_transfers(&mut futures_set).await {
-                        tracing::error!(
-                            error = %e,
-                            "Error while scheduling transfers for processing",
-                        );
-                    }
-                },
-                future_result = futures_set.next(), if !futures_set.is_empty() => {
-                    if let Some(data) = future_result {
-                        let result = self.handle_transfer_result(data).await;
+                biased;
 
-                        if let Err(error) = result {
-                            tracing::error!(
-                                error = %error,
-                                "Error while storing processing result to database",
-                            );
-                        }
-                    } else {
-                        // TODO: log unexpected empty future result
-                    }
-
-                    if shutdown_expected && futures_set.is_empty() {
-                        tracing::info!("All ongoing transfers completed, shutting down transfers executor.");
-                        break;
-                    }
-                },
                 () = token.cancelled() => {
-                    tracing::info!("Transfers executor received shutdown signal, finishing ongoing transfers...");
-
-                    shutdown_expected = true;
-
-                    if futures_set.is_empty() {
-                        tracing::info!("No ongoing transfers, shutting down transfers executor.");
-
-                        break;
+                    tracing::info!("Cancellation requested, finishing pending transfers...");
+                    break;
+                },
+                // First check if there are any results ready
+                Some(result) = futures_set.next() => {
+                    if let Err(e) = self.handle_transfer_result(result).await {
+                        tracing::error!(error = %e, "Failed to handle transfer result");
                     }
-                }
+                },
+                // Then schedule more transfers
+                _ = polling_interval.tick() => {
+                    if let Err(e) = self.schedule_transfers(&mut futures_set).await {
+                        tracing::error!(error = %e, "Failed to schedule transfers");
+                    }
+                },
+            }
+        }
+
+        // Wait for all pending transfers to complete before exiting
+        while let Some(result) = futures_set.next().await {
+            if let Err(e) = self
+                .handle_transfer_result(result)
+                .await
+            {
+                tracing::error!(error = %e, "Failed to handle transfer result during shutdown");
             }
         }
 
@@ -754,11 +774,13 @@ impl<D: DaoInterface + 'static, AH: BlockChainClient<AssetHubChainConfig> + 'sta
 
     pub fn new(
         asset_hub_client: AH,
+        polygon_client: PG,
         dao: D,
         keyring_client: KeyringClient,
     ) -> Self {
         Self {
             asset_hub_client: Arc::new(asset_hub_client),
+            polygon_client: Arc::new(polygon_client),
             dao,
             keyring_client,
         }
@@ -795,9 +817,15 @@ mod tests {
             .with(predicate::eq(10))
             .returning(|_| Ok(vec![default_payout(Uuid::new_v4())]));
 
-        let asset_hub_client = MockBlockChainClient::default();
+        let asset_hub_client = MockBlockChainClient::<AssetHubChainConfig>::default();
+        let polygon_client = MockBlockChainClient::<PolygonChainConfig>::default();
 
-        let executor = TransfersExecutor::new(asset_hub_client, dao, keyring_client);
+        let executor = TransfersExecutor::new(
+            asset_hub_client,
+            polygon_client,
+            dao,
+            keyring_client,
+        );
 
         let requests = executor
             .collect_pending_payout_requests(10)

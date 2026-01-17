@@ -2,20 +2,11 @@
 
 use std::fmt;
 
-use chrono::{
-    DateTime,
-    Utc,
-};
+use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
-use serde::{
-    Deserialize,
-    Serialize,
-};
+use serde::{Deserialize, Serialize};
 use sqlx::types::Text;
-use sqlx::{
-    FromRow,
-    Type,
-};
+use sqlx::{FromRow, Type};
 
 pub use kalatori_client::types::ChainType;
 

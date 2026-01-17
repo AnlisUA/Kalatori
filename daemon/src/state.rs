@@ -1,38 +1,23 @@
 use std::collections::HashMap;
 
-use chrono::{
-    Duration,
-    Utc,
-};
+use chrono::{Duration, Utc};
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
 use kalatori_client::types::{
-    CreateInvoiceParams,
-    Invoice as PublicInvoice,
-    InvoiceStatus,
-    UpdateInvoiceParams,
+    CreateInvoiceParams, Invoice as PublicInvoice, InvoiceStatus, UpdateInvoiceParams,
 };
 
 use crate::chain::InvoiceRegistry;
 use crate::chain::utils::to_base58_string;
-use crate::chain_client::KeyringClient;
+use crate::chain_client::{GenerateAddressData, KeyringClient};
 use crate::configs::PaymentsConfig;
 use crate::dao::{
-    DAO,
-    DaoInterface,
-    DaoInvoiceError,
-    DaoTransactionError,
-    DaoTransactionInterface,
+    DAO, DaoInterface, DaoInvoiceError, DaoTransactionError, DaoTransactionInterface,
 };
 use crate::types::{
-    ChainType,
-    CreateInvoiceData,
-    InvoiceEventType,
-    InvoiceWithReceivedAmount,
-    KalatoriEventExt,
-    Transaction,
-    UpdateInvoiceData,
+    ChainType, CreateInvoiceData, InvoiceEventType, InvoiceWithReceivedAmount, KalatoriEventExt,
+    Transaction, UpdateInvoiceData,
 };
 
 pub struct AppState<D: DaoInterface = DAO> {
@@ -108,9 +93,17 @@ impl<D: DaoInterface> AppState<D> {
                     .invoice_lifetime_millis as i64,
             );
 
+        // Get recipient address for derivation path
+        let recipient = self
+            .payments_config
+            .recipient
+            .get(&chain)
+            .cloned()
+            .unwrap_or_default();
+
         let payment_address = match chain {
             ChainType::PolkadotAssetHub => {
-                let derivation_params = vec![id.to_string()];
+                let derivation_params = vec![recipient, id.to_string()];
 
                 let account_id = self
                     .keyring
@@ -128,6 +121,29 @@ impl<D: DaoInterface> AppState<D> {
                     })?;
 
                 to_base58_string(account_id.0, 0)
+            },
+            ChainType::Polygon => {
+                let derivation_params = vec![recipient, id.to_string()];
+
+                let address = self
+                    .keyring
+                    .generate_polygon_address(GenerateAddressData::from(
+                        derivation_params,
+                    ))
+                    .await
+                    .map_err(|e| {
+                        tracing::error!(
+                            error.category = "create_invoice",
+                            error.operation = "generate_polygon_address",
+                            error.source = ?e,
+                            "Failed to generate Polygon payment address for new invoice",
+                        );
+                        // TODO: replace error
+                        DaoInvoiceError::DatabaseError
+                    })?;
+
+                // Return checksummed address
+                address.to_checksum(None)
             },
         };
 
@@ -323,15 +339,8 @@ mod tests {
     use mockall::predicate::eq;
 
     use crate::chain_client::KeyringError;
-    use crate::dao::{
-        MockDaoInterface,
-        MockDaoTransactionInterface,
-    };
-    use crate::types::{
-        Invoice,
-        InvoiceCart,
-        default_invoice,
-    };
+    use crate::dao::{MockDaoInterface, MockDaoTransactionInterface};
+    use crate::types::{Invoice, InvoiceCart, default_invoice};
 
     use super::*;
 

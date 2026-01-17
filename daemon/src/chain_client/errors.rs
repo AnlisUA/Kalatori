@@ -2,10 +2,7 @@ use thiserror::Error;
 
 use crate::utils::logging::category::CHAIN_CLIENT;
 
-use super::{
-    ChainConfig,
-    KeyringError,
-};
+use super::{ChainConfig, KeyringError};
 
 // ============================================================================
 // Domain 1: Client Initialization Errors

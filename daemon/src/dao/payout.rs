@@ -2,18 +2,10 @@ use sqlx::types::Text;
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::types::{
-    Payout,
-    PayoutRow,
-    PayoutStatus,
-    RetryMeta,
-};
+use crate::types::{Payout, PayoutRow, PayoutStatus, RetryMeta};
 
 use super::DaoExecutor;
-use super::error_parsing::{
-    StatusTransitionError,
-    StatusTriggerError,
-};
+use super::error_parsing::{StatusTransitionError, StatusTriggerError};
 
 // ============================================================================
 // Payout Domain Errors
@@ -217,9 +209,7 @@ pub trait DaoPayoutMethods: DaoExecutor + 'static {
                 }
 
                 match e {
-                    sqlx::Error::RowNotFound => DaoPayoutError::NotFound {
-                        payout_id,
-                    },
+                    sqlx::Error::RowNotFound => DaoPayoutError::NotFound { payout_id },
                     _ => DaoPayoutError::DatabaseError,
                 }
             })
@@ -273,9 +263,7 @@ pub trait DaoPayoutMethods: DaoExecutor + 'static {
                 }
 
                 match e {
-                    sqlx::Error::RowNotFound => DaoPayoutError::NotFound {
-                        payout_id,
-                    },
+                    sqlx::Error::RowNotFound => DaoPayoutError::NotFound { payout_id },
                     _ => DaoPayoutError::DatabaseError,
                 }
             })
@@ -290,10 +278,7 @@ mod tests {
 
     use crate::dao::create_test_dao;
     use crate::dao::invoice::DaoInvoiceMethods;
-    use crate::types::{
-        default_create_invoice_data,
-        default_payout,
-    };
+    use crate::types::{default_create_invoice_data, default_payout};
 
     use super::*;
 

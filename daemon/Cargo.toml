@@ -63,6 +63,19 @@ sqlx = { version = "0.8", default-features = false, features = [
 # On update subxt version, plase also update subxt-cli to corresponding version in Makefile
 subxt = "0.44"
 subxt-signer = "0.44"
+
+# Polygon chain
+alloy = { version = "1.4", features = [
+    "provider-ws",
+    "rpc-types-eth",
+    "contract",
+    "sol-types",
+    "signers",
+    "signer-local",
+    "network",
+    "consensus",
+    "signer-mnemonic",
+] }
 # Subxt-signer uses bip39 and moreover re-exports it, but for some reason it doesn't have zeroize feature enabled
 bip39 = { version = "2", features = ["zeroize"] }
 # This dependency is required by subxt in order to compile the runtime types

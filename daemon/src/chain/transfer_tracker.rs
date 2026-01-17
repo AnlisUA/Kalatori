@@ -3,34 +3,20 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use futures::StreamExt;
-use kalatori_client::types::{
-    InvoiceEventType,
-    KalatoriEventExt,
-};
+use kalatori_client::types::{InvoiceEventType, KalatoriEventExt};
 use rust_decimal::Decimal;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::chain_client::{
-    BlockChainClient,
-    ChainConfig,
-    ChainTransfer,
-    GeneralChainTransfer,
-    SubscriptionError,
+    BlockChainClient, ChainConfig, ChainTransfer, GeneralChainTransfer, SubscriptionError,
     TransfersStream,
 };
 use crate::configs::PaymentsConfig;
-use crate::dao::{
-    DaoInterface,
-    DaoTransactionInterface,
-};
+use crate::dao::{DaoInterface, DaoTransactionInterface};
 use crate::types::{
-    ChainType,
-    IncomingTransaction,
-    InvoiceStatus,
-    InvoiceWithReceivedAmount,
-    Payout,
+    ChainType, IncomingTransaction, InvoiceStatus, InvoiceWithReceivedAmount, Payout,
 };
 
 #[derive(Clone)]

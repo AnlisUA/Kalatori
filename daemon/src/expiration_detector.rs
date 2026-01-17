@@ -8,10 +8,7 @@ use tokio_util::sync::CancellationToken;
 use crate::chain::InvoiceRegistry;
 use crate::configs::PaymentsConfig;
 use crate::dao::DaoInterface;
-use crate::types::{
-    Invoice,
-    InvoiceEventType,
-};
+use crate::types::{Invoice, InvoiceEventType};
 
 const EXPIRATION_CHECK_INTERVAL_MILLIS: u64 = 1000;
 

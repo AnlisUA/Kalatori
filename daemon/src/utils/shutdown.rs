@@ -4,27 +4,14 @@
 //! panics (by incorporating a custom panic handler) & unrecoverable errors from
 //! another modules.
 
-use std::fmt::{
-    Display,
-    Formatter,
-    Result as FmtResult,
-};
+use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::io::Result as IoResult;
-use std::panic::{
-    self,
-    PanicHookInfo,
-};
+use std::panic::{self, PanicHookInfo};
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_lock::{
-    RwLock,
-    RwLockUpgradableReadGuard,
-};
-use tokio::{
-    signal,
-    time,
-};
+use async_lock::{RwLock, RwLockUpgradableReadGuard};
+use tokio::{signal, time};
 use tokio_util::sync::CancellationToken;
 
 use crate::error::Error;
@@ -128,26 +115,19 @@ pub fn set_panic_hook(
 
         let first = if matches!(
             *outcome,
-            ShutdownOutcome::UnrecoverableError {
-                panic: true
-            }
+            ShutdownOutcome::UnrecoverableError { panic: true }
         ) {
             false
         } else {
             *RwLockUpgradableReadGuard::upgrade_blocking(outcome) =
-                ShutdownOutcome::UnrecoverableError {
-                    panic: true,
-                };
+                ShutdownOutcome::UnrecoverableError { panic: true };
 
             shutdown_notification.token.cancel();
 
             true
         };
 
-        print(PrettyPanic {
-            panic_info,
-            first,
-        });
+        print(PrettyPanic { panic_info, first });
     }));
 }
 

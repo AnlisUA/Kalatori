@@ -6,48 +6,20 @@
 //!
 //! Both traits can be easily mocked using mockall's `#[automock]` attribute.
 
-use chrono::{
-    DateTime,
-    Utc,
-};
+use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use crate::types::{
-    CreateInvoiceData,
-    GeneralTransactionId,
-    Invoice,
-    InvoiceStatus,
-    InvoiceWithReceivedAmount,
-    Payout,
-    PayoutStatus,
-    RetryMeta,
-    Transaction,
-    UpdateInvoiceData,
-    WebhookEvent,
+    CreateInvoiceData, GeneralTransactionId, Invoice, InvoiceStatus, InvoiceWithReceivedAmount,
+    Payout, PayoutStatus, RetryMeta, Transaction, UpdateInvoiceData, WebhookEvent,
 };
 
-use super::invoice::{
-    DaoInvoiceError,
-    DaoInvoiceMethods,
-};
-use super::payout::{
-    DaoPayoutError,
-    DaoPayoutMethods,
-};
-use super::transaction::{
-    DaoTransactionError,
-    DaoTransactionMethods,
-};
-use super::webhook_event::{
-    DaoWebhookEventError,
-    DaoWebhookEventMethods,
-};
+use super::invoice::{DaoInvoiceError, DaoInvoiceMethods};
+use super::payout::{DaoPayoutError, DaoPayoutMethods};
+use super::transaction::{DaoTransactionError, DaoTransactionMethods};
+use super::webhook_event::{DaoWebhookEventError, DaoWebhookEventMethods};
 
-use super::{
-    DAO,
-    DaoResult,
-    DaoTransaction,
-};
+use super::{DAO, DaoResult, DaoTransaction};
 
 /// High-level interface for database operations.
 ///

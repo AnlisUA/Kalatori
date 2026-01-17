@@ -1,7 +1,4 @@
-use std::net::{
-    IpAddr,
-    Ipv4Addr,
-};
+use std::net::{IpAddr, Ipv4Addr};
 
 use kalatori_client::types::ChainType;
 
@@ -12,11 +9,19 @@ pub const DEFAULT_POLKADOT_ASSET_HUB_ENDPOINTS: &[&str] = &[
     "wss://polkadot-asset-hub-rpc.polkadot.io",
 ];
 
+pub const DEFAULT_POLYGON_ENDPOINTS: &[&str] = &[
+    "wss://polygon-bor-rpc.publicnode.com",
+    "wss://polygon.drpc.org",
+];
+
+/// Native USDC on Polygon PoS (Circle's official deployment)
+pub const DEFAULT_POLYGON_USDC_ADDRESS: &str = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359";
+
 pub const DEFAULT_INVOICE_LIFETIME_MILLIS: u64 = 86_400_000; // 24 hours
 
 pub const DEFAULT_ALLOW_INSECURE_ENDPOINTS: bool = false;
 
-pub const DEFAULT_CHAIN: ChainType = ChainType::PolkadotAssetHub;
+pub const DEFAULT_CHAIN: ChainType = ChainType::Polygon;
 
 pub const DEFAULT_ASSET_HUB_ASSET_ID: &str = "1337";
 

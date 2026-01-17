@@ -1,22 +1,13 @@
 use axum::middleware::from_fn_with_state;
 use axum::response::IntoResponse;
 use axum::routing::post;
-use axum::{
-    Json,
-    Router,
-    serve,
-};
+use axum::{Json, Router, serve};
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
 use kalatori_client::KalatoriClient;
 use kalatori_client::middleware::axum_hmac_validator;
-use kalatori_client::types::{
-    CreateInvoiceParams,
-    GenericEvent,
-    Invoice,
-    InvoiceCart,
-};
+use kalatori_client::types::{CreateInvoiceParams, GenericEvent, Invoice, InvoiceCart};
 use kalatori_client::utils::HmacConfig;
 
 async fn webhook_listener(Json(event): Json<GenericEvent<Invoice>>) -> impl IntoResponse {

@@ -9,15 +9,10 @@ use crate::chain::utils::to_base58_string;
 use crate::types::ChainType;
 
 use super::consts::{
-    DEFAULT_ALLOW_INSECURE_ENDPOINTS,
-    DEFAULT_ASSET_HUB_ASSET_ID,
-    DEFAULT_CHAIN,
-    DEFAULT_DATABASE_DIR,
-    DEFAULT_HOST,
-    DEFAULT_INVOICE_LIFETIME_MILLIS,
-    DEFAULT_POLKADOT_ASSET_HUB_ENDPOINTS,
-    DEFAULT_PORT,
-    DEFAULT_SIGNATURE_MAX_AGE_SECS,
+    DEFAULT_ALLOW_INSECURE_ENDPOINTS, DEFAULT_ASSET_HUB_ASSET_ID, DEFAULT_CHAIN,
+    DEFAULT_DATABASE_DIR, DEFAULT_HOST, DEFAULT_INVOICE_LIFETIME_MILLIS,
+    DEFAULT_POLKADOT_ASSET_HUB_ENDPOINTS, DEFAULT_POLYGON_ENDPOINTS, DEFAULT_POLYGON_USDC_ADDRESS,
+    DEFAULT_PORT, DEFAULT_SIGNATURE_MAX_AGE_SECS,
 };
 
 #[derive(Deserialize)]
@@ -110,6 +105,7 @@ impl ChainsConfig {
             if chain_config.endpoints.is_empty() {
                 let endpoints = match chain {
                     ChainType::PolkadotAssetHub => DEFAULT_POLKADOT_ASSET_HUB_ENDPOINTS,
+                    ChainType::Polygon => DEFAULT_POLYGON_ENDPOINTS,
                 };
 
                 chain_config.endpoints = endpoints
@@ -156,6 +152,7 @@ impl PaymentsConfig {
         for chain in ChainType::iter() {
             let default = match chain {
                 ChainType::PolkadotAssetHub => DEFAULT_ASSET_HUB_ASSET_ID,
+                ChainType::Polygon => DEFAULT_POLYGON_USDC_ADDRESS,
             };
 
             self.default_asset_id
@@ -197,6 +194,16 @@ impl PaymentsConfig {
                         *chain,
                         to_base58_string(account_id.0, 0),
                     );
+                },
+                ChainType::Polygon => {
+                    // Validate Ethereum/Polygon address (0x-prefixed hex, 20 bytes)
+                    let address = recipient
+                        .parse::<alloy::primitives::Address>()
+                        .map_err(|_| format!("Invalid Polygon address: {}", recipient))?;
+
+                    // Store checksummed version for consistency
+                    self.recipient
+                        .insert(*chain, address.to_checksum(None));
                 },
             }
         }

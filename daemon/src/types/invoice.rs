@@ -1,27 +1,14 @@
-use chrono::{
-    DateTime,
-    Utc,
-};
+use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
-use serde::{
-    Deserialize,
-    Serialize,
-};
+use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
-use sqlx::types::{
-    Json,
-    Text,
-};
+use sqlx::types::{Json, Text};
 use uuid::Uuid;
 
 use super::ChainType;
 
 // Re-export types from kalatori_client for consistency
-pub use kalatori_client::types::{
-    Invoice as PublicInvoice,
-    InvoiceCart,
-    InvoiceStatus,
-};
+pub use kalatori_client::types::{Invoice as PublicInvoice, InvoiceCart, InvoiceStatus};
 
 // TODO: the main difference between Invoice and PublicInvoice (from
 // kalatori_client crate) is that Invoice doesn't have `payment_url` field. Need

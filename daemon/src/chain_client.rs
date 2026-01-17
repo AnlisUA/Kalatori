@@ -1,6 +1,7 @@
 mod asset_hub;
 mod errors;
 mod keyring;
+mod polygon;
 
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -11,32 +12,14 @@ use std::sync::Arc;
 use futures::stream;
 use rust_decimal::Decimal;
 use tokio::sync::RwLock;
-use tracing::{
-    info,
-    instrument,
-};
+use tracing::{info, instrument};
 
-use crate::types::{
-    ChainType,
-    GeneralTransactionId,
-    TransferInfo,
-};
+use crate::types::{ChainType, GeneralTransactionId, TransferInfo};
 
-pub use asset_hub::{
-    AssetHubChainConfig,
-    AssetHubClient,
-};
-pub use errors::{
-    ClientError,
-    QueryError,
-    SubscriptionError,
-    TransactionError,
-};
-pub use keyring::{
-    Keyring,
-    KeyringClient,
-    KeyringError,
-};
+pub use asset_hub::{AssetHubChainConfig, AssetHubClient};
+pub use errors::{ClientError, QueryError, SubscriptionError, TransactionError};
+pub use keyring::{GenerateAddressData, Keyring, KeyringClient, KeyringError};
+pub use polygon::{PolygonChainConfig, PolygonClient};
 
 pub type TransfersStream<T> =
     Pin<Box<dyn stream::Stream<Item = Result<Vec<ChainTransfer<T>>, SubscriptionError>> + Send>>;
@@ -233,7 +216,6 @@ pub trait BlockChainClient<T: ChainConfig>: Sync {
         asset_id: &T::AssetId,
     ) -> Result<AssetInfo<T>, QueryError>;
 
-    #[cfg_attr(not(test), expect(dead_code))]
     async fn fetch_asset_balance(
         &self,
         asset_id: &T::AssetId,
@@ -245,7 +227,6 @@ pub trait BlockChainClient<T: ChainConfig>: Sync {
         asset_ids: &[T::AssetId],
     ) -> Result<TransfersStream<T>, SubscriptionError>;
 
-    #[expect(dead_code)]
     /// Build transaction to transfer exact amount to recipient
     async fn build_transfer(
         &self,

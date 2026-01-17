@@ -1,14 +1,8 @@
 use std::fmt::Display;
 
-use chrono::{
-    DateTime,
-    Utc,
-};
+use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
-use serde::{
-    Deserialize,
-    Serialize,
-};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::InvoiceCart;
@@ -48,12 +42,8 @@ pub type ApiResult<T> = Result<T, ApiError>;
 impl<T> From<ApiResultStructured<T>> for ApiResult<T> {
     fn from(value: ApiResultStructured<T>) -> Self {
         match value {
-            ApiResultStructured::Ok {
-                result,
-            } => Ok(result),
-            ApiResultStructured::Err {
-                error,
-            } => Err(error),
+            ApiResultStructured::Ok { result } => Ok(result),
+            ApiResultStructured::Err { error } => Err(error),
         }
     }
 }

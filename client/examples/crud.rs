@@ -3,11 +3,7 @@ use uuid::Uuid;
 
 use kalatori_client::KalatoriClient;
 use kalatori_client::types::{
-    CreateInvoiceParams,
-    GetInvoiceParams,
-    InvoiceCart,
-    InvoiceCartItem,
-    UpdateInvoiceParams,
+    CreateInvoiceParams, GetInvoiceParams, InvoiceCart, InvoiceCartItem, UpdateInvoiceParams,
 };
 
 #[tokio::main]

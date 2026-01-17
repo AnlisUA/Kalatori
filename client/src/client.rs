@@ -3,18 +3,10 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use crate::types::{
-    ApiResult,
-    ApiResultStructured,
-    CancelInvoiceParams,
-    CreateInvoiceParams,
-    GetInvoiceParams,
-    Invoice,
-    UpdateInvoiceParams,
+    ApiResult, ApiResultStructured, CancelInvoiceParams, CreateInvoiceParams, GetInvoiceParams,
+    Invoice, UpdateInvoiceParams,
 };
-use crate::utils::{
-    HmacConfig,
-    add_headers_to_reqwest,
-};
+use crate::utils::{HmacConfig, add_headers_to_reqwest};
 
 pub struct KalatoriClient {
     client: reqwest::Client,

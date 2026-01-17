@@ -1,20 +1,11 @@
 use std::fmt;
 
-use chrono::{
-    DateTime,
-    Utc,
-};
+use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
-use serde::{
-    Deserialize,
-    Serialize,
-};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::{
-    ChainType,
-    Transaction,
-};
+use super::{ChainType, Transaction};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "sqlx-types", derive(sqlx::Type))]
@@ -124,9 +115,7 @@ pub struct InvoiceCart {
 impl InvoiceCart {
     // Prefer to create an empty cart explicitly over using Default trait
     pub fn empty() -> Self {
-        Self {
-            items: vec![],
-        }
+        Self { items: vec![] }
     }
 
     pub fn is_empty(&self) -> bool {

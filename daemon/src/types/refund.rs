@@ -1,25 +1,11 @@
 use std::fmt;
 
-use chrono::{
-    DateTime,
-    Utc,
-};
-use serde::{
-    Deserialize,
-    Serialize,
-};
-use sqlx::{
-    FromRow,
-    Type,
-};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use sqlx::{FromRow, Type};
 use uuid::Uuid;
 
-use super::common::{
-    InitiatorType,
-    RetryMeta,
-    TransferInfo,
-    TransferInfoRow,
-};
+use super::common::{InitiatorType, RetryMeta, TransferInfo, TransferInfoRow};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub enum RefundStatus {
