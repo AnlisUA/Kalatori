@@ -260,8 +260,8 @@ impl PolygonClient {
     }
 
     /// Create a fresh provider connection
-    async fn create_provider(&self) -> Result<impl Provider<Ethereum> + Clone, ClientError> {
-        let ws_connect = WsConnect::new(&self.endpoint);
+    async fn create_provider(&self) -> Result<impl Provider<Ethereum> + Clone + 'static, ClientError> {
+        let ws_connect = WsConnect::new(self.endpoint.clone());
         ProviderBuilder::new()
             .connect_ws(ws_connect)
             .await
@@ -513,6 +513,8 @@ impl BlockChainClient<PolygonChainConfig> for PolygonClient {
         );
 
         let stream = async_stream::try_stream! {
+            // Keep provider alive for the duration of the stream
+            let _provider = provider;
             let mut sub = subscription.into_stream();
 
             while let Some(log) = sub.next().await {

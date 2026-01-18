@@ -61,5 +61,5 @@ async fn main() {
         .unwrap();
 
     // Keep the main task alive to receive the webhook
-    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+    tokio::time::sleep(tokio::time::Duration::from_secs(300000)).await;
 }

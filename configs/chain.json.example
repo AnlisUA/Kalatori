@@ -1,8 +1,0 @@
-{
-  "PolkadotAssetHub": {
-    "endpoints": [
-      "ws://localhost:9000"
-    ],
-    "allow_insecure_endpoints": true
-  }
-}

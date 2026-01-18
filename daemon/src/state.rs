@@ -93,17 +93,9 @@ impl<D: DaoInterface> AppState<D> {
                     .invoice_lifetime_millis as i64,
             );
 
-        // Get recipient address for derivation path
-        let recipient = self
-            .payments_config
-            .recipient
-            .get(&chain)
-            .cloned()
-            .unwrap_or_default();
-
         let payment_address = match chain {
             ChainType::PolkadotAssetHub => {
-                let derivation_params = vec![recipient, id.to_string()];
+                let derivation_params = vec![id.to_string()];
 
                 let account_id = self
                     .keyring
@@ -123,7 +115,7 @@ impl<D: DaoInterface> AppState<D> {
                 to_base58_string(account_id.0, 0)
             },
             ChainType::Polygon => {
-                let derivation_params = vec![recipient, id.to_string()];
+                let derivation_params = vec![id.to_string()];
 
                 let address = self
                     .keyring

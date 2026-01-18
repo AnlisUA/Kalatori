@@ -267,21 +267,13 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
         &self,
         transfer: GeneralChainTransfer,
     ) {
-        // TODO: that's a temporary workaround, fix the types properly
-        let recipient = super::utils::to_base58_string(
-            subxt::utils::AccountId32::from_str(&transfer.recipient)
-                .unwrap()
-                .0,
-            0,
-        );
-
         if let Some(InvoiceWithReceivedAmount {
             invoice,
             mut total_received_amount,
         }) = self
             .registry
             .find_invoice_by_address(
-                &recipient,
+                &transfer.recipient,
                 transfer.chain,
                 &transfer.asset_id,
             )
@@ -292,7 +284,7 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
                 chain = %transfer.chain,
                 asset_id = %transfer.asset_id,
                 sender = %transfer.sender,
-                recipient = %recipient,
+                recipient = %transfer.recipient,
                 amount = %transfer.amount,
                 "Processing incoming transfer for invoice"
             );
