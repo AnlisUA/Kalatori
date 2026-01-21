@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS invoices (
     -- Asset information (denormalized to avoid config changes affecting data)
     asset_id TEXT NOT NULL,
     asset_name TEXT NOT NULL,
-    chain TEXT NOT NULL CHECK(chain IN ('PolkadotAssetHub')),
+    chain TEXT NOT NULL,
 
     -- Payment details
     amount TEXT NOT NULL,  -- Expected amount as decimal string (e.g., "123.456789")
@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     -- Asset information
     asset_id TEXT NOT NULL,
     asset_name TEXT NOT NULL,
-    chain TEXT NOT NULL CHECK(chain IN ('PolkadotAssetHub')),
+    chain TEXT NOT NULL,
     amount TEXT NOT NULL,  -- Decimal string (excluding fees)
 
     -- Addresses (needed for refunds - sender is who we refund to)
@@ -86,7 +86,7 @@ CREATE TABLE IF NOT EXISTS payouts (
     -- Asset information
     asset_id TEXT NOT NULL,
     asset_name TEXT NOT NULL,
-    chain TEXT NOT NULL CHECK(chain IN ('PolkadotAssetHub')),
+    chain TEXT NOT NULL,
     amount TEXT NOT NULL,  -- Decimal string
 
     -- Addresses
@@ -122,7 +122,7 @@ CREATE TABLE IF NOT EXISTS refunds (
     -- Asset information
     asset_id TEXT NOT NULL,
     asset_name TEXT NOT NULL,
-    chain TEXT NOT NULL CHECK(chain IN ('PolkadotAssetHub')),
+    chain TEXT NOT NULL,
     amount TEXT NOT NULL,  -- Decimal string
 
     -- Addresses
