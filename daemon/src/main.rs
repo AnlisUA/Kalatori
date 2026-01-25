@@ -153,6 +153,7 @@ fn validate_and_extend_configs(
 
 #[expect(clippy::too_many_lines)]
 async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(), Error> {
+    rustls::crypto::aws_lc_rs::default_provider().install_default().unwrap();
     // Planned start order
     // 1. Load configs
     // 2. Init database
@@ -173,7 +174,6 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
 
     let mut secrets_config = secrets_config_with_prefix(&configs_path, &env_prefix);
     let mut chains_config = chains_config_with_prefix(&configs_path, &env_prefix);
-    println!("Chains config: {:#?}", chains_config);
     let mut payments_config = payments_config_with_prefix(&configs_path, &env_prefix);
     let web_server_config = web_server_config_with_prefix(&configs_path, &env_prefix);
     let database_config = database_config_with_prefix(&configs_path, &env_prefix);

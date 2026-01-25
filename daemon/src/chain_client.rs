@@ -18,15 +18,15 @@ use crate::types::{ChainType, GeneralTransactionId, TransferInfo};
 
 pub use asset_hub::{AssetHubChainConfig, AssetHubClient};
 pub use errors::{ClientError, QueryError, SubscriptionError, TransactionError};
-pub use keyring::{GenerateAddressData, Keyring, KeyringClient, KeyringError};
+pub use keyring::{GenerateAddressData, Keyring, KeyringClient, KeyringError, SignPermitRequestData};
 pub use polygon::{PolygonChainConfig, PolygonClient};
 
 pub type TransfersStream<T> =
     Pin<Box<dyn stream::Stream<Item = Result<Vec<ChainTransfer<T>>, SubscriptionError>> + Send>>;
 
 pub trait SignedTransactionUtils {
-    /// Encode transaction bytes to hex string
-    fn to_hex_string(&self) -> String;
+    /// Encode transaction to raw string. It might be hex-encoded bytes or json value depending on implementation
+    fn to_raw_string(&self) -> String;
 
     /// Compute hash of the transaction
     fn hash(&self) -> String;
@@ -179,8 +179,8 @@ pub struct SignedTransaction<T: ChainConfig> {
 }
 
 impl<T: ChainConfig> SignedTransactionUtils for SignedTransaction<T> {
-    fn to_hex_string(&self) -> String {
-        self.transaction.to_hex_string()
+    fn to_raw_string(&self) -> String {
+        self.transaction.to_raw_string()
     }
 
     fn hash(&self) -> String {

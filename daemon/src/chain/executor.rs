@@ -318,9 +318,7 @@ impl<
                 }
             })?;
 
-        // Derivation params: [recipient_address, invoice_id]
         let derivation_params = vec![
-            request.destination_address.to_string(),
             request.invoice_id.to_string(),
         ];
 
@@ -365,7 +363,7 @@ impl<
                 destination_address: request.destination_address.to_string(),
             },
             tx_hash: signed_transaction.hash(),
-            transaction_bytes: signed_transaction.to_hex_string(),
+            transaction_bytes: signed_transaction.to_raw_string(),
             origin: TransactionOrigin::payout(request.id),
         };
 

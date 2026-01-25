@@ -49,16 +49,18 @@ async fn main() {
     // Create an invoice to trigger the webhook
     let payload = CreateInvoiceParams {
         order_id: Uuid::new_v4().to_string(),
-        amount: Decimal::new(5000, 2), // 50.00
+        amount: Decimal::new(1, 1), // 50.00
         cart: InvoiceCart::empty(),
         redirect_url: "http://example.com/thank-you".to_string(),
     };
 
-    client
+    let invoice = client
         .create_invoice(payload)
         .await
         .unwrap()
         .unwrap();
+
+    println!("Created invoice: {:#?}", invoice);
 
     // Keep the main task alive to receive the webhook
     tokio::time::sleep(tokio::time::Duration::from_secs(300000)).await;
