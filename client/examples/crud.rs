@@ -19,6 +19,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         amount: Decimal::ONE_HUNDRED,
         cart: InvoiceCart::empty(),
         redirect_url: "http://example.com/redirect".to_string(),
+        include_transactions: false,
     };
 
     let created_invoice = client
@@ -32,7 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Get the invoice
     let get_params = GetInvoiceParams {
         invoice_id: created_invoice.id,
-        include_transaction: false,
+        include_transactions: false,
     };
 
     let fetched_invoice = client.get_invoice(get_params).await??;
@@ -60,6 +61,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         invoice_id: created_invoice.id,
         amount: Decimal::ONE_THOUSAND,
         cart,
+        include_transactions: false,
     };
 
     let updated_invoice = client
@@ -76,7 +78,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Cancel the invoice
     let cancel_params = GetInvoiceParams {
         invoice_id: created_invoice.id,
-        include_transaction: false,
+        include_transactions: false,
     };
 
     let canceled_invoice = client
@@ -92,7 +94,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Get unexisting invoice, expect error
     let get_params = GetInvoiceParams {
         invoice_id: Uuid::new_v4(),
-        include_transaction: false,
+        include_transactions: false,
     };
 
     let result = client

@@ -52,6 +52,7 @@ async fn main() {
         amount: Decimal::new(1, 1), // 50.00
         cart: InvoiceCart::empty(),
         redirect_url: "http://example.com/thank-you".to_string(),
+        include_transactions: false,
     };
 
     let invoice = client

@@ -495,6 +495,7 @@ mod tests {
             amount: Decimal::new(1000, 2), // 10.00
             cart: InvoiceCart::empty(),
             redirect_url: "https://redirect.url".to_string(),
+            include_transactions: false,
         };
 
         app_state
@@ -591,6 +592,7 @@ mod tests {
             amount: Decimal::new(5000, 2), // 50.00
             cart: InvoiceCart::empty(),
             redirect_url: "https://redirect.url".to_string(),
+            include_transactions: false,
         };
 
         app_state
@@ -629,6 +631,7 @@ mod tests {
             amount: Decimal::new(7500, 2), // 75.00
             cart: InvoiceCart::empty(),
             redirect_url: "https://redirect.url".to_string(),
+            include_transactions: false,
         };
 
         let expected_create_invoice_data = {
