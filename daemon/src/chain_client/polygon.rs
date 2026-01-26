@@ -1,43 +1,92 @@
 //! Polygon (PoS) chain client implementation.
 //!
 //! This module provides a client for interacting with the Polygon PoS network,
-//! implementing the `BlockChainClient` trait for ERC-20 token transfers (primarily USDC).
+//! implementing the `BlockChainClient` trait for ERC-20 token transfers
+//! (primarily USDC).
 mod consts;
 mod pimlico_client;
 
 use std::str::FromStr;
-use std::sync::Arc;
 
 use alloy::eips::BlockNumberOrTag;
 use alloy::eips::eip7702::Authorization;
-use alloy::network::Ethereum;
-use alloy::primitives::{Address, TxHash, U256, keccak256, FixedBytes, B256};
-use alloy::providers::{Provider, ProviderBuilder, WsConnect};
-use alloy::rpc::types::{Filter, Log};
+use alloy::primitives::{
+    Address,
+    B256,
+    TxHash,
+    U256,
+    keccak256,
+};
+use alloy::providers::fillers::FillProvider;
+use alloy::providers::utils::JoinedRecommendedFillers;
+use alloy::providers::{
+    Provider,
+    ProviderBuilder,
+    RootProvider,
+    WsConnect,
+};
+use alloy::rpc::types::{
+    Filter,
+    Log,
+};
 use alloy::signers::Signature;
 use alloy::sol;
-use alloy::sol_types::{SolCall, SolEvent};
-use alloy::sol_types::eip712_domain;
+use alloy::sol_types::{
+    SolCall,
+    SolEvent,
+    eip712_domain,
+};
 use chrono::Utc;
 use futures::StreamExt;
-use rust_decimal::prelude::{Decimal, ToPrimitive};
-use tracing::{debug, instrument, warn};
+use rust_decimal::prelude::{
+    Decimal,
+    ToPrimitive,
+};
+use tracing::{
+    debug,
+    instrument,
+    warn,
+};
 
 use crate::types::ChainType;
 use crate::utils::logging::category::CHAIN_CLIENT;
 
 use super::{
-    AssetInfo, AssetInfoStore, BlockChainClient, BlockChainClientExt, ChainConfig, ChainTransfer,
-    ClientError, GeneralTransactionId, KeyringClient, QueryError, SignedTransaction,
-    SignedTransactionUtils, SubscriptionError, TransactionError, TransfersStream,
-    UnsignedTransaction, SignPermitRequestData,
+    AssetInfo,
+    AssetInfoStore,
+    BlockChainClient,
+    BlockChainClientExt,
+    ChainConfig,
+    ChainTransfer,
+    ClientError,
+    GeneralTransactionId,
+    KeyringClient,
+    QueryError,
+    SignPermitRequestData,
+    SignedTransaction,
+    SignedTransactionUtils,
+    SubscriptionError,
+    TransactionError,
+    TransfersStream,
+    UnsignedTransaction,
 };
 
 use super::keyring::SignTransactionRequestData;
 
-use pimlico_client::{PimlicoClient, GasPrice, GasParams, TokenQuote};
-pub(super) use pimlico_client::{UserOperationParams, Eip7702Auth};
-pub use consts::{ENTRYPOINT, USDC, CHAIN_ID, ACCOUNT_IMPL, PAYMASTER};
+pub(super) use consts::{
+    ACCOUNT_IMPL,
+    CHAIN_ID,
+    ENTRYPOINT,
+    PAYMASTER,
+    USDC,
+};
+pub(super) use pimlico_client::UserOperationParams;
+use pimlico_client::{
+    GasParams,
+    GasPrice,
+    PimlicoClient,
+    TokenQuote,
+};
 
 // ============================================================================
 // ERC-20 Interface Definition
@@ -81,17 +130,15 @@ pub struct PolygonUnsignedTransaction {
     pub sender: PolygonAccountId,
     pub recipient: PolygonAccountId,
     pub entrypoint_nonce: U256,
-    pub permit_nonce: U256,
-    pub sender_nonce: u64,
     pub call_data: Vec<u8>,
     pub gas_price: GasPrice,
     pub gas_params: GasParams,
-    pub permit_hash: FixedBytes<32>,
+    pub permit_hash: B256,
     pub asset_id: Address,
     pub amount_wei: U256,
     pub authorization: Authorization,
     pub transfer_all: bool,
-    pub op_hash: Option<FixedBytes<32>>,
+    pub op_hash: Option<B256>,
     pub paymaster_data: Option<String>,
 }
 
@@ -103,10 +150,11 @@ pub struct SignedPermit {
 /// Signed transaction for Polygon
 #[derive(Debug, Clone)]
 pub struct PolygonSignedTransaction {
-    /// User operation params with required signatures and permit, ready to send to the bundler
+    /// User operation params with required signatures and permit, ready to send
+    /// to the bundler
     pub op_params: UserOperationParams,
     /// Hash of the user operation params
-    pub op_hash: FixedBytes::<32>,
+    pub op_hash: B256,
     /// Unsigned transaction data required to build `ChainTransfer`
     pub unsigned_transaction: PolygonUnsignedTransaction,
 }
@@ -132,25 +180,25 @@ pub enum PolygonChainConfig {}
 impl ChainConfig for PolygonChainConfig {
     type AccountId = PolygonAccountId;
     type AssetId = PolygonAssetId;
-    // TODO: it's better to make a wrapper around a string for the specific chain
-    // TODO: here we got quite specific situation: as long as we use Circle Paymaster
-    // and Pimlico bundler for outgoing transactions, we've got different IDs for
-    // incoming and outgoing transactions: transaction hash and user operation hash
-    // respectively. It's better to refactor it in one or another way to make it more
-    // obvious. For example can try to make it enum but need to think how to store it
-    // in database properly.
-    type TransactionId = String; // transaction hash
-    type TransactionHash = PolygonTransactionHash;
     type BlockHash = PolygonBlockHash;
-    type UnsignedTransaction = PolygonUnsignedTransaction;
     type SignedTransaction = PolygonSignedTransaction;
+    // transaction hash
+    type TransactionHash = PolygonTransactionHash;
+    // TODO: it's better to make a wrapper around a string for the specific chain
+    // TODO: here we got quite specific situation: as long as we use Circle
+    // Paymaster and Pimlico bundler for outgoing transactions, we've got
+    // different IDs for incoming and outgoing transactions: transaction hash
+    // and user operation hash respectively. It's better to refactor it in one
+    // or another way to make it more obvious. For example can try to make it
+    // enum but need to think how to store it in database properly.
+    type TransactionId = String;
+    type UnsignedTransaction = PolygonUnsignedTransaction;
 
     const CHAIN_TYPE: ChainType = ChainType::Polygon;
 }
 
 impl From<String> for GeneralTransactionId {
     fn from(value: String) -> Self {
-        #[expect(clippy::cast_possible_truncation)]
         GeneralTransactionId {
             block_number: None,
             position_in_block: None,
@@ -194,55 +242,27 @@ fn decimal_to_u256(
         .unwrap_or(U256::ZERO)
 }
 
-pub(super) fn pack_u128_to_bytes(first: u128, second: u128) -> FixedBytes<32> {
+pub(super) fn pack_u128_to_bytes(
+    first: u128,
+    second: u128,
+) -> B256 {
     let mut bytes = [0u8; 32];
     bytes[0..16].copy_from_slice(&first.to_be_bytes());
     bytes[16..32].copy_from_slice(&second.to_be_bytes());
     bytes.into()
 }
 
-/// Derive BIP44 path from derivation parameters
-///
-/// Uses SHA256 hash of parameters to generate a deterministic index
-/// Path format: m/44'/60'/0'/0/{index}
-pub fn derive_eth_path_from_params(params: &[String]) -> String {
-    use sha2::{Digest, Sha256};
-
-    let mut hasher = Sha256::new();
-    for param in params {
-        hasher.update(param.as_bytes());
-    }
-    let hash = hasher.finalize();
-
-    // Use first 4 bytes as index (allows ~4 billion unique addresses)
-    let index = u32::from_be_bytes([hash[0], hash[1], hash[2], hash[3]]);
-
-    format!("m/44'/60'/0'/0/{index}")
-}
-
 // ============================================================================
 // Polygon Client
 // ============================================================================
 
-/// Inner client holding the actual provider
-/// We use RwLock to allow recreation of the provider if needed
-struct PolygonClientInner {
-    /// RPC endpoint URL for reconnection
-    #[expect(dead_code)]
-    endpoint: String,
-    /// Chain ID for transaction signing
-    chain_id: u64,
-}
+type PolygonProvider = FillProvider<JoinedRecommendedFillers, RootProvider>;
 
 /// Client for interacting with Polygon PoS network
 #[derive(Clone)]
 pub struct PolygonClient {
-    /// Inner configuration
-    inner: Arc<PolygonClientInner>,
-    /// Store for asset information (ERC-20 metadata)
     asset_info_store: AssetInfoStore<PolygonChainConfig>,
-    /// Cached provider - we rebuild when needed
-    endpoint: String,
+    provider: PolygonProvider,
     pimlico_client: PimlicoClient,
 }
 
@@ -297,23 +317,10 @@ impl PolygonClient {
         );
 
         Ok(Self {
-            inner: Arc::new(PolygonClientInner {
-                endpoint: endpoint.clone(),
-                chain_id,
-            }),
             asset_info_store,
-            endpoint,
+            provider,
             pimlico_client: PimlicoClient::new(),
         })
-    }
-
-    /// Create a fresh provider connection
-    async fn create_provider(&self) -> Result<impl Provider<Ethereum> + Clone + 'static, ClientError> {
-        let ws_connect = WsConnect::new(self.endpoint.clone());
-        ProviderBuilder::new()
-            .connect_ws(ws_connect)
-            .await
-            .map_err(|_| ClientError::AllEndpointsUnreachable)
     }
 
     /// Convert a log entry to a ChainTransfer
@@ -334,16 +341,19 @@ impl PolygonClient {
                     "Received transfer event for unknown asset"
                 );
                 SubscriptionError::AssetNotFound {
+                    // TODO: change asset_id to String in the error and use real asset ID
                     asset_id: 0, // We don't have u32 for Polygon, using 0 as placeholder
                 }
             })?;
 
-        let tx_hash = log
-            .transaction_hash
-            .ok_or(SubscriptionError::BlockProcessingFailed { block_number: 0 })?;
+        let tx_hash = log.transaction_hash.ok_or(
+            SubscriptionError::BlockProcessingFailed {
+                block_number: 0,
+            },
+        )?;
 
-        // TODO: it's better to also have block number/index but need to refactor `TransactionId` first
-        // let block_number = log
+        // TODO: it's better to also have block number/index but need to refactor
+        // `TransactionId` first let block_number = log
         //     .block_number
         //     .ok_or(SubscriptionError::BlockProcessingFailed { block_number: 0 })?;
 
@@ -371,7 +381,11 @@ impl PolygonClient {
         })
     }
 
-    fn build_permit_hash(&self, sender: &Address, nonce: U256) -> FixedBytes<32> {
+    fn build_permit_hash(
+        &self,
+        sender: &Address,
+        nonce: U256,
+    ) -> B256 {
         let domain = eip712_domain! {
             name: "USD Coin",
             version: "2",
@@ -380,26 +394,32 @@ impl PolygonClient {
         };
 
         let permit_typehash = keccak256(
-            b"Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"
+            b"Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)",
         );
 
-        let struct_hash = keccak256([
-            permit_typehash.as_slice(),
-            &[0u8; 12],
-            sender.as_slice(),
-            &[0u8; 12],
-            PAYMASTER.as_slice(),
-            // allow to spend max, it's ok for our purposes
-            &U256::MAX.to_be_bytes::<32>(),
-            &nonce.to_be_bytes::<32>(),
-            &U256::MAX.to_be_bytes::<32>(),
-        ].concat());
+        let struct_hash = keccak256(
+            [
+                permit_typehash.as_slice(),
+                &[0u8; 12],
+                sender.as_slice(),
+                &[0u8; 12],
+                PAYMASTER.as_slice(),
+                // allow to spend max, it's ok for our purposes
+                &U256::MAX.to_be_bytes::<32>(),
+                &nonce.to_be_bytes::<32>(),
+                &U256::MAX.to_be_bytes::<32>(),
+            ]
+            .concat(),
+        );
 
-        keccak256([
-            &[0x19, 0x01],
-            domain.hash_struct().as_slice(),
-            struct_hash.as_slice(),
-        ].concat())
+        keccak256(
+            [
+                &[0x19, 0x01],
+                domain.hash_struct().as_slice(),
+                struct_hash.as_slice(),
+            ]
+            .concat(),
+        )
     }
 
     fn calculate_max_cost_in_token(
@@ -418,12 +438,16 @@ impl PolygonClient {
         let user_op_max_cost = user_op_max_gas * gas_price.max_fee_per_gas;
         let post_op_cost = quote.post_op_gas * gas_price.max_fee_per_gas;
         let total_cost_wei = user_op_max_cost + post_op_cost;
-        let cost_in_token = (total_cost_wei * quote.exchange_rate) / U256::from(10).pow(U256::from(18));
 
-        cost_in_token
+        (total_cost_wei * quote.exchange_rate) / U256::from(10).pow(U256::from(18))
     }
 
-    fn build_call(&self, recipient: Address, amount_wei: U256, token: Address) -> Vec<u8> {
+    fn build_call(
+        &self,
+        recipient: Address,
+        amount_wei: U256,
+        token: Address,
+    ) -> Vec<u8> {
         let inner_call = IERC20::transferCall {
             to: recipient,
             amount: amount_wei,
@@ -432,60 +456,92 @@ impl PolygonClient {
         IERC20::executeCall {
             dest: token,
             value: U256::ZERO,
-            func: inner_call.abi_encode().into()
-        }.abi_encode()
+            func: inner_call.abi_encode().into(),
+        }
+        .abi_encode()
     }
 
-    fn build_paymaster_data(&self, asset_id: Address, permit_signature: &[u8]) -> Vec<u8> {
+    fn build_paymaster_data(
+        &self,
+        asset_id: Address,
+        permit_signature: &[u8],
+    ) -> Vec<u8> {
         [
             &[0u8],
             asset_id.as_slice(),
             &U256::MAX.to_be_bytes::<32>(),
             permit_signature,
-        ].concat()
+        ]
+        .concat()
     }
 
-    // TODO: move this calculation somewhere else, for example to transaction structure
     fn compute_user_op_hash(
         &self,
         transaction: &PolygonUnsignedTransaction,
         paymaster_data: &[u8],
-    ) -> FixedBytes<32> {
+    ) -> B256 {
         let type_hash = keccak256(b"PackedUserOperation(address sender,uint256 nonce,bytes initCode,bytes callData,bytes32 accountGasLimits,uint256 preVerificationGas,bytes32 gasFees,bytes paymasterAndData)");
 
         let account_gas_limits = pack_u128_to_bytes(
-            transaction.gas_params.verification_gas_limit.to(),
-            transaction.gas_params.call_gas_limit.to(),
+            transaction
+                .gas_params
+                .verification_gas_limit
+                .to(),
+            transaction
+                .gas_params
+                .call_gas_limit
+                .to(),
         );
 
         let gas_fees = pack_u128_to_bytes(
-            transaction.gas_price.max_priority_fee_per_gas.to(),
-            transaction.gas_price.max_fee_per_gas.to(),
+            transaction
+                .gas_price
+                .max_priority_fee_per_gas
+                .to(),
+            transaction
+                .gas_price
+                .max_fee_per_gas
+                .to(),
         );
 
         let paymaster_gas_limits = pack_u128_to_bytes(
-            transaction.gas_params.paymaster_verification_gas_limit.to(),
-            transaction.gas_params.paymaster_post_op_gas_limit.to(),
+            transaction
+                .gas_params
+                .paymaster_verification_gas_limit
+                .to(),
+            transaction
+                .gas_params
+                .paymaster_post_op_gas_limit
+                .to(),
         );
 
         let paymaster_and_data = [
             PAYMASTER.as_slice(),
             paymaster_gas_limits.as_slice(),
             paymaster_data,
-        ].concat();
+        ]
+        .concat();
 
-        let struct_hash = keccak256([
-            type_hash.as_slice(),
-            &[0u8; 12],
-            transaction.sender.as_slice(),
-            &transaction.entrypoint_nonce.to_be_bytes::<32>(),
-            keccak256(&[]).as_slice(), // init code, empty
-            keccak256(&transaction.call_data).as_slice(),
-            account_gas_limits.as_slice(),
-            &transaction.gas_params.pre_verification_gas.to_be_bytes::<32>(),
-            gas_fees.as_slice(),
-            keccak256(paymaster_and_data).as_slice()
-        ].concat());
+        let struct_hash = keccak256(
+            [
+                type_hash.as_slice(),
+                &[0u8; 12],
+                transaction.sender.as_slice(),
+                &transaction
+                    .entrypoint_nonce
+                    .to_be_bytes::<32>(),
+                keccak256([]).as_slice(), // init code, empty
+                keccak256(&transaction.call_data).as_slice(),
+                account_gas_limits.as_slice(),
+                &transaction
+                    .gas_params
+                    .pre_verification_gas
+                    .to_be_bytes::<32>(),
+                gas_fees.as_slice(),
+                keccak256(paymaster_and_data).as_slice(),
+            ]
+            .concat(),
+        );
 
         let domain = eip712_domain! {
             name: "ERC4337",
@@ -493,21 +549,15 @@ impl PolygonClient {
             chain_id: CHAIN_ID,
             verifying_contract: ENTRYPOINT,
         };
-        // let domain_type_hash = keccak256(b"EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
-        // let domain = keccak256([
-        //     domain_type_hash.as_slice(),
-        //     keccak256(b"ERC4337").as_slice(),
-        //     keccak256(b"1").as_slice(),
-        //     &U256::from(CHAIN_ID).to_be_bytes::<32>(),
-        //     &[0u8; 12],
-        //     ENTRYPOINT.as_slice(),
-        // ].concat());
 
-        keccak256([
-            &[0x19, 0x01],
-            domain.hash_struct().as_slice(),
-            struct_hash.as_slice(),
-        ].concat())
+        keccak256(
+            [
+                &[0x19, 0x01],
+                domain.hash_struct().as_slice(),
+                struct_hash.as_slice(),
+            ]
+            .concat(),
+        )
     }
 }
 
@@ -546,13 +596,7 @@ impl BlockChainClient<PolygonChainConfig> for PolygonClient {
         asset_id: &PolygonAssetId,
     ) -> Result<AssetInfo<PolygonChainConfig>, QueryError> {
         debug!(message = "Fetching ERC-20 token info...", asset_id = %asset_id);
-
-        let provider = self
-            .create_provider()
-            .await
-            .map_err(|_| QueryError::RpcRequestFailed)?;
-
-        let contract = IERC20::new(*asset_id, provider);
+        let contract = IERC20::new(*asset_id, self.provider.clone());
 
         // Fetch symbol
         let symbol_result = contract
@@ -623,12 +667,7 @@ impl BlockChainClient<PolygonChainConfig> for PolygonClient {
             })?
             .decimals;
 
-        let provider = self
-            .create_provider()
-            .await
-            .map_err(|_| QueryError::RpcRequestFailed)?;
-
-        let contract = IERC20::new(*asset_id, provider);
+        let contract = IERC20::new(*asset_id, self.provider.clone());
 
         let balance_result = contract
             .balanceOf(*account)
@@ -679,14 +718,9 @@ impl BlockChainClient<PolygonChainConfig> for PolygonClient {
 
         let client = self.clone();
 
-        // Create provider for subscription
-        let provider = self
-            .create_provider()
-            .await
-            .map_err(|_| SubscriptionError::SubscriptionFailed)?;
-
         // Subscribe to logs
-        let subscription = provider
+        let subscription = client
+            .provider
             .subscribe_logs(&filter)
             .await
             .inspect_err(|e| {
@@ -705,8 +739,6 @@ impl BlockChainClient<PolygonChainConfig> for PolygonClient {
         );
 
         let stream = async_stream::try_stream! {
-            // Keep provider alive for the duration of the stream
-            let _provider = provider;
             let mut sub = subscription.into_stream();
 
             while let Some(log) = sub.next().await {
@@ -775,20 +807,11 @@ impl BlockChainClient<PolygonChainConfig> for PolygonClient {
 
         let amount_wei = decimal_to_u256(amount, decimals);
 
-        let provider = self
-            .create_provider()
-            .await
-            .map_err(|e| {
-                tracing::debug!(error.source = ?e, "Failed to create provider for build_transfer");
-                TransactionError::BuildFailed {
-                    reason: "Failed to connect to RPC".to_string(),
-                }
-            })?;
+        let contract = IERC20::new(*asset_id, self.provider.clone());
+        let entrypoint_contract = IERC20::new(ENTRYPOINT, self.provider.clone());
 
-        let contract = IERC20::new(*asset_id, provider.clone());
-        let entrypoint_contract = IERC20::new(ENTRYPOINT, provider.clone());
-
-        let sender_nonce = provider
+        let sender_nonce = self
+            .provider
             .get_transaction_count(*sender)
             .await
             .map_err(|e| {
@@ -797,7 +820,7 @@ impl BlockChainClient<PolygonChainConfig> for PolygonClient {
                     "Failed to get sender nonce"
                 );
                 TransactionError::BuildFailed {
-                    reason: "Failed to get sender nonce".to_string()
+                    reason: "Failed to get sender nonce".to_string(),
                 }
             })?;
 
@@ -811,12 +834,15 @@ impl BlockChainClient<PolygonChainConfig> for PolygonClient {
                     "Failed to get contract nonce for permit"
                 );
                 TransactionError::BuildFailed {
-                    reason: "Failed to get contract nonce for permit".to_string()
+                    reason: "Failed to get contract nonce for permit".to_string(),
                 }
             })?;
 
         let entrypoint_nonce = entrypoint_contract
-            .getNonce(*sender, alloy::primitives::Uint::<192, 3>::ZERO)
+            .getNonce(
+                *sender,
+                alloy::primitives::Uint::<192, 3>::ZERO,
+            )
             .call()
             .await
             .map_err(|e| {
@@ -825,11 +851,12 @@ impl BlockChainClient<PolygonChainConfig> for PolygonClient {
                     "Failed to get entrypoint nonce"
                 );
                 TransactionError::BuildFailed {
-                    reason: "Failed to get entrypoint nonce for permit".to_string()
+                    reason: "Failed to get entrypoint nonce for permit".to_string(),
                 }
             })?;
 
-        let gas_price = self.pimlico_client
+        let gas_price = self
+            .pimlico_client
             .get_gas_prices()
             .await
             .map_err(|e| {
@@ -838,16 +865,16 @@ impl BlockChainClient<PolygonChainConfig> for PolygonClient {
                     "Failed to get gas prices using pimlico client"
                 );
                 TransactionError::BuildFailed {
-                    reason: "Failed to get gas prices using pimlico client".to_string()
+                    reason: "Failed to get gas prices using pimlico client".to_string(),
                 }
             })?
             // TODO: use standard for now, later it's better to be able to configure it
             .standard;
 
-        // use dummy gas params for now, for calculation of real params we need to have a real
-        // signed permit which we can get only on signing step
+        // use dummy gas params for now, for calculation of real params we need to have
+        // a real signed permit which we can get only on signing step
         let gas_params = GasParams::dummy();
-        let permit_hash = self.build_permit_hash(&sender, permit_nonce);
+        let permit_hash = self.build_permit_hash(sender, permit_nonce);
         let call_data = self.build_call(*recipient, amount_wei, *asset_id);
 
         let authorization = Authorization {
@@ -862,8 +889,6 @@ impl BlockChainClient<PolygonChainConfig> for PolygonClient {
             recipient: *recipient,
             asset_id: *asset_id,
             entrypoint_nonce,
-            permit_nonce,
-            sender_nonce,
             call_data,
             gas_price,
             gas_params,
@@ -906,9 +931,12 @@ impl BlockChainClient<PolygonChainConfig> for PolygonClient {
             });
         }
 
-        // Initially set transaction amount as full balance. On signing step we'll fetch accurate gas estimates and substruct
-        // their total amount from balance value and rebuild transaction call
-        let base_tx = self.build_transfer(sender, recipient, asset_id, balance).await?;
+        // Initially set transaction amount as full balance. On signing step we'll fetch
+        // accurate gas estimates and substruct their total amount from balance
+        // value and rebuild transaction call
+        let base_tx = self
+            .build_transfer(sender, recipient, asset_id, balance)
+            .await?;
 
         // Create the new transaction with the adjusted amount but same gas params
         let transaction = PolygonUnsignedTransaction {
@@ -916,7 +944,9 @@ impl BlockChainClient<PolygonChainConfig> for PolygonClient {
             ..base_tx.transaction
         };
 
-        Ok(UnsignedTransaction { transaction })
+        Ok(UnsignedTransaction {
+            transaction,
+        })
     }
 
     #[instrument(skip(self, transaction, keyring_client))]
@@ -948,12 +978,17 @@ impl BlockChainClient<PolygonChainConfig> for PolygonClient {
             // for transfer all if we'll put full amount we'll get an error that we don't
             // have enough balance for transfer + fees, so we put some dummy amount for now,
             // paymaster fee shouldn't be significantly different depending on amount
-            self.build_call(inner.recipient, U256::from(100), inner.asset_id)
+            self.build_call(
+                inner.recipient,
+                U256::from(100),
+                inner.asset_id,
+            )
         } else {
             inner.call_data.clone()
         };
 
-        let mut gas_params = self.pimlico_client
+        let mut gas_params = self
+            .pimlico_client
             .get_estimate_gas(
                 inner.sender,
                 inner.entrypoint_nonce,
@@ -968,7 +1003,8 @@ impl BlockChainClient<PolygonChainConfig> for PolygonClient {
                     "Failed to get estimated gas for transaction using pimlico client"
                 );
                 TransactionError::BuildFailed {
-                    reason: "Failed to get estimated gas for transaction using pimlico client".to_string()
+                    reason: "Failed to get estimated gas for transaction using pimlico client"
+                        .to_string(),
                 }
             })?;
 
@@ -984,7 +1020,8 @@ impl BlockChainClient<PolygonChainConfig> for PolygonClient {
         inner.gas_params = gas_params;
 
         if inner.transfer_all {
-            let quotes = self.pimlico_client
+            let quotes = self
+                .pimlico_client
                 .get_token_quotes(&[inner.asset_id])
                 .await
                 .map_err(|e| {
@@ -994,15 +1031,17 @@ impl BlockChainClient<PolygonChainConfig> for PolygonClient {
                     );
 
                     TransactionError::BuildFailed {
-                        reason: "Failed to get quote using pimlico client".to_string()
+                        reason: "Failed to get quote using pimlico client".to_string(),
                     }
                 })?;
 
-            let usdc_quote = quotes.quotes.first().ok_or_else(|| {
-                TransactionError::BuildFailed {
-                    reason: "Failed to get quote from paymaster".to_string(),
-                }
-            })?;
+            let usdc_quote =
+                quotes
+                    .quotes
+                    .first()
+                    .ok_or_else(|| TransactionError::BuildFailed {
+                        reason: "Failed to get quote from paymaster".to_string(),
+                    })?;
 
             let max_cost_in_usdc_wei = self.calculate_max_cost_in_token(
                 &inner.gas_params,
@@ -1010,16 +1049,23 @@ impl BlockChainClient<PolygonChainConfig> for PolygonClient {
                 usdc_quote,
             );
 
-            let amount_wei = inner.amount_wei
+            let amount_wei = inner
+                .amount_wei
                 .saturating_sub(max_cost_in_usdc_wei)
                 .saturating_sub(U256::from(100));
 
-            let call_data = self.build_call(inner.recipient, amount_wei, inner.asset_id);
+            let call_data = self.build_call(
+                inner.recipient,
+                amount_wei,
+                inner.asset_id,
+            );
             inner.call_data = call_data;
             let op_hash = self.compute_user_op_hash(&inner, &paymaster_data);
 
             if amount_wei.is_zero() {
-                return Err(TransactionError::InsufficientBalance { transaction_id: op_hash.to_string() })
+                return Err(TransactionError::InsufficientBalance {
+                    transaction_id: op_hash.to_string(),
+                })
             }
 
             // have to recalculate op_hash
@@ -1070,7 +1116,8 @@ impl BlockChainClient<PolygonChainConfig> for PolygonClient {
                 reason: format!("Asset {asset_id} not found in asset info store"),
             })?;
 
-        let op_hash = self.pimlico_client
+        let op_hash = self
+            .pimlico_client
             .send_user_operation(op_params)
             .await
             .map_err(|e| {
@@ -1086,40 +1133,47 @@ impl BlockChainClient<PolygonChainConfig> for PolygonClient {
 
         // monitor up to 30 seconds, refetch operation with 1 second delay
         for _ in 0..30 {
-            let receipt = self.pimlico_client
+            let receipt = self
+                .pimlico_client
                 .get_operation_receipt(&op_hash)
                 .await;
 
-            // unfortunately some of required data is not presented in receipt, so we have to fill it
-            // from saved transaction parameters
+            // unfortunately some of required data is not presented in receipt, so we have
+            // to fill it from saved transaction parameters
             match receipt {
-                Ok(Some(data)) if data.success => return Ok(ChainTransfer {
-                    asset_id,
-                    asset_name: asset_info.name,
-                    amount: u256_to_decimal(unsigned.amount_wei, asset_info.decimals),
-                    sender: data.sender,
-                    recipient: data.receipt.to,
-                    transaction_id: data.receipt.transaction_hash,
-                    timestamp: Utc::now().timestamp_millis() as u64,
-                }),
+                Ok(Some(data)) if data.success => {
+                    return Ok(ChainTransfer {
+                        asset_id,
+                        asset_name: asset_info.name,
+                        amount: u256_to_decimal(unsigned.amount_wei, asset_info.decimals),
+                        sender: data.sender,
+                        recipient: data.receipt.to,
+                        transaction_id: data.receipt.transaction_hash,
+                        timestamp: Utc::now().timestamp_millis() as u64,
+                    })
+                },
                 Ok(Some(data)) => {
                     tracing::warn!(response = ?data, "Got unsuccessful operation result from pimlico");
                     return Err(TransactionError::ExecutionFailed {
                         transaction_id: op_hash,
-                        error_code: "".to_string()
+                        error_code: "".to_string(),
                     })
                 },
                 Ok(None) => tracing::trace!("No receipt returned yet, continue watching"),
                 Err(e) => tracing::debug!(
                     error = ?e,
-                    "Error while fetching "
+                    "Error while fetching receipt data from using pimlico client"
                 ),
             };
 
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         }
 
-        Err(TransactionError::TransactionInfoFetchFailed { transaction_id: op_hash })
+        Err(
+            TransactionError::TransactionInfoFetchFailed {
+                transaction_id: op_hash,
+            },
+        )
     }
 }
 
@@ -1137,32 +1191,5 @@ mod tests {
         // Convert back
         let back = decimal_to_u256(decimal, 6);
         assert_eq!(back, value);
-    }
-
-    #[test]
-    fn test_derive_eth_path() {
-        let params = vec![
-            "0x1234567890123456789012345678901234567890".to_string(),
-            "order-123".to_string(),
-        ];
-        let path = derive_eth_path_from_params(&params);
-        assert!(path.starts_with("m/44'/60'/0'/0/"));
-
-        // Same params should produce same path
-        let path2 = derive_eth_path_from_params(&params);
-        assert_eq!(path, path2);
-
-        // Different params should produce different path
-        let different_params = vec!["other".to_string()];
-        let different_path = derive_eth_path_from_params(&different_params);
-        assert_ne!(path, different_path);
-    }
-
-    #[test]
-    fn test_polygon_chain_config() {
-        assert_eq!(
-            PolygonChainConfig::CHAIN_TYPE,
-            ChainType::Polygon
-        );
     }
 }

@@ -1,6 +1,15 @@
-use hmac::{Hmac, Mac};
-use http::{HeaderValue, Method};
-use secrecy::{ExposeSecret, SecretSlice};
+use hmac::{
+    Hmac,
+    Mac,
+};
+use http::{
+    HeaderValue,
+    Method,
+};
+use secrecy::{
+    ExposeSecret,
+    SecretSlice,
+};
 use sha2::Sha256;
 
 /// HMAC-SHA256 signature validator

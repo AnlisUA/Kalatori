@@ -111,7 +111,10 @@ mod tests {
     use chrono::Utc;
 
     use crate::dao::create_test_dao;
-    use crate::types::{PublicInvoice, default_webhook_event};
+    use crate::types::{
+        PublicInvoice,
+        default_webhook_event,
+    };
 
     use super::*;
 

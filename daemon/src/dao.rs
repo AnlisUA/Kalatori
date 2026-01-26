@@ -17,7 +17,10 @@ mod refund;
 mod transaction;
 mod webhook_event;
 
-use sqlx::{Executor, SqliteTransaction};
+use sqlx::{
+    Executor,
+    SqliteTransaction,
+};
 use tokio::sync::Mutex;
 
 use crate::configs::DatabaseConfig;
@@ -31,11 +34,17 @@ pub use refund::DaoRefundError;
 pub use transaction::DaoTransactionError;
 
 // Export high-level interface traits
-pub use interface::{DaoInterface, DaoTransactionInterface};
+pub use interface::{
+    DaoInterface,
+    DaoTransactionInterface,
+};
 
 // Export mocks only in test builds
 #[cfg(test)]
-pub use interface::{MockDaoInterface, MockDaoTransactionInterface};
+pub use interface::{
+    MockDaoInterface,
+    MockDaoTransactionInterface,
+};
 
 // Keep DaoResult for internal use (DaoExecutor trait methods)
 pub(crate) type DaoResult<T> = Result<T, sqlx::Error>;
@@ -178,7 +187,9 @@ impl DAO {
             .await
             .expect("Failed to create database connection pool");
 
-        let dao = Self { pool };
+        let dao = Self {
+            pool,
+        };
 
         let sqlite_version = dao.sqlite_version().await?;
         tracing::info!(

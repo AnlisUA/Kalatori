@@ -2,10 +2,19 @@
 mod axum;
 
 use hmac::Mac;
-use http::{HeaderMap, HeaderValue, Method, Uri};
+use http::{
+    HeaderMap,
+    HeaderValue,
+    Method,
+    Uri,
+};
 
 use crate::utils::{
-    HmacConfig, HmacSha256, SIGNATURE_HEADER, TIMESTAMP_HEADER, hmac_from_request_parts,
+    HmacConfig,
+    HmacSha256,
+    SIGNATURE_HEADER,
+    TIMESTAMP_HEADER,
+    hmac_from_request_parts,
     timestamp_secs,
 };
 

@@ -1,7 +1,13 @@
 //! Transaction types for `SQLite` schema
 
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use chrono::{
+    DateTime,
+    Utc,
+};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 use sqlx::FromRow;
 use sqlx::types::Json;
 use uuid::Uuid;
@@ -9,10 +15,16 @@ use uuid::Uuid;
 use crate::chain_client::GeneralChainTransfer;
 
 pub use kalatori_client::types::{
-    Transaction as PublicTransaction, TransactionStatus, TransactionType,
+    Transaction as PublicTransaction,
+    TransactionStatus,
+    TransactionType,
 };
 
-use super::common::{ChainType, TransferInfo, TransferInfoRow};
+use super::common::{
+    ChainType,
+    TransferInfo,
+    TransferInfoRow,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, FromRow)]
 pub struct GeneralTransactionId {

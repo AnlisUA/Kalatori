@@ -1,4 +1,7 @@
-use alloy::primitives::{address, Address};
+use alloy::primitives::{
+    Address,
+    address,
+};
 
 pub const CHAIN_ID: u64 = 137; // Polygon Mainnet
 pub const BUNDLER_RPC: &str = "https://public.pimlico.io/v2/137/rpc"; // Note: CHAIN ID included in URL

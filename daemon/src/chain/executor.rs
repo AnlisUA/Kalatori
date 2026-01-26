@@ -3,24 +3,50 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use chrono::Utc;
-use futures::stream::{FuturesUnordered, StreamExt};
+use futures::stream::{
+    FuturesUnordered,
+    StreamExt,
+};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
 use thiserror::Error;
-use tokio::time::{Duration, interval};
+use tokio::time::{
+    Duration,
+    interval,
+};
 use tokio_util::sync::CancellationToken;
 use tracing::instrument;
 use uuid::Uuid;
 
 use crate::chain_client::{
-    AssetHubChainConfig, AssetHubClient, BlockChainClient, ChainConfig, GeneralChainTransfer,
-    KeyringClient, PolygonChainConfig, PolygonClient, SignedTransaction, SignedTransactionUtils,
+    AssetHubChainConfig,
+    AssetHubClient,
+    BlockChainClient,
+    ChainConfig,
+    GeneralChainTransfer,
+    KeyringClient,
+    PolygonChainConfig,
+    PolygonClient,
+    SignedTransaction,
+    SignedTransactionUtils,
     TransactionError,
 };
-use crate::dao::{DAO, DaoInterface, DaoTransactionInterface};
+use crate::dao::{
+    DAO,
+    DaoInterface,
+    DaoTransactionInterface,
+};
 use crate::types::{
-    ChainType, GeneralTransactionId, OutgoingTransaction, Payout, PayoutStatus, RetryMeta,
-    Transaction, TransactionOrigin, TransactionOriginVariant, TransferInfo,
+    ChainType,
+    GeneralTransactionId,
+    OutgoingTransaction,
+    Payout,
+    PayoutStatus,
+    RetryMeta,
+    Transaction,
+    TransactionOrigin,
+    TransactionOriginVariant,
+    TransferInfo,
 };
 
 #[derive(Debug, Error)]
@@ -198,7 +224,9 @@ async fn send_transfer_request<T: ChainConfig, C: BlockChainClient<T>>(
                 is_retriable: false,
             })
         },
-        Err(TransactionError::TransactionInfoFetchFailed { transaction_id }) => {
+        Err(TransactionError::TransactionInfoFetchFailed {
+            transaction_id,
+        }) => {
             tracing::warn!(
                 invoice_id = %request.invoice_id,
                 payout_id = %request.id,
@@ -214,7 +242,9 @@ async fn send_transfer_request<T: ChainConfig, C: BlockChainClient<T>>(
                 is_retriable: true,
             })
         },
-        Err(TransactionError::InsufficientBalance { transaction_id }) => {
+        Err(TransactionError::InsufficientBalance {
+            transaction_id,
+        }) => {
             tracing::warn!(
                 invoice_id = %request.invoice_id,
                 payout_id = %request.id,
@@ -250,7 +280,9 @@ async fn send_transfer_request<T: ChainConfig, C: BlockChainClient<T>>(
                 is_retriable: false,
             })
         },
-        Err(TransactionError::BuildFailed { .. }) => unreachable!(),
+        Err(TransactionError::BuildFailed {
+            ..
+        }) => unreachable!(),
     };
 
     TransactionExecutionData {
@@ -318,9 +350,7 @@ impl<
                 }
             })?;
 
-        let derivation_params = vec![
-            request.invoice_id.to_string(),
-        ];
+        let derivation_params = vec![request.invoice_id.to_string()];
 
         let signed_transaction = client
             .sign_transaction(

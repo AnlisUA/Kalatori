@@ -1,32 +1,45 @@
-use alloy::consensus::SignableTransaction;
-use alloy::network::{TransactionBuilder, TxSignerSync};
-use alloy::primitives::{Address as EthAddress, U256, keccak256, B256};
-use alloy::eips::eip7702::Authorization;
-use alloy::signers::{Signer, SignerSync};
-use alloy::signers::local::{MnemonicBuilder, PrivateKeySigner};
-use alloy::sol_types::eip712_domain;
+use alloy::primitives::{
+    Address as EthAddress,
+    B256,
+};
+use alloy::signers::SignerSync;
+use alloy::signers::local::{
+    MnemonicBuilder,
+    PrivateKeySigner,
+};
 use bip39::Mnemonic;
+use sha2::{
+    Digest,
+    Sha256,
+};
 use subxt_signer::sr25519::Keypair;
-use subxt_signer::{DeriveJunction, ExposeSecret, SecretString};
+use subxt_signer::{
+    DeriveJunction,
+    ExposeSecret,
+    SecretString,
+};
 use thiserror::Error;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{
+    mpsc,
+    oneshot,
+};
 use tracing::instrument;
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use zeroize::{
+    Zeroize,
+    ZeroizeOnDrop,
+};
 
-use super::asset_hub::{AssetHubAccountId, AssetHubSignedTransaction, AssetHubUnsignedTransaction};
+use super::asset_hub::{
+    AssetHubAccountId,
+    AssetHubSignedTransaction,
+    AssetHubUnsignedTransaction,
+};
 use super::polygon::{
+    PAYMASTER,
     PolygonSignedTransaction,
     PolygonUnsignedTransaction,
-    derive_eth_path_from_params,
-    CHAIN_ID,
-    ACCOUNT_IMPL,
-    USDC,
-    UserOperationParams,
-    Eip7702Auth,
     SignedPermit,
-    ENTRYPOINT,
-    PAYMASTER,
-    pack_u128_to_bytes,
+    UserOperationParams,
 };
 
 #[cfg_attr(test, mockall_double::double)]
@@ -47,7 +60,9 @@ pub struct GenerateAddressData {
 
 impl From<DerivationParams> for GenerateAddressData {
     fn from(derivation_params: DerivationParams) -> Self {
-        Self { derivation_params }
+        Self {
+            derivation_params,
+        }
     }
 }
 
@@ -78,9 +93,10 @@ pub struct Keyring {
 }
 
 impl Keyring {
-    // TODO: receive secrets config
     pub fn new(seed: SecretString) -> Self {
-        Self { seed }
+        Self {
+            seed,
+        }
     }
 
     pub fn ignite(
@@ -161,8 +177,17 @@ impl Keyring {
     ) -> KeyringResult<PrivateKeySigner> {
         let mnemonic_str = self.seed.expose_secret();
 
-        // Derive BIP44 path from params
-        let path = derive_eth_path_from_params(&params);
+        let mut hasher = Sha256::new();
+        for param in params {
+            hasher.update(param.as_bytes());
+        }
+        let hash = hasher.finalize();
+
+        let account = u32::from_be_bytes([hash[0], hash[1], hash[2], hash[3]]) & 0x7FFFFFFF;
+        let index = u32::from_be_bytes([hash[4], hash[5], hash[6], hash[7]]);
+
+        // Use both account and index for collision avoid
+        let path = format!("m/44'/60'/{account}'/0/{index}");
 
         // Use alloy's MnemonicBuilder to create a signer with derivation path
         let signer = MnemonicBuilder::<alloy::signers::local::coins_bip39::English>::default()
@@ -197,13 +222,17 @@ impl Keyring {
     ) -> KeyringResult<SignedPermit> {
         let SignPermitRequestData {
             permit_hash,
-            derivation_params
+            derivation_params,
         } = data;
 
         let signer = self.generate_polygon_derived_signer(derivation_params)?;
-        let signature = signer.sign_hash_sync(&permit_hash).unwrap();
+        let signature = signer
+            .sign_hash_sync(&permit_hash)
+            .unwrap();
 
-        Ok(SignedPermit { signature })
+        Ok(SignedPermit {
+            signature,
+        })
     }
 
     fn process_sign_polygon_transaction(
@@ -226,10 +255,17 @@ impl Keyring {
         let signer = self.generate_polygon_derived_signer(derivation_params)?;
 
         let authorization = transaction.authorization.clone();
-        let auth_signature = signer.sign_hash_sync(&authorization.signature_hash()).unwrap();
-        let eip7702_auth = authorization.into_signed(auth_signature).into();
+        let auth_signature = signer
+            .sign_hash_sync(&authorization.signature_hash())
+            .unwrap();
+        let eip7702_auth = authorization
+            .into_signed(auth_signature)
+            .into();
 
-        let signature = signer.sign_hash_sync(&op_hash).unwrap().as_bytes();
+        let signature = signer
+            .sign_hash_sync(&op_hash)
+            .unwrap()
+            .as_bytes();
 
         let op_params = UserOperationParams {
             sender: transaction.sender,
@@ -291,7 +327,7 @@ impl Keyring {
                 let (req, resp) = envelope.unpack();
                 let result = self.process_sign_polygon_permit(req);
                 let _unused = resp.send(result);
-            }
+            },
         }
     }
 }
@@ -305,15 +341,23 @@ impl<T, R> Envelope<T, R> {
     pub fn new(request: T) -> (Self, ResponseReceiver<R>) {
         let (responder, receiver) = oneshot::channel();
 
-        let envelope = Envelope { request, responder };
+        let envelope = Envelope {
+            request,
+            responder,
+        };
 
-        let response_receiver = ResponseReceiver { receiver };
+        let response_receiver = ResponseReceiver {
+            receiver,
+        };
 
         (envelope, response_receiver)
     }
 
     pub fn unpack(self) -> (T, oneshot::Sender<KeyringResult<R>>) {
-        let Envelope { request, responder } = self;
+        let Envelope {
+            request,
+            responder,
+        } = self;
         (request, responder)
     }
 }
@@ -352,9 +396,7 @@ enum KeyringMessage {
     GenerateAssetHubAddress(Envelope<GenerateAddressData, AssetHubAccountId>),
 
     // Polygon messages
-    SignPolygonPermit(
-        Envelope<SignPermitRequestData, SignedPermit>,
-    ),
+    SignPolygonPermit(Envelope<SignPermitRequestData, SignedPermit>),
     SignPolygonTransaction(
         Envelope<SignTransactionRequestData<PolygonUnsignedTransaction>, PolygonSignedTransaction>,
     ),
@@ -389,11 +431,8 @@ impl KeyringMessage {
     }
 
     fn new_sign_polygon_permit(
-        data: SignPermitRequestData,
-    ) -> (
-        Self,
-        ResponseReceiver<SignedPermit>,
-    ) {
+        data: SignPermitRequestData
+    ) -> (Self, ResponseReceiver<SignedPermit>) {
         let (envelope, response_receiver) = Envelope::new(data);
         (
             Self::SignPolygonPermit(envelope),
@@ -438,7 +477,9 @@ mod client {
 
     impl KeyringClient {
         pub(super) fn new(tx: mpsc::Sender<KeyringMessage>) -> Self {
-            Self { tx }
+            Self {
+                tx,
+            }
         }
 
         async fn send_message_with_response<R: 'static>(

@@ -89,7 +89,10 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{InvoiceStatus, PayoutStatus};
+    use crate::types::{
+        InvoiceStatus,
+        PayoutStatus,
+    };
 
     #[test]
     fn test_status_parsing_works() {

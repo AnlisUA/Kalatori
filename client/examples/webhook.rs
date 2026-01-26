@@ -1,13 +1,22 @@
 use axum::middleware::from_fn_with_state;
 use axum::response::IntoResponse;
 use axum::routing::post;
-use axum::{Json, Router, serve};
+use axum::{
+    Json,
+    Router,
+    serve,
+};
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
 use kalatori_client::KalatoriClient;
 use kalatori_client::middleware::axum_hmac_validator;
-use kalatori_client::types::{CreateInvoiceParams, GenericEvent, Invoice, InvoiceCart};
+use kalatori_client::types::{
+    CreateInvoiceParams,
+    GenericEvent,
+    Invoice,
+    InvoiceCart,
+};
 use kalatori_client::utils::HmacConfig;
 
 async fn webhook_listener(Json(event): Json<GenericEvent<Invoice>>) -> impl IntoResponse {
@@ -49,7 +58,7 @@ async fn main() {
     // Create an invoice to trigger the webhook
     let payload = CreateInvoiceParams {
         order_id: Uuid::new_v4().to_string(),
-        amount: Decimal::new(1, 1), // 50.00
+        amount: Decimal::new(1, 1), // 0.10
         cart: InvoiceCart::empty(),
         redirect_url: "http://example.com/thank-you".to_string(),
         include_transactions: false,
@@ -64,5 +73,5 @@ async fn main() {
     println!("Created invoice: {:#?}", invoice);
 
     // Keep the main task alive to receive the webhook
-    tokio::time::sleep(tokio::time::Duration::from_secs(300000)).await;
+    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
 }

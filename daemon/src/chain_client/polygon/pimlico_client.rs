@@ -1,11 +1,21 @@
-use alloy::primitives::{Address, Log, U256, keccak256};
-use alloy::sol_types::SolValue;
-use serde::{Serialize, Deserialize};
+use alloy::primitives::{
+    Address,
+    Log,
+    U256,
+};
 use serde::de::DeserializeOwned;
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
-use crate::chain_client::polygon::consts::{BUNDLER_RPC, ENTRYPOINT, PAYMASTER};
-
-use super::consts::{CHAIN_ID, ACCOUNT_IMPL, USDC};
+use super::consts::{
+    ACCOUNT_IMPL,
+    BUNDLER_RPC,
+    CHAIN_ID,
+    ENTRYPOINT,
+    PAYMASTER,
+};
 
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -66,11 +76,15 @@ impl GasParams {
     }
 }
 
-// This structure is pretty similar to `PackedUserOperation` from `alloy` but has some differences:
+// This structure is pretty similar to `PackedUserOperation` from `alloy` but
+// has some differences:
 // 1. Contains `eip7702_auth` field which is missing in alloy's version
-// 2. Some of fields are not optional (they are not optional for our specific implementation)
-// 3. Some optional fields which we don't need is not presented here (like `factory` and `factory_data`)
-// 4. Some fields are wrapped into structures which are returned from other calls in order to simplify the code
+// 2. Some of fields are not optional (they are not optional for our specific
+//    implementation)
+// 3. Some optional fields which we don't need is not presented here (like
+//    `factory` and `factory_data`)
+// 4. Some fields are wrapped into structures which are returned from other
+//    calls in order to simplify the code
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserOperationParams {
@@ -144,8 +158,9 @@ struct TokenQuoteRequestParams {
 pub struct TokenQuote {
     pub token: Address,
     pub paymaster: Address,
-    pub exchange_rate: U256,  // Price of 1 full native token in ERC20 smallest units, scaled by 10^18
-    pub post_op_gas: U256,    // Extra gas for paymaster postOp
+    pub exchange_rate: U256, /* Price of 1 full native token in ERC20 smallest units, scaled by
+                              * 10^18 */
+    pub post_op_gas: U256, // Extra gas for paymaster postOp
     pub exchange_rate_native_to_usd: U256,
     pub balance_slot: U256,
     pub allowance_slot: U256,
@@ -166,7 +181,10 @@ struct JsonRpcRequest<T> {
 }
 
 impl<T> JsonRpcRequest<T> {
-    fn new(method: &'static str, params: T) -> Self {
+    fn new(
+        method: &'static str,
+        params: T,
+    ) -> Self {
         JsonRpcRequest {
             jsonrpc: "2.0",
             id: 1,
@@ -225,10 +243,15 @@ impl PimlicoClient {
         }
     }
 
-    async fn send_request<T: Serialize, R: DeserializeOwned>(&self, method: &'static str, params: T) -> PimlicoResult<R> {
+    async fn send_request<T: Serialize, R: DeserializeOwned>(
+        &self,
+        method: &'static str,
+        params: T,
+    ) -> PimlicoResult<R> {
         let params = JsonRpcRequest::new(method, params);
 
-        let response = self.client
+        let response = self
+            .client
             .post(BUNDLER_RPC)
             .json(&params)
             .send()
@@ -246,7 +269,8 @@ impl PimlicoClient {
         self.send_request(
             "pimlico_getUserOperationGasPrice",
             [(); 0],
-        ).await
+        )
+        .await
     }
 
     pub async fn get_estimate_gas(
@@ -272,63 +296,46 @@ impl PimlicoClient {
         self.send_request(
             "eth_estimateUserOperationGas",
             (req, ENTRYPOINT),
-        ).await
+        )
+        .await
     }
 
-    pub async fn send_user_operation(&self, user_operation_params: UserOperationParams) -> PimlicoResult<String> {
+    pub async fn send_user_operation(
+        &self,
+        user_operation_params: UserOperationParams,
+    ) -> PimlicoResult<String> {
         self.send_request(
             "eth_sendUserOperation",
             (user_operation_params, ENTRYPOINT),
-        ).await
+        )
+        .await
     }
 
-    pub async fn get_operation_receipt(&self, op_hash: &str) -> PimlicoResult<Option<UserOperationReceiptResult>> {
+    pub async fn get_operation_receipt(
+        &self,
+        op_hash: &str,
+    ) -> PimlicoResult<Option<UserOperationReceiptResult>> {
         self.send_request(
             "eth_getUserOperationReceipt",
             (op_hash,),
-        ).await
+        )
+        .await
     }
 
-    pub async fn get_token_quotes(&self, tokens: &[Address]) -> PimlicoResult<TokenQuotesResponse> {
+    pub async fn get_token_quotes(
+        &self,
+        tokens: &[Address],
+    ) -> PimlicoResult<TokenQuotesResponse> {
         self.send_request(
             "pimlico_getTokenQuotes",
             (
-                TokenQuoteRequestParams { tokens: tokens.to_vec() },
+                TokenQuoteRequestParams {
+                    tokens: tokens.to_vec(),
+                },
                 ENTRYPOINT,
                 U256::from(CHAIN_ID),
             ),
-        ).await
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_dummy() {
-        let params = serde_json::to_string_pretty(&GasParams::dummy()).unwrap();
-        println!("{}", params);
-
-        let decoded = serde_json::from_str::<GasParams>(&params).unwrap();
-        println!("{:?}", decoded);
-
-        assert_eq!(decoded, GasParams::dummy());
-    }
-
-    #[tokio::test]
-    async fn test_pimlico_client() {
-        let client = PimlicoClient::new();
-
-        let response = client.get_operation_receipt("0x9527b81d442cb28dfd260dc028585eb108e32aca8031a6e68561eb62992d1efa").await.unwrap();
-        println!("{:#?}", response);
-    }
-
-    #[tokio::test]
-    async fn test_get_token_quotes() {
-        let client = PimlicoClient::new();
-
-        let response = client.get_token_quotes(&[USDC]).await;
-        println!("{:#?}", response);
+        )
+        .await
     }
 }

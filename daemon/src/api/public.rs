@@ -1,7 +1,14 @@
 use axum::Json;
-use axum::extract::{Query, State as ExtractState};
+use axum::extract::{
+    Query,
+    State as ExtractState,
+};
 use axum::http::StatusCode;
-use axum::response::{Html, IntoResponse, Response};
+use axum::response::{
+    Html,
+    IntoResponse,
+    Response,
+};
 use serde::Deserialize;
 use uuid::Uuid;
 

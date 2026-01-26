@@ -21,19 +21,40 @@ use tokio_util::sync::CancellationToken;
 use tracing::Level;
 use zeroize::Zeroize;
 
-use chain::{InvoiceRegistry, TransfersExecutor, TransfersTracker};
-use chain_client::{AssetHubClient, BlockChainClient, Keyring, PolygonClient};
+use chain::{
+    InvoiceRegistry,
+    TransfersExecutor,
+    TransfersTracker,
+};
+use chain_client::{
+    AssetHubClient,
+    BlockChainClient,
+    Keyring,
+    PolygonClient,
+};
 use configs::{
-    ChainsConfig, PaymentsConfig, chains_config_with_prefix, database_config_with_prefix,
-    payments_config_with_prefix, secrets_config_with_prefix, shop_config_with_prefix,
+    ChainsConfig,
+    PaymentsConfig,
+    chains_config_with_prefix,
+    database_config_with_prefix,
+    payments_config_with_prefix,
+    secrets_config_with_prefix,
+    shop_config_with_prefix,
     web_server_config_with_prefix,
 };
 use dao::DAO;
-use error::{Error, PrettyCause};
+use error::{
+    Error,
+    PrettyCause,
+};
 use expiration_detector::ExpirationDetector;
 use state::AppState;
 use utils::logger;
-use utils::shutdown::{self, ShutdownNotification, ShutdownOutcome};
+use utils::shutdown::{
+    self,
+    ShutdownNotification,
+    ShutdownOutcome,
+};
 use utils::task_tracker::TaskTracker;
 
 use crate::dao::DaoInterface;
@@ -80,7 +101,9 @@ fn main() -> ExitCode {
 
                 ExitCode::SUCCESS
             },
-            ShutdownOutcome::UnrecoverableError { panic } => {
+            ShutdownOutcome::UnrecoverableError {
+                panic,
+            } => {
                 tracing::error!(
                     "Badbye! The daemon's shut down with errors{}.",
                     if panic { " due to internal bugs" } else { "" }
@@ -153,7 +176,9 @@ fn validate_and_extend_configs(
 
 #[expect(clippy::too_many_lines)]
 async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(), Error> {
-    rustls::crypto::aws_lc_rs::default_provider().install_default().unwrap();
+    rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .unwrap();
     // Planned start order
     // 1. Load configs
     // 2. Init database

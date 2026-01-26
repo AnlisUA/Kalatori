@@ -1,23 +1,41 @@
 use std::collections::HashMap;
 
-use chrono::{Duration, Utc};
+use chrono::{
+    Duration,
+    Utc,
+};
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
 use kalatori_client::types::{
-    CreateInvoiceParams, Invoice as PublicInvoice, InvoiceStatus, UpdateInvoiceParams,
+    CreateInvoiceParams,
+    Invoice as PublicInvoice,
+    InvoiceStatus,
+    UpdateInvoiceParams,
 };
 
 use crate::chain::InvoiceRegistry;
 use crate::chain::utils::to_base58_string;
-use crate::chain_client::{GenerateAddressData, KeyringClient};
+use crate::chain_client::{
+    GenerateAddressData,
+    KeyringClient,
+};
 use crate::configs::PaymentsConfig;
 use crate::dao::{
-    DAO, DaoInterface, DaoInvoiceError, DaoTransactionError, DaoTransactionInterface,
+    DAO,
+    DaoInterface,
+    DaoInvoiceError,
+    DaoTransactionError,
+    DaoTransactionInterface,
 };
 use crate::types::{
-    ChainType, CreateInvoiceData, InvoiceEventType, InvoiceWithReceivedAmount, KalatoriEventExt,
-    Transaction, UpdateInvoiceData,
+    ChainType,
+    CreateInvoiceData,
+    InvoiceEventType,
+    InvoiceWithReceivedAmount,
+    KalatoriEventExt,
+    Transaction,
+    UpdateInvoiceData,
 };
 
 pub struct AppState<D: DaoInterface = DAO> {
@@ -331,8 +349,15 @@ mod tests {
     use mockall::predicate::eq;
 
     use crate::chain_client::KeyringError;
-    use crate::dao::{MockDaoInterface, MockDaoTransactionInterface};
-    use crate::types::{Invoice, InvoiceCart, default_invoice};
+    use crate::dao::{
+        MockDaoInterface,
+        MockDaoTransactionInterface,
+    };
+    use crate::types::{
+        Invoice,
+        InvoiceCart,
+        default_invoice,
+    };
 
     use super::*;
 

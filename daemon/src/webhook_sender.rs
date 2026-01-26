@@ -1,12 +1,21 @@
 use std::collections::HashSet;
 use std::pin::Pin;
 
-use futures::stream::{FuturesUnordered, StreamExt};
-use tokio::time::{Duration, interval};
+use futures::stream::{
+    FuturesUnordered,
+    StreamExt,
+};
+use tokio::time::{
+    Duration,
+    interval,
+};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use kalatori_client::utils::{HmacConfig, add_headers_to_reqwest};
+use kalatori_client::utils::{
+    HmacConfig,
+    add_headers_to_reqwest,
+};
 
 use crate::dao::DaoInterface;
 use crate::types::WebhookEvent;

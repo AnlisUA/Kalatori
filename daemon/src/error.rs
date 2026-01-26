@@ -1,6 +1,9 @@
 use std::io::Error as IoError;
 
-use serde_json::{Error as JsonError, Value};
+use serde_json::{
+    Error as JsonError,
+    Value,
+};
 use thiserror::Error;
 use tokio::task::JoinError;
 use tracing_subscriber::filter::ParseError;
@@ -87,8 +90,12 @@ impl From<crate::dao::DaoInvoiceError> for Error {
 
         // Map to appropriate DaoError variant
         let dao_error = match e {
-            crate::dao::DaoInvoiceError::NotFound { .. } => DaoError::InvoiceNotFound,
-            crate::dao::DaoInvoiceError::UpdateNotAllowed { .. } => DaoError::VersionConflict,
+            crate::dao::DaoInvoiceError::NotFound {
+                ..
+            } => DaoError::InvoiceNotFound,
+            crate::dao::DaoInvoiceError::UpdateNotAllowed {
+                ..
+            } => DaoError::VersionConflict,
             _ => DaoError::Sqlx(sqlx::Error::RowNotFound),
         };
 
@@ -422,7 +429,11 @@ pub enum NotHexError {
 
 mod pretty_cause {
     use std::error::Error;
-    use std::fmt::{Display, Formatter, Result};
+    use std::fmt::{
+        Display,
+        Formatter,
+        Result,
+    };
 
     const OVERLOAD: u16 = 9999;
 
@@ -522,9 +533,18 @@ mod pretty_cause {
 
     #[cfg(test)]
     mod tests {
-        use super::{OVERLOAD, PrettyCause};
+        use super::{
+            OVERLOAD,
+            PrettyCause,
+        };
         use std::error::Error;
-        use std::fmt::{Debug, Display, Formatter, Result, Write};
+        use std::fmt::{
+            Debug,
+            Display,
+            Formatter,
+            Result,
+            Write,
+        };
 
         #[test]
         fn no_cause() {

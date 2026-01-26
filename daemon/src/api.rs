@@ -32,10 +32,21 @@ mod utils;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::http::{HeaderName, Method, StatusCode};
+use axum::http::{
+    HeaderName,
+    Method,
+    StatusCode,
+};
 use tokio::net::TcpListener;
-use tower_http::cors::{Any, CorsLayer};
-use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
+use tower_http::cors::{
+    Any,
+    CorsLayer,
+};
+use tower_http::request_id::{
+    MakeRequestUuid,
+    PropagateRequestIdLayer,
+    SetRequestIdLayer,
+};
 use tower_http::trace::TraceLayer;
 
 use kalatori_client::types::ApiError;

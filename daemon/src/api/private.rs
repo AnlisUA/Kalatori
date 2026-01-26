@@ -1,18 +1,32 @@
 use axum::extract::State;
-use axum::routing::{get, post};
+use axum::routing::{
+    get,
+    post,
+};
 
 use kalatori_client::middleware::axum_hmac_validator;
 use kalatori_client::types::{
-    CancelInvoiceParams, CreateInvoiceParams, GetInvoiceParams, UpdateInvoiceParams,
+    CancelInvoiceParams,
+    CreateInvoiceParams,
+    GetInvoiceParams,
+    UpdateInvoiceParams,
 };
 use kalatori_client::utils::HmacConfig;
 
 use crate::dao::DaoInvoiceError;
-use crate::types::{InvoiceStatus, PublicInvoice, TransactionType};
+use crate::types::{
+    InvoiceStatus,
+    PublicInvoice,
+    TransactionType,
+};
 
 use super::ApiState;
 use super::utils::{
-    ApiResult, AppJson, AppQuery, fallback_handler, method_not_allowed_fallback_handler,
+    ApiResult,
+    AppJson,
+    AppQuery,
+    fallback_handler,
+    method_not_allowed_fallback_handler,
 };
 
 #[tracing::instrument(skip_all)]

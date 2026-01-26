@@ -1,7 +1,14 @@
-use chrono::{DateTime, Utc};
+use chrono::{
+    DateTime,
+    Utc,
+};
 use uuid::Uuid;
 
-pub use kalatori_client::types::{GenericEvent, InvoiceEventType, KalatoriEventExt};
+pub use kalatori_client::types::{
+    GenericEvent,
+    InvoiceEventType,
+    KalatoriEventExt,
+};
 
 #[derive(Debug, sqlx::FromRow)]
 pub struct WebhookEvent {
@@ -43,7 +50,9 @@ pub fn default_webhook_event(invoice_id: Uuid) -> GenericEvent<super::PublicInvo
         status: super::InvoiceStatus::Waiting,
         payment_url: "https://app.kalatori.com/invoice/test".to_string(),
         redirect_url: "https://example.com/thank-you".to_string(),
-        cart: kalatori_client::types::InvoiceCart { items: vec![] },
+        cart: kalatori_client::types::InvoiceCart {
+            items: vec![],
+        },
         valid_till: Utc::now() + chrono::Duration::hours(24),
         created_at: Utc::now(),
         updated_at: Utc::now(),

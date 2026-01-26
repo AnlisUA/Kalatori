@@ -12,20 +12,45 @@ use std::sync::Arc;
 use futures::stream;
 use rust_decimal::Decimal;
 use tokio::sync::RwLock;
-use tracing::{info, instrument};
+use tracing::{
+    info,
+    instrument,
+};
 
-use crate::types::{ChainType, GeneralTransactionId, TransferInfo};
+use crate::types::{
+    ChainType,
+    GeneralTransactionId,
+    TransferInfo,
+};
 
-pub use asset_hub::{AssetHubChainConfig, AssetHubClient};
-pub use errors::{ClientError, QueryError, SubscriptionError, TransactionError};
-pub use keyring::{GenerateAddressData, Keyring, KeyringClient, KeyringError, SignPermitRequestData};
-pub use polygon::{PolygonChainConfig, PolygonClient};
+pub use asset_hub::{
+    AssetHubChainConfig,
+    AssetHubClient,
+};
+pub use errors::{
+    ClientError,
+    QueryError,
+    SubscriptionError,
+    TransactionError,
+};
+pub use keyring::{
+    GenerateAddressData,
+    Keyring,
+    KeyringClient,
+    KeyringError,
+    SignPermitRequestData,
+};
+pub use polygon::{
+    PolygonChainConfig,
+    PolygonClient,
+};
 
 pub type TransfersStream<T> =
     Pin<Box<dyn stream::Stream<Item = Result<Vec<ChainTransfer<T>>, SubscriptionError>> + Send>>;
 
 pub trait SignedTransactionUtils {
-    /// Encode transaction to raw string. It might be hex-encoded bytes or json value depending on implementation
+    /// Encode transaction to raw string. It might be hex-encoded bytes or json
+    /// value depending on implementation
     fn to_raw_string(&self) -> String;
 
     /// Compute hash of the transaction

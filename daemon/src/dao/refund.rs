@@ -2,10 +2,17 @@ use sqlx::types::Text;
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::types::{Refund, RefundRow, RefundStatus};
+use crate::types::{
+    Refund,
+    RefundRow,
+    RefundStatus,
+};
 
 use super::DaoExecutor;
-use super::error_parsing::{StatusTransitionError, StatusTriggerError};
+use super::error_parsing::{
+    StatusTransitionError,
+    StatusTriggerError,
+};
 
 // ============================================================================
 // Refund Domain Errors
@@ -194,7 +201,9 @@ pub trait DaoRefundMethods: DaoExecutor + 'static {
                 }
 
                 match e {
-                    sqlx::Error::RowNotFound => DaoRefundError::NotFound { refund_id },
+                    sqlx::Error::RowNotFound => DaoRefundError::NotFound {
+                        refund_id,
+                    },
                     _ => DaoRefundError::DatabaseError,
                 }
             })
@@ -243,7 +252,9 @@ pub trait DaoRefundMethods: DaoExecutor + 'static {
                 }
 
                 match e {
-                    sqlx::Error::RowNotFound => DaoRefundError::NotFound { refund_id },
+                    sqlx::Error::RowNotFound => DaoRefundError::NotFound {
+                        refund_id,
+                    },
                     _ => DaoRefundError::DatabaseError,
                 }
             })
@@ -258,7 +269,10 @@ mod tests {
 
     use crate::dao::create_test_dao;
     use crate::dao::invoice::DaoInvoiceMethods;
-    use crate::types::{default_create_invoice_data, default_refund};
+    use crate::types::{
+        default_create_invoice_data,
+        default_refund,
+    };
 
     use super::*;
 
