@@ -55,17 +55,21 @@ ENV SQLITE3_INCLUDE_DIR=/usr/local/include
 
 WORKDIR /usr/src/kalatori
 
-# Copy dependency files for caching
-COPY Cargo.toml Cargo.lock build.rs ./
+# Copy actual source code
+COPY . .
 
 # Create dummy source to cache dependencies
-RUN mkdir -p src && echo "fn main() {}" > src/main.rs
+RUN echo "fn main() {}" > daemon/src/main.rs
+RUN echo "fn lib() {}" > client/src/lib.rs
 
 # Build dependencies only (will fail on build.rs but that's ok for now)
-RUN cargo build --release || true
+RUN cargo build --release --all-features
 
-# Remove dummy source
-RUN rm -rf src
+# Copy real main functions back
+COPY daemon/src/main.rs daemon/src/main.rs
+COPY client/src/lib.rs client/src/lib.rs
+
+# RUN cargo build --release -p kalatori-client --all-features
 
 # Install subxt-cli
 COPY Makefile ./
@@ -74,11 +78,8 @@ RUN make install-subxt-cli
 # Download metadata
 RUN make download-node-metadata-ci
 
-# Copy actual source code
-COPY . .
-
 # Build the release binary
-RUN CARGO_PROFILE_RELEASE_STRIP=false cargo build --release
+RUN CARGO_PROFILE_RELEASE_STRIP=false cargo build --release -p kalatori
 
 
 # Runtime stage - use the same debian:bookworm-slim to ensure glibc compatibility
@@ -99,6 +100,6 @@ RUN cd /usr/local/lib && ln -s libsqlite3.so.0 libsqlite3.so && ldconfig
 COPY --from=builder /usr/src/kalatori/target/release/kalatori /app/kalatori
 
 # Expose the default port
-EXPOSE 16726
+EXPOSE 8080
 
 CMD ["/app/kalatori"]

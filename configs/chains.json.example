@@ -8,7 +8,7 @@
     },
     "Polygon": {
       "endpoints": [
-        "ws://localhost:8545"
+        "wss://polygon-bor-rpc.publicnode.com"
       ],
       "allow_insecure_endpoints": true
     }
