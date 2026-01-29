@@ -17,6 +17,24 @@ Download the latest Docker container or x86-64 release from the [GitHub releases
 
 ### Compile from Source
 
+#### Database Setup
+
+To compile the daemon successfully and run it, you need to connect to SQLite on your local machine. There is a setup example for MacOS.
+
+1. Install SQLite via `brew`:
+```sh
+brew install sqlite3
+```
+
+2. Add the following environmental variables to your `~/.zshrc` file:
+```sh
+export PATH="/opt/homebrew/opt/sqlite/bin:$PATH"
+export SQLITE3_LIB_DIR=/opt/homebrew/opt/sqlite/lib
+export SQLITE3_INCLUDE_DIR=/opt/homebrew/opt/sqlite/include
+```
+
+#### Compilation
+
 To compile the daemon, ensure you have the latest stable version of the Rust compiler installed. In order to compile
 the daemon it also required to have blockchain node's metadata which can be fetched using `subxt-cli`. Step by step
 workflow to compile the project will be following:
@@ -73,19 +91,15 @@ export MY_SUPER_KALATORI_RECIPIENT=your_recipient_here
 
 For development and testing purposes Kalatori can be configured to connect to `chopsticks` instead of real chain.
 In order to run Kalatori with `chopsticks` connection follow next steps:
-1. Create docker network, required for `chopsticks`:
-```sh
-make create-network
-```
-2. Copy configs from example files:
+1. Copy configs from example files:
 ```sh
 make copy-configs
 ```
-3. Run `chopsticks` in docker and build and run Kalatori daemon locally:
+2. Run `chopsticks` in docker and build and run Kalatori daemon locally:
 ```sh
 make run
 ```
-4. When you finished, clean up `chopsticks` containers:
+3. When you finished, clean up `chopsticks` containers:
 ```sh
 make stop-chopsticks
 ```
