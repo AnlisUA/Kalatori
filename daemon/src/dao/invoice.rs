@@ -410,7 +410,7 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
                     return DaoInvoiceError::UpdateNotAllowed {
                         invoice_id: data.invoice_id,
                         current_status,
-                    }
+                    };
                 }
 
                 match e {

@@ -18,7 +18,7 @@ pub struct ApiError {
     pub category: String,
     pub code: String,
     pub message: String,
-    // pub details: Option<Value>,
+    pub details: Option<serde_json::Value>,
 }
 
 impl Display for ApiError {
@@ -58,6 +58,10 @@ impl<T> From<ApiResultStructured<T>> for ApiResult<T> {
     }
 }
 
+fn default_include_transactions() -> bool {
+    false
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CreateInvoiceParams {
     pub order_id: String,
@@ -66,17 +70,15 @@ pub struct CreateInvoiceParams {
     #[serde(skip_serializing_if = "InvoiceCart::is_empty")]
     pub cart: InvoiceCart,
     pub redirect_url: String,
-}
-
-fn default_include_transaction() -> bool {
-    false
+    #[serde(default = "default_include_transactions")]
+    pub include_transactions: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GetInvoiceParams {
     pub invoice_id: Uuid,
-    #[serde(default = "default_include_transaction")]
-    pub include_transaction: bool,
+    #[serde(default = "default_include_transactions")]
+    pub include_transactions: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -86,6 +88,8 @@ pub struct UpdateInvoiceParams {
     #[serde(default = "InvoiceCart::empty")]
     #[serde(skip_serializing_if = "InvoiceCart::is_empty")]
     pub cart: InvoiceCart,
+    #[serde(default = "default_include_transactions")]
+    pub include_transactions: bool,
 }
 
 pub type CancelInvoiceParams = GetInvoiceParams;
@@ -103,6 +107,7 @@ pub enum InvoiceEventType {
     Created,
     Updated,
     AdminCanceled,
+    CustomerCanceled,
     Paid,
     PartiallyPaid,
     Expired,

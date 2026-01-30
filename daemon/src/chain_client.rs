@@ -1,6 +1,7 @@
 mod asset_hub;
 mod errors;
 mod keyring;
+mod polygon;
 
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -33,17 +34,24 @@ pub use errors::{
     TransactionError,
 };
 pub use keyring::{
+    GenerateAddressData,
     Keyring,
     KeyringClient,
     KeyringError,
+    SignPermitRequestData,
+};
+pub use polygon::{
+    PolygonChainConfig,
+    PolygonClient,
 };
 
 pub type TransfersStream<T> =
     Pin<Box<dyn stream::Stream<Item = Result<Vec<ChainTransfer<T>>, SubscriptionError>> + Send>>;
 
 pub trait SignedTransactionUtils {
-    /// Encode transaction bytes to hex string
-    fn to_hex_string(&self) -> String;
+    /// Encode transaction to raw string. It might be hex-encoded bytes or json
+    /// value depending on implementation
+    fn to_raw_string(&self) -> String;
 
     /// Compute hash of the transaction
     fn hash(&self) -> String;
@@ -196,8 +204,8 @@ pub struct SignedTransaction<T: ChainConfig> {
 }
 
 impl<T: ChainConfig> SignedTransactionUtils for SignedTransaction<T> {
-    fn to_hex_string(&self) -> String {
-        self.transaction.to_hex_string()
+    fn to_raw_string(&self) -> String {
+        self.transaction.to_raw_string()
     }
 
     fn hash(&self) -> String {
@@ -233,7 +241,6 @@ pub trait BlockChainClient<T: ChainConfig>: Sync {
         asset_id: &T::AssetId,
     ) -> Result<AssetInfo<T>, QueryError>;
 
-    #[cfg_attr(not(test), expect(dead_code))]
     async fn fetch_asset_balance(
         &self,
         asset_id: &T::AssetId,
@@ -245,7 +252,6 @@ pub trait BlockChainClient<T: ChainConfig>: Sync {
         asset_ids: &[T::AssetId],
     ) -> Result<TransfersStream<T>, SubscriptionError>;
 
-    #[expect(dead_code)]
     /// Build transaction to transfer exact amount to recipient
     async fn build_transfer(
         &self,

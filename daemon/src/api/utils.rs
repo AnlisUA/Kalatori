@@ -76,11 +76,13 @@ impl IntoResponse for AppExtractorError {
                 category: "INVALID_REQUEST".to_string(),
                 code: "INVALID_JSON".to_string(),
                 message: format!("JSON extraction error: {}", rejection),
+                details: None,
             },
             AppExtractorError::Query(rejection) => ApiError {
                 category: "INVALID_REQUEST".to_string(),
                 code: "INVALID_QUERY_PARAMS".to_string(),
                 message: format!("Query extraction error: {}", rejection),
+                details: None,
             },
         };
 
@@ -112,6 +114,7 @@ pub(super) async fn fallback_handler() -> impl IntoResponse {
                 category: "INVALID_REQUEST".to_string(),
                 code: "ROUTE_NOT_FOUND".to_string(),
                 message: "The requested route was not found.".to_string(),
+                details: None,
             },
         }),
     )
@@ -125,6 +128,7 @@ pub(super) async fn method_not_allowed_fallback_handler() -> impl IntoResponse {
                 category: "INVALID_REQUEST".to_string(),
                 code: "METHOD_NOT_ALLOWED".to_string(),
                 message: "Only GET and POST methods are allowed.".to_string(),
+                details: None,
             },
         }),
     )

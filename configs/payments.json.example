@@ -1,6 +1,7 @@
 {
   "recipient": {
-    "PolkadotAssetHub": "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
+    "PolkadotAssetHub": "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
+    "Polygon": "0x0E3Ca7fD040144900AdaA5f9B8917f3933A4F5e9"
   },
   "payment_url_base": "http://localhost:8080"
 }

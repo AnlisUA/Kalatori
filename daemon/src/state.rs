@@ -16,7 +16,10 @@ use kalatori_client::types::{
 
 use crate::chain::InvoiceRegistry;
 use crate::chain::utils::to_base58_string;
-use crate::chain_client::KeyringClient;
+use crate::chain_client::{
+    GenerateAddressData,
+    KeyringClient,
+};
 use crate::configs::PaymentsConfig;
 use crate::dao::{
     DAO,
@@ -128,6 +131,29 @@ impl<D: DaoInterface> AppState<D> {
                     })?;
 
                 to_base58_string(account_id.0, 0)
+            },
+            ChainType::Polygon => {
+                let derivation_params = vec![id.to_string()];
+
+                let address = self
+                    .keyring
+                    .generate_polygon_address(GenerateAddressData::from(
+                        derivation_params,
+                    ))
+                    .await
+                    .map_err(|e| {
+                        tracing::error!(
+                            error.category = "create_invoice",
+                            error.operation = "generate_polygon_address",
+                            error.source = ?e,
+                            "Failed to generate Polygon payment address for new invoice",
+                        );
+                        // TODO: replace error
+                        DaoInvoiceError::DatabaseError
+                    })?;
+
+                // Return checksummed address
+                address.to_checksum(None)
             },
         };
 
@@ -494,6 +520,7 @@ mod tests {
             amount: Decimal::new(1000, 2), // 10.00
             cart: InvoiceCart::empty(),
             redirect_url: "https://redirect.url".to_string(),
+            include_transactions: false,
         };
 
         app_state
@@ -590,6 +617,7 @@ mod tests {
             amount: Decimal::new(5000, 2), // 50.00
             cart: InvoiceCart::empty(),
             redirect_url: "https://redirect.url".to_string(),
+            include_transactions: false,
         };
 
         app_state
@@ -628,6 +656,7 @@ mod tests {
             amount: Decimal::new(7500, 2), // 75.00
             cart: InvoiceCart::empty(),
             redirect_url: "https://redirect.url".to_string(),
+            include_transactions: false,
         };
 
         let expected_create_invoice_data = {

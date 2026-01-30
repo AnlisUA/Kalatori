@@ -152,6 +152,25 @@ impl From<Transaction> for PublicTransaction {
                     .position_in_block
                     .unwrap_or_default(),
             ),
+            ChainType::Polygon => {
+                // Use PolygonScan for Polygon transactions
+                // If we have tx_hash, use that; otherwise use block/tx_index
+                if let Some(ref tx_hash) = value.transaction_id.tx_hash {
+                    format!("https://polygonscan.com/tx/{}", tx_hash)
+                } else {
+                    format!(
+                        "https://polygonscan.com/block/{}/txs#tx-{}",
+                        value
+                            .transaction_id
+                            .block_number
+                            .unwrap_or_default(),
+                        value
+                            .transaction_id
+                            .position_in_block
+                            .unwrap_or_default(),
+                    )
+                }
+            },
         };
 
         PublicTransaction {

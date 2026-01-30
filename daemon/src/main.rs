@@ -30,6 +30,7 @@ use chain_client::{
     AssetHubClient,
     BlockChainClient,
     Keyring,
+    PolygonClient,
 };
 use configs::{
     ChainsConfig,
@@ -175,6 +176,9 @@ fn validate_and_extend_configs(
 
 #[expect(clippy::too_many_lines)]
 async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(), Error> {
+    rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .unwrap();
     // Planned start order
     // 1. Load configs
     // 2. Init database
@@ -224,12 +228,13 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
         invoice_registry.used_asset_ids().await,
     )?;
 
+    // Initialize Asset Hub client
     let asset_hub_chain_config = chains_config
         .chains
         .get(&ChainType::PolkadotAssetHub)
         .unwrap();
 
-    let assets = chains_config
+    let asset_hub_assets = chains_config
         .chains
         .get(&ChainType::PolkadotAssetHub)
         .unwrap()
@@ -238,17 +243,59 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
 
     let asset_hub_client = AssetHubClient::new(asset_hub_chain_config)
         .await
-        .map_err(|_| Error::Fatal)?;
+        .map_err(|_| {
+            tracing::warn!("Failed to initialize Asset Hub client, continuing without it");
+            Error::Fatal
+        })?;
 
     asset_hub_client
-        .init_asset_info(assets)
+        .init_asset_info(asset_hub_assets)
         .await
-        .map_err(|_| Error::Fatal)?;
+        .map_err(|_| {
+            tracing::warn!("Failed to initialize Asset Hub asset info");
+            Error::Fatal
+        })?;
 
-    let asset_names_map = asset_hub_client
+    // Initialize Polygon client
+    let polygon_chain_config = chains_config
+        .chains
+        .get(&ChainType::Polygon)
+        .unwrap();
+
+    let polygon_assets = chains_config
+        .chains
+        .get(&ChainType::Polygon)
+        .unwrap()
+        .assets
+        .as_ref();
+
+    let polygon_client = PolygonClient::new(polygon_chain_config)
+        .await
+        .map_err(|e| {
+            tracing::warn!(error = ?e, "Failed to initialize Polygon client, continuing without it");
+            Error::Fatal
+        })?;
+
+    polygon_client
+        .init_asset_info(polygon_assets)
+        .await
+        .map_err(|e| {
+            tracing::warn!(error = ?e, "Failed to initialize Polygon asset info");
+            Error::Fatal
+        })?;
+
+    // Collect asset names from both chains
+    let mut asset_names_map = asset_hub_client
         .asset_info_store()
         .asset_names_map()
         .await;
+
+    asset_names_map.extend(
+        polygon_client
+            .asset_info_store()
+            .asset_names_map()
+            .await,
+    );
 
     let keyring = Keyring::new(secrets_config.seed);
     // Please don't keep keyring_client in this scope, it must be moved in order to
@@ -264,20 +311,36 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
     let expiration_detector_handle =
         expiration_detector.ignite(shutdown_notification.token.clone());
 
-    let transfers_tracker = TransfersTracker::new(
+    // Start Asset Hub transfers tracker
+    let asset_hub_tracker = TransfersTracker::new(
         asset_hub_client.clone(),
         dao.clone(),
         invoice_registry.clone(),
         payments_config.clone(),
     );
 
-    let transfers_tracker_handle = transfers_tracker.ignite(
-        assets,
+    let asset_hub_tracker_handle = asset_hub_tracker.ignite(
+        asset_hub_assets,
         shutdown_notification.token.clone(),
     );
 
+    // Start Polygon transfers tracker
+    let polygon_tracker = TransfersTracker::new(
+        polygon_client.clone(),
+        dao.clone(),
+        invoice_registry.clone(),
+        payments_config.clone(),
+    );
+
+    let polygon_tracker_handle = polygon_tracker.ignite(
+        polygon_assets,
+        shutdown_notification.token.clone(),
+    );
+
+    // Single executor handles both chains
     let transfer_executor = TransfersExecutor::new(
         asset_hub_client,
+        polygon_client,
         dao.clone(),
         keyring_client.clone(),
     );
@@ -329,7 +392,8 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
                 _keyring_result,
                 _transfer_executor_result,
                 _expiration_detector_result,
-                _transfers_tracker_result,
+                _asset_hub_tracker_result,
+                _polygon_tracker_result,
                 _webhook_sender_result,
                 _api_server_result,
             ) = tokio::join!(
@@ -337,7 +401,8 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
                 keyring_handle,
                 transfer_executor_handle,
                 expiration_detector_handle,
-                transfers_tracker_handle,
+                asset_hub_tracker_handle,
+                polygon_tracker_handle,
                 webhook_sender_handle,
                 api_handle,
             );

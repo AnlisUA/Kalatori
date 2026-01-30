@@ -63,6 +63,19 @@ sqlx = { version = "0.8", default-features = false, features = [
 # On update subxt version, plase also update subxt-cli to corresponding version in Makefile
 subxt = "0.44"
 subxt-signer = "0.44"
+
+# Polygon chain
+alloy = { version = "1.5", features = [
+    "provider-ws",
+    "rpc-types-eth",
+    "contract",
+    "sol-types",
+    "signers",
+    "signer-local",
+    "network",
+    "consensus",
+    "signer-mnemonic",
+] }
 # Subxt-signer uses bip39 and moreover re-exports it, but for some reason it doesn't have zeroize feature enabled
 bip39 = { version = "2", features = ["zeroize"] }
 # This dependency is required by subxt in order to compile the runtime types
@@ -78,6 +91,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "time", "json"
 config = "0.15"
 # Please keep reqwest version in sync with the one in kalatori-client
 reqwest = { version = "0.13", features = ["json"] }
+# Need to include it directly cause different servers/clients use different crypto providers
+# which is not allowed by rustls and we need to manually specify which one to use as default
+# See details here: https://docs.rs/rustls/latest/rustls/crypto/struct.CryptoProvider.html#using-the-per-process-default-cryptoprovider
+rustls = "0.23"
 zeroize = "1"
 # Don't forget to update me in `[build-dependencies]`!
 shadow-rs = { version = "0.36", default-features = false }

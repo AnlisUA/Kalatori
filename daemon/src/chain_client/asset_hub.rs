@@ -103,7 +103,7 @@ pub type AssetHubSignedTransaction =
 pub type AssetHubAccountId = subxt::utils::AccountId32;
 
 impl SignedTransactionUtils for AssetHubSignedTransaction {
-    fn to_hex_string(&self) -> String {
+    fn to_raw_string(&self) -> String {
         const_hex::encode_prefixed(self.encoded())
     }
 

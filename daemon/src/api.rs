@@ -70,6 +70,7 @@ pub trait ApiErrorExt: std::error::Error {
             category: self.category().to_string(),
             code: self.code().to_string(),
             message: self.message().to_string(),
+            details: None,
         }
     }
 }

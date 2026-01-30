@@ -55,7 +55,7 @@ async fn get_invoice(
     let mut result = state.invoice_to_public_invoice(invoice);
 
     // TODO: filter it on database query level
-    if params.include_transaction && result.status == InvoiceStatus::Waiting {
+    if params.include_transactions && result.status == InvoiceStatus::Waiting {
         let transactions = state
             .get_invoice_transactions(params.invoice_id)
             .await
@@ -94,7 +94,7 @@ async fn cancel_invoice(
     let mut result = state.invoice_to_public_invoice(invoice);
 
     // TODO: filter it on database query level
-    if params.include_transaction && result.status == InvoiceStatus::Waiting {
+    if params.include_transactions && result.status == InvoiceStatus::Waiting {
         let transactions = state
             .get_invoice_transactions(params.invoice_id)
             .await
