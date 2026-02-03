@@ -173,8 +173,8 @@ impl DAO {
             (pool_opts, conn_opts)
         } else {
             if !std::fs::exists(&config.dir)? {
-                std::fs::create_dir(&config.dir)?;
-                tracing::info!("Created {} directory", config.dir)
+                std::fs::create_dir_all(&config.dir)?;
+                tracing::warn!("Created {} directory", config.dir)
             }
             let pool_opts = sqlx::sqlite::SqlitePoolOptions::new();
             let conn_opts = sqlx::sqlite::SqliteConnectOptions::new()
