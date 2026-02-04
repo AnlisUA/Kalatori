@@ -19,14 +19,6 @@ pub use executor::{SwapsExecutor, SwapsExecutorError};
 const SWAPS_EXECUTOR_API_POLLING_INTERVAL_MILLIS: u64 = 3000;
 const SWAPS_EXECUTOR_DATABASE_POLLING_INTERVAL_MILLIS: u64 = 100;
 
-
-// TODO: move to config
-struct OneInchConfig {
-    api_key: String,
-    api_url: String,
-}
-
-// type MonitoredSwapsInnerMap = HashMap<Uuid, HashMap<B256, OneInchSwap>>;
 type MonitoredSwapsInnerMap = HashMap<Uuid, OneInchSwap>;
 
 #[derive(Debug, Clone)]

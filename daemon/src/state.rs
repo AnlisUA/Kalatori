@@ -30,7 +30,21 @@ use crate::dao::{
 };
 use crate::swaps::{SwapsExecutor, SwapsExecutorError};
 use crate::types::{
-    ChainType, CreateInvoiceData, CreateOneInchSwapData, CreateOneInchSwapParams, InvoiceEventType, InvoiceWithReceivedAmount, KalatoriEventExt, OneInchPreparedSwap, OneInchSupportedChain, OneInchSwap, SubmitOneInchSwapParams, Transaction, UpdateInvoiceData
+    ChainType,
+    CreateInvoiceData,
+    CreateOneInchSwapData,
+    CreateOneInchSwapParams,
+    InvoiceEventType,
+    InvoiceWithReceivedAmount,
+    KalatoriEventExt,
+    OneInchPreparedSwap,
+    OneInchSupportedChain,
+    OneInchSwap,
+    SubmitOneInchSwapParams,
+    Transaction,
+    UpdateInvoiceData,
+    GetPricesParams,
+    GetPricesResponse,
 };
 
 pub struct AppState<D: DaoInterface = DAO> {
@@ -385,6 +399,16 @@ impl<D: DaoInterface> AppState<D> {
                 params.signature,
             )
             .await
+    }
+
+    pub async fn get_prices(
+        &self,
+        params: GetPricesParams,
+    ) -> Result<GetPricesResponse, SwapsExecutorError> {
+        // TODO: handle error
+        let chain = OneInchSupportedChain::from_chain_id(params.chain).unwrap();
+
+        self.swaps_executor.get_prices(chain, &params.contracts_addresses).await
     }
 }
 

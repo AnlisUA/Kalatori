@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use alloy::primitives::{Address, B256, address};
 use serde::{Serialize, Deserialize};
 use rust_decimal::Decimal;
@@ -363,4 +365,17 @@ pub struct SubmitOneInchSwapParams {
     pub invoice_id: Uuid,
     pub order_hash: B256,
     pub signature: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetPricesParams {
+    pub chain: u64,
+    pub contracts_addresses: Vec<Address>,
+}
+
+// 1Inch client has almost identical struct. Use separate type to keep API consistency.
+// 1Inch has json in camelCase while our API use snake_case
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetPricesResponse {
+    pub usd_prices: HashMap<Address, Decimal>,
 }

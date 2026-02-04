@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use alloy::primitives::B256;
+use alloy::primitives::{B256, Address};
 use chrono::{TimeDelta, Utc};
 use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
@@ -17,6 +17,8 @@ use crate::types::{
     CreateOneInchSwapData,
     OneInchPreparedSwap,
     OneInchSwap,
+    OneInchSupportedChain,
+    GetPricesResponse,
 };
 
 use super::one_inch_client::OneInchError;
@@ -121,6 +123,18 @@ impl<D: DaoInterface + 'static> SwapsExecutor<D> {
             one_inch_client,
             orders_cache: OrdersCache::new(),
         }
+    }
+
+    pub async fn get_prices(
+        &self,
+        chain: OneInchSupportedChain,
+        asset_ids: &[Address],
+    ) -> Result<GetPricesResponse, SwapsExecutorError> {
+        let result = self.one_inch_client
+            .get_prices(chain.chain_id(), asset_ids)
+            .await?;
+
+        Ok(result.into())
     }
 
     pub async fn build_order(

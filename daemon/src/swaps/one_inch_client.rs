@@ -1,6 +1,9 @@
 mod hash_lock;
 mod utils;
 
+use std::collections::HashMap;
+use std::time::Duration;
+
 use alloy::sol;
 use alloy::primitives::{U256, Address, keccak256, address, B256};
 use alloy::sol_types::{eip712_domain, SolStruct};
@@ -10,12 +13,17 @@ use serde::de::DeserializeOwned;
 use rand::prelude::*;
 use uuid::Uuid;
 use secrecy::{SecretString, ExposeSecret};
+use rust_decimal::Decimal;
 
 use crate::types::CreateOneInchSwapData;
 
 use utils::{generate_secrets, create_hashlock_from_secrets, build_extension, get_secret_hashes, MakerTraits};
 
-const ONE_INCH_BASE_URL: &'static str = "https://api.1inch.dev/fusion-plus";
+const ONE_INCH_BASE_URL: &'static str = "https://api.1inch.dev";
+
+const DEFAULT_PRICE_ESTIMATES_CURRENCY: &'static str = "USD";
+
+const API_TIMEOUT_DURATION: Duration = Duration::from_secs(30);
 
 // TRUE_ERC20 - placeholder token address used for cross-chain orders
 // This represents "any ERC20" on the taker side for Fusion+ orders
@@ -343,7 +351,7 @@ impl std::fmt::Display for OrderStatus {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EscrowEvent {
     #[serde(default)]
@@ -356,7 +364,7 @@ pub struct EscrowEvent {
     pub action: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FillStatusInfo {
     #[serde(default)]
@@ -371,7 +379,7 @@ pub struct FillStatusInfo {
     pub status: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderStatusResponse {
     pub status: OrderStatus,
@@ -399,7 +407,7 @@ impl OrderStatusResponse {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReadyFill {
     pub idx: u64,
@@ -407,36 +415,66 @@ pub struct ReadyFill {
     pub dst_escrow_deploy_tx_hash: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReadyToAcceptSecretFills {
     pub fills: Vec<ReadyFill>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GetReadyToAcceptSecretFillsRequest {
     order_hash: B256,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SecretSubmitRequest {
     order_hash: B256,
     secret: B256,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GetPricesRequest<'a> {
+    tokens: &'a [Address],
+    currency: &'static str,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetPricesResponse {
+    #[serde(flatten)]
+    pub usd_prices: HashMap<Address, Decimal>,
+}
+
+// Use separate type to keep API consistency. 1Inch has json in camelCase while our API use snake_case
+impl From<GetPricesResponse> for crate::types::GetPricesResponse {
+    fn from(value: GetPricesResponse) -> Self {
+        Self {
+            usd_prices: value.usd_prices,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OneInchApiError {
-    status_code: u16,
+    pub status_code: u16,
     // 1inch uses either `description` and `message` depending on API endpoint
     #[serde(alias = "message")]
-    description: String,
+    pub description: String,
     #[serde(default)]
-    error: Option<String>,
+    pub error: Option<String>,
     #[serde(default)]
-    meta: Option<serde_json::Value>,
+    pub meta: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum OneInchApiResponse<T> {
+    Ok(T),
+    Err(OneInchApiError)
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -445,6 +483,8 @@ pub enum OneInchError {
     ReqwestError(#[from] reqwest::Error),
     #[error("JSON error")]
     JsonError(#[from] serde_json::Error),
+    #[error("API Error")]
+    ApiError(OneInchApiError),
 }
 
 #[derive(Debug, Clone)]
@@ -461,7 +501,8 @@ impl OneInchClient {
         }
     }
 
-    async fn send_request<T: Serialize, R: DeserializeOwned>(
+    #[tracing::instrument(skip_all)]
+    async fn send_request<T: Serialize + std::fmt::Debug, R: DeserializeOwned>(
         &self,
         path: impl AsRef<str>,
         method: reqwest::Method,
@@ -470,7 +511,8 @@ impl OneInchClient {
         let url = format!("{}{}", ONE_INCH_BASE_URL, path.as_ref());
 
         let request = self.client
-            .request(method.clone(), url)
+            .request(method.clone(), &url)
+            .timeout(API_TIMEOUT_DURATION)
             .bearer_auth(&self.api_key.expose_secret());
 
         let request = match method {
@@ -483,9 +525,21 @@ impl OneInchClient {
             _ => unreachable!(),
         };
 
-        let response_text = request
+        tracing::trace!(
+            request.url = url,
+            request.method = ?method,
+            request.params = ?params,
+            "Prepared request to 1Inch API"
+        );
+
+        let response = request
             .send()
-            .await?
+            .await?;
+
+        let status = response.status();
+
+        let response_text =
+            response
             .text()
             .await
             .map(|text| if text.is_empty() {
@@ -496,15 +550,35 @@ impl OneInchClient {
                 text
             })?;
 
-        println!("Response text: {:?}", response_text);
+        tracing::trace!(
+            response.status = ?status,
+            response.text = response_text,
+            "Got response from 1Inch API"
+        );
 
         let result = serde_json::from_str(&response_text)?;
-        Ok(result)
+
+        match result {
+            OneInchApiResponse::Ok(resp) => Ok(resp),
+            OneInchApiResponse::Err(e) => Err(OneInchError::ApiError(e)),
+        }
+    }
+
+    #[tracing::instrument]
+    pub async fn get_prices(&self, chain: u64, tokens: &[Address]) -> Result<GetPricesResponse, OneInchError> {
+        self.send_request(
+            format!("/price/v1.1/{}", chain),
+            reqwest::Method::POST,
+            GetPricesRequest {
+                tokens,
+                currency: DEFAULT_PRICE_ESTIMATES_CURRENCY,
+            }
+        ).await
     }
 
     pub async fn get_quote(&self, params: GetQuoteParams) -> Result<QuoteResponse, OneInchError> {
         self.send_request(
-            "/quoter/v1.1/quote/receive",
+            "/fusion-plus/quoter/v1.1/quote/receive",
             reqwest::Method::GET,
             params,
         ).await
@@ -512,7 +586,7 @@ impl OneInchClient {
 
     pub async fn submit_order(&self, params: OrderSubmitRequest) -> Result<(), OneInchError> {
         self.send_request(
-            "/relayer/v1.1/submit",
+            "/fusion-plus/relayer/v1.1/submit",
             reqwest::Method::POST,
             params,
         ).await
@@ -520,7 +594,7 @@ impl OneInchClient {
 
     pub async fn get_orders_by_hashes(&self, order_hashes: &[B256]) -> Result<Vec<OrderStatusResponse>, OneInchError> {
         self.send_request(
-            "/orders/v1.1/order/status",
+            "/fusion-plus/orders/v1.1/order/status",
             reqwest::Method::POST,
             GetOrdersByHashesRequest {
                 order_hashes,
@@ -529,7 +603,7 @@ impl OneInchClient {
     }
 
     pub async fn get_ready_to_accept_secret_fills(&self, order_hash: B256) -> Result<ReadyToAcceptSecretFills, OneInchError> {
-        let path = format!("/orders/v1.1/order/ready-to-accept-secret-fills/{}", order_hash);
+        let path = format!("/fusion-plus/orders/v1.1/order/ready-to-accept-secret-fills/{}", order_hash);
 
         self.send_request(
             path,
@@ -542,7 +616,7 @@ impl OneInchClient {
 
     pub async fn submit_secret(&self, order_hash: B256, secret: B256) -> Result<(), OneInchError> {
         self.send_request(
-            "/relayer/v1.1/submit/secret",
+            "/fusion-plus/relayer/v1.1/submit/secret",
             reqwest::Method::POST,
             SecretSubmitRequest {
                 order_hash,
@@ -614,5 +688,28 @@ impl OneInchClient {
         };
 
         Ok(data)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloy::primitives::address;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_get_prices() {
+        let client = OneInchClient::new(
+            SecretString::from(std::env::var("ONE_INCH_API_KEY").unwrap()),
+        );
+
+        let resp = client
+            .get_prices(
+                137,
+                &[address!("0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"), address!("0xc2132D05D31c914a87C6611C10748AEb04B58e8F")],
+            )
+            .await
+            .unwrap();
+        println!("Resp: {:#?}", resp);
     }
 }

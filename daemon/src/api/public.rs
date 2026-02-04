@@ -13,12 +13,13 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::swaps::SwapsExecutorError;
-use crate::types::{CreateOneInchSwapParams, PublicOneInchPreparedSwap, PublicOneInchSwap, SubmitOneInchSwapParams};
+use crate::types::{CreateOneInchSwapParams, GetPricesParams, GetPricesResponse, PublicOneInchPreparedSwap, PublicOneInchSwap, SubmitOneInchSwapParams};
 
 use super::ApiState;
 use super::utils::{
     ApiResult,
     AppJson,
+    AppQuery,
 };
 
 #[derive(Debug, PartialEq, Eq, Deserialize)]
@@ -66,6 +67,7 @@ async fn invoice(
     }
 }
 
+#[tracing::instrument(skip_all)]
 async fn create_swap(
     ExtractState(state): ExtractState<ApiState>,
     AppJson(params): AppJson<CreateOneInchSwapParams>,
@@ -78,6 +80,7 @@ async fn create_swap(
     Ok(swap.into())
 }
 
+#[tracing::instrument(skip_all)]
 async fn submit_swap(
     ExtractState(state): ExtractState<ApiState>,
     AppJson(params): AppJson<SubmitOneInchSwapParams>,
@@ -90,10 +93,23 @@ async fn submit_swap(
     Ok(swap.into())
 }
 
+#[tracing::instrument(skip_all)]
+async fn get_prices(
+    ExtractState(state): ExtractState<ApiState>,
+    AppQuery(params): AppQuery<GetPricesParams>,
+) -> ApiResult<GetPricesResponse, SwapsExecutorError> {
+    let prices = state
+        .get_prices(params)
+        .await?;
+
+    Ok(prices.into())
+}
+
 pub fn routes() -> axum::Router<ApiState> {
     axum::Router::new()
         .route("/", axum::routing::get(index))
         .route("/invoice", axum::routing::get(invoice))
         .route("/swap/create", axum::routing::post(create_swap))
         .route("/swap/submit", axum::routing::post(submit_swap))
+        .route("/swap/get-prices", axum::routing::get(get_prices))
 }
