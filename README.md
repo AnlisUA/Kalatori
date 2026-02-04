@@ -19,14 +19,18 @@ Download the latest Docker container or x86-64 release from the [GitHub releases
 
 #### Database Setup
 
-To compile the daemon successfully and run it, you need to connect to SQLite on your local machine. There is a setup example for MacOS.
+The daemon relies on SQL syntax that is supported starting from SQLite `3.47.0`. At the moment, `sqlx` allows using the bundled (built-in) SQLite with `sqlite` feature enabled, but it enforces an older SQLite dependency. Once selecting the SQLite version is supported by `sqlx` (expected around `sqlx 0.9`), the bundled SQLite will be used, and a local SQLite installation will no longer be required.
+
+If you plan to run the daemon on Linux, it is recommended to build SQLite from source, as the version provided by the package manager may be outdated. Build instructions can be found [here](https://sqlite.org/src/doc/trunk/doc/compile-for-unix.md), the latest version can be downloaded from [this page](https://www.sqlite.org/download.html).
+
+There is a setup example for MacOS, which may be usefull for tests and local development.
 
 1. Install SQLite via `brew`:
 ```sh
 brew install sqlite3
 ```
 
-2. Add the following environmental variables to your `~/.zshrc` file:
+2. Export the following environmental variables:
 ```sh
 export PATH="/opt/homebrew/opt/sqlite/bin:$PATH"
 export SQLITE3_LIB_DIR=/opt/homebrew/opt/sqlite/lib
