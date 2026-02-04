@@ -260,3 +260,8 @@ pub struct ShopConfig {
     #[serde(default = "default_signature_max_age_secs")]
     pub signature_max_age_secs: u64,
 }
+
+#[derive(Deserialize, Clone)]
+pub struct OneInchConfig {
+    pub api_key: SecretString,
+}

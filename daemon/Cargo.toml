@@ -102,6 +102,7 @@ thiserror = "2"
 trait-variant = "0.1"
 hmac = "0.12"
 sha2 = "0.10"
+rand = "0.9"
 
 [dev-dependencies]
 mockall = "0.14"

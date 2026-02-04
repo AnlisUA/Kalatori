@@ -135,7 +135,7 @@ pub struct PolygonUnsignedTransaction {
     pub gas_params: GasParams,
     pub permit_hash: B256,
     pub asset_id: Address,
-    pub amount_wei: U256,
+    pub amount_units: U256,
     pub authorization: Authorization,
     pub transfer_all: bool,
     pub op_hash: Option<B256>,
@@ -445,12 +445,12 @@ impl PolygonClient {
     fn build_call(
         &self,
         recipient: Address,
-        amount_wei: U256,
+        amount_units: U256,
         token: Address,
     ) -> Vec<u8> {
         let inner_call = IERC20::transferCall {
             to: recipient,
-            amount: amount_wei,
+            amount: amount_units,
         };
 
         IERC20::executeCall {
@@ -805,7 +805,7 @@ impl BlockChainClient<PolygonChainConfig> for PolygonClient {
             })?
             .decimals;
 
-        let amount_wei = decimal_to_u256(amount, decimals);
+        let amount_units = decimal_to_u256(amount, decimals);
 
         let contract = IERC20::new(*asset_id, self.provider.clone());
         let entrypoint_contract = IERC20::new(ENTRYPOINT, self.provider.clone());
@@ -875,7 +875,7 @@ impl BlockChainClient<PolygonChainConfig> for PolygonClient {
         // a real signed permit which we can get only on signing step
         let gas_params = GasParams::dummy();
         let permit_hash = self.build_permit_hash(sender, permit_nonce);
-        let call_data = self.build_call(*recipient, amount_wei, *asset_id);
+        let call_data = self.build_call(*recipient, amount_units, *asset_id);
 
         let authorization = Authorization {
             chain_id: U256::from(CHAIN_ID),
@@ -893,7 +893,7 @@ impl BlockChainClient<PolygonChainConfig> for PolygonClient {
             gas_price,
             gas_params,
             permit_hash,
-            amount_wei,
+            amount_units,
             authorization,
             paymaster_data: None,
             op_hash: None,
@@ -1049,20 +1049,20 @@ impl BlockChainClient<PolygonChainConfig> for PolygonClient {
                 usdc_quote,
             );
 
-            let amount_wei = inner
-                .amount_wei
+            let amount_units = inner
+                .amount_units
                 .saturating_sub(max_cost_in_usdc_wei)
                 .saturating_sub(U256::from(100));
 
             let call_data = self.build_call(
                 inner.recipient,
-                amount_wei,
+                amount_units,
                 inner.asset_id,
             );
             inner.call_data = call_data;
             let op_hash = self.compute_user_op_hash(&inner, &paymaster_data);
 
-            if amount_wei.is_zero() {
+            if amount_units.is_zero() {
                 return Err(TransactionError::InsufficientBalance {
                     transaction_id: op_hash.to_string(),
                 })
@@ -1145,7 +1145,7 @@ impl BlockChainClient<PolygonChainConfig> for PolygonClient {
                     return Ok(ChainTransfer {
                         asset_id,
                         asset_name: asset_info.name,
-                        amount: u256_to_decimal(unsigned.amount_wei, asset_info.decimals),
+                        amount: u256_to_decimal(unsigned.amount_units, asset_info.decimals),
                         sender: data.sender,
                         recipient: data.receipt.to,
                         transaction_id: data.receipt.transaction_hash,

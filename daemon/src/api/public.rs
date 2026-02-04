@@ -12,7 +12,14 @@ use axum::response::{
 use serde::Deserialize;
 use uuid::Uuid;
 
+use crate::swaps::SwapsExecutorError;
+use crate::types::{CreateOneInchSwapParams, PublicOneInchPreparedSwap, PublicOneInchSwap, SubmitOneInchSwapParams};
+
 use super::ApiState;
+use super::utils::{
+    ApiResult,
+    AppJson,
+};
 
 #[derive(Debug, PartialEq, Eq, Deserialize)]
 struct IndexParams {
@@ -59,8 +66,34 @@ async fn invoice(
     }
 }
 
+async fn create_swap(
+    ExtractState(state): ExtractState<ApiState>,
+    AppJson(params): AppJson<CreateOneInchSwapParams>,
+) -> ApiResult<PublicOneInchPreparedSwap, SwapsExecutorError> {
+    let swap = state
+        .create_swap(params)
+        .await?
+        .into_public();
+
+    Ok(swap.into())
+}
+
+async fn submit_swap(
+    ExtractState(state): ExtractState<ApiState>,
+    AppJson(params): AppJson<SubmitOneInchSwapParams>,
+) -> ApiResult<PublicOneInchSwap, SwapsExecutorError> {
+    let swap = state
+        .submit_swap(params)
+        .await?
+        .into_public();
+
+    Ok(swap.into())
+}
+
 pub fn routes() -> axum::Router<ApiState> {
     axum::Router::new()
         .route("/", axum::routing::get(index))
         .route("/invoice", axum::routing::get(invoice))
+        .route("/swap/create", axum::routing::post(create_swap))
+        .route("/swap/submit", axum::routing::post(submit_swap))
 }

@@ -24,6 +24,7 @@ use crate::types::{
     Transaction,
     UpdateInvoiceData,
     WebhookEvent,
+    OneInchSwap,
 };
 
 use super::invoice::{
@@ -33,6 +34,10 @@ use super::invoice::{
 use super::payout::{
     DaoPayoutError,
     DaoPayoutMethods,
+};
+use super::swap::{
+    DaoSwapError,
+    DaoSwapMethods,
 };
 use super::transaction::{
     DaoTransactionError,
@@ -203,6 +208,33 @@ pub trait DaoInterface: Send + Sync + 'static {
         &self,
         event_id: Uuid,
     ) -> Result<WebhookEvent, DaoWebhookEventError>;
+
+    // === Swap Methods ===
+
+    async fn create_swap(
+        &self,
+        swap: OneInchSwap,
+    ) -> Result<OneInchSwap, DaoSwapError>;
+
+    async fn get_submitted_swaps(
+        &self,
+    ) -> Result<Vec<OneInchSwap>, DaoSwapError>;
+
+    async fn update_swap_submitted(
+        &self,
+        swap_id: Uuid,
+    ) -> Result<OneInchSwap, DaoSwapError>;
+
+    async fn update_swap_completed(
+        &self,
+        swap_id: Uuid,
+    ) -> Result<OneInchSwap, DaoSwapError>;
+
+    async fn update_swap_failed(
+        &self,
+        swap_id: Uuid,
+        error_message: String,
+    ) -> Result<OneInchSwap, DaoSwapError>;
 }
 
 /// Interface for database transaction operations.
@@ -321,6 +353,33 @@ pub trait DaoTransactionInterface {
         &self,
         event_id: Uuid,
     ) -> Result<WebhookEvent, DaoWebhookEventError>;
+
+    // === Swap Methods ===
+
+    async fn create_swap(
+        &self,
+        swap: OneInchSwap,
+    ) -> Result<OneInchSwap, DaoSwapError>;
+
+    async fn get_submitted_swaps(
+        &self,
+    ) -> Result<Vec<OneInchSwap>, DaoSwapError>;
+
+    async fn update_swap_submitted(
+        &self,
+        swap_id: Uuid,
+    ) -> Result<OneInchSwap, DaoSwapError>;
+
+    async fn update_swap_completed(
+        &self,
+        swap_id: Uuid,
+    ) -> Result<OneInchSwap, DaoSwapError>;
+
+    async fn update_swap_failed(
+        &self,
+        swap_id: Uuid,
+        error_message: String,
+    ) -> Result<OneInchSwap, DaoSwapError>;
 
     // === Transaction Control ===
 
@@ -498,6 +557,41 @@ impl DaoInterface for DAO {
     ) -> Result<WebhookEvent, DaoWebhookEventError> {
         DaoWebhookEventMethods::mark_webhook_event_as_sent(self, event_id).await
     }
+
+    async fn create_swap(
+        &self,
+        swap: OneInchSwap,
+    ) -> Result<OneInchSwap, DaoSwapError> {
+        DaoSwapMethods::create_swap(self, swap).await
+    }
+
+    async fn get_submitted_swaps(
+        &self,
+    ) -> Result<Vec<OneInchSwap>, DaoSwapError> {
+        DaoSwapMethods::get_submitted_swaps(self).await
+    }
+
+    async fn update_swap_submitted(
+        &self,
+        swap_id: Uuid,
+    ) -> Result<OneInchSwap, DaoSwapError> {
+        DaoSwapMethods::update_swap_submitted(self, swap_id).await
+    }
+
+    async fn update_swap_completed(
+        &self,
+        swap_id: Uuid,
+    ) -> Result<OneInchSwap, DaoSwapError> {
+        DaoSwapMethods::update_swap_completed(self, swap_id).await
+    }
+
+    async fn update_swap_failed(
+        &self,
+        swap_id: Uuid,
+        error_message: String,
+    ) -> Result<OneInchSwap, DaoSwapError> {
+        DaoSwapMethods::update_swap_failed(self, swap_id, error_message).await
+    }
 }
 
 // ============================================================================
@@ -654,6 +748,41 @@ impl DaoTransactionInterface for DaoTransaction {
         event_id: Uuid,
     ) -> Result<WebhookEvent, DaoWebhookEventError> {
         DaoWebhookEventMethods::mark_webhook_event_as_sent(self, event_id).await
+    }
+
+    async fn create_swap(
+        &self,
+        swap: OneInchSwap,
+    ) -> Result<OneInchSwap, DaoSwapError> {
+        DaoSwapMethods::create_swap(self, swap).await
+    }
+
+    async fn get_submitted_swaps(
+        &self,
+    ) -> Result<Vec<OneInchSwap>, DaoSwapError> {
+        DaoSwapMethods::get_submitted_swaps(self).await
+    }
+
+    async fn update_swap_submitted(
+        &self,
+        swap_id: Uuid,
+    ) -> Result<OneInchSwap, DaoSwapError> {
+        DaoSwapMethods::update_swap_submitted(self, swap_id).await
+    }
+
+    async fn update_swap_completed(
+        &self,
+        swap_id: Uuid,
+    ) -> Result<OneInchSwap, DaoSwapError> {
+        DaoSwapMethods::update_swap_completed(self, swap_id).await
+    }
+
+    async fn update_swap_failed(
+        &self,
+        swap_id: Uuid,
+        error_message: String,
+    ) -> Result<OneInchSwap, DaoSwapError> {
+        DaoSwapMethods::update_swap_failed(self, swap_id, error_message).await
     }
 
     async fn commit(self) -> DaoResult<()> {

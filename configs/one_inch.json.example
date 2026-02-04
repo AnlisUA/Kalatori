@@ -1,0 +1,3 @@
+{
+    "api_key": "Please place your own real API key in your `one_inch.json` config file or into `ONE_INCH_API_KEY` env var if you want to make swaps work"
+}

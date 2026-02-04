@@ -6,6 +6,7 @@ mod dao;
 mod error;
 mod expiration_detector;
 mod state;
+mod swaps;
 mod types;
 mod utils;
 mod webhook_sender;
@@ -37,6 +38,7 @@ use configs::{
     PaymentsConfig,
     chains_config_with_prefix,
     database_config_with_prefix,
+    one_inch_config_with_prefix,
     payments_config_with_prefix,
     secrets_config_with_prefix,
     shop_config_with_prefix,
@@ -58,6 +60,7 @@ use utils::shutdown::{
 use utils::task_tracker::TaskTracker;
 
 use crate::dao::DaoInterface;
+use crate::swaps::{OneInchClient, SwapsExecutor, SwapsMonitor};
 
 const DEFAULT_ENV_PREFIX: &str = "KALATORI";
 
@@ -203,6 +206,7 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
     let web_server_config = web_server_config_with_prefix(&configs_path, &env_prefix);
     let database_config = database_config_with_prefix(&configs_path, &env_prefix);
     let shop_config = shop_config_with_prefix(&configs_path, &env_prefix);
+    let one_inch_config = one_inch_config_with_prefix(&configs_path, &env_prefix);
 
     let hmac_config = HmacConfig::new(
         secrets_config
@@ -347,6 +351,7 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
 
     let transfer_executor_handle = transfer_executor.ignite(shutdown_notification.token.clone());
 
+    // Initialize background task for sending webhook events
     let webhook_sender = webhook_sender::WebhookSender::new(
         dao.clone(),
         shop_config.invoices_webhook_url,
@@ -355,10 +360,28 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
 
     let webhook_sender_handle = webhook_sender.ignite(shutdown_notification.token.clone());
 
+    // One inch client will be used in multiple tasks related to swaps execution
+    let one_inch_client = OneInchClient::new(one_inch_config.api_key);
+
+    let swaps_monitor = SwapsMonitor::new(
+        dao.clone(),
+        one_inch_client.clone(),
+    );
+
+    let swaps_monitor_handle = swaps_monitor.ignite(shutdown_notification.token.clone());
+
+    let swaps_executor = SwapsExecutor::new(
+        dao.clone(),
+        one_inch_client
+    );
+
+    let swaps_executor_cache_cleaner_handle = swaps_executor.ignite_background_cache_cleaner(shutdown_notification.token.clone());
+
     let app_state = AppState::new(
         keyring_client,
         dao,
         invoice_registry,
+        swaps_executor,
         asset_names_map,
         payments_config,
     );
@@ -394,6 +417,8 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
                 _expiration_detector_result,
                 _asset_hub_tracker_result,
                 _polygon_tracker_result,
+                _swaps_monitor_result,
+                _swaps_executor_cleaner_result,
                 _webhook_sender_result,
                 _api_server_result,
             ) = tokio::join!(
@@ -403,6 +428,8 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
                 expiration_detector_handle,
                 asset_hub_tracker_handle,
                 polygon_tracker_handle,
+                swaps_monitor_handle,
+                swaps_executor_cache_cleaner_handle,
                 webhook_sender_handle,
                 api_handle,
             );

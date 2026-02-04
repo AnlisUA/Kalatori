@@ -214,7 +214,7 @@ impl<D: DaoInterface + 'static> WebhookSender<D> {
                 }
                 () = token.cancelled() => {
                     tracing::info!(
-                        "Expiration detector received shutdown signal, finishing pending tasks before shutting down"
+                        "Webhook sender received shutdown signal, finishing pending tasks before shutting down"
                     );
 
                     shutdown_expected = true;

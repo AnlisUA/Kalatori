@@ -28,20 +28,16 @@ use crate::dao::{
     DaoTransactionError,
     DaoTransactionInterface,
 };
+use crate::swaps::{SwapsExecutor, SwapsExecutorError};
 use crate::types::{
-    ChainType,
-    CreateInvoiceData,
-    InvoiceEventType,
-    InvoiceWithReceivedAmount,
-    KalatoriEventExt,
-    Transaction,
-    UpdateInvoiceData,
+    ChainType, CreateInvoiceData, CreateOneInchSwapData, CreateOneInchSwapParams, InvoiceEventType, InvoiceWithReceivedAmount, KalatoriEventExt, OneInchPreparedSwap, OneInchSupportedChain, OneInchSwap, SubmitOneInchSwapParams, Transaction, UpdateInvoiceData
 };
 
 pub struct AppState<D: DaoInterface = DAO> {
     keyring: KeyringClient,
     dao: D,
     registry: InvoiceRegistry,
+    swaps_executor: SwapsExecutor<D>,
     asset_names_map: HashMap<String, String>,
     payments_config: PaymentsConfig,
 }
@@ -51,6 +47,7 @@ impl<D: DaoInterface> AppState<D> {
         keyring: KeyringClient,
         dao: D,
         registry: InvoiceRegistry,
+        swaps_executor: SwapsExecutor<D>,
         asset_names_map: HashMap<String, String>,
         payments_config: PaymentsConfig,
     ) -> Self {
@@ -58,6 +55,7 @@ impl<D: DaoInterface> AppState<D> {
             keyring,
             dao,
             registry,
+            swaps_executor,
             asset_names_map,
             payments_config,
         }
@@ -340,12 +338,61 @@ impl<D: DaoInterface> AppState<D> {
             .get_invoice_transactions(invoice_id)
             .await
     }
+
+    pub async fn create_swap(
+        &self,
+        params: CreateOneInchSwapParams,
+    ) -> Result<OneInchPreparedSwap, SwapsExecutorError> {
+        // On this step unwraps are safe, we ensure that all required values are set on the program startup
+        let recipient_chain = self.payments_config.default_chain;
+        let recipient_token_address = self.payments_config.default_asset_id.get(&recipient_chain).unwrap();
+        let recipient_address = self.payments_config.recipient.get(&recipient_chain).unwrap();
+
+        // TODO: get rid of unwraps here, if configured chain isn't supported by 1Inch, we should
+        // return an error, same if user want's to transfer from unsupported chain
+        let to_chain = recipient_chain.try_into().unwrap();
+        let from_chain = OneInchSupportedChain::from_chain_id(params.from_chain).unwrap();
+
+        // Those unwraps should be safe too. We must check recipient address to be valid Address on startup.
+        // Also we must check that recipient token address is valid Address too.
+        let to_address = recipient_address.parse().unwrap();
+        let to_token_address = recipient_token_address.parse().unwrap();
+
+        let data = CreateOneInchSwapData {
+            invoice_id: params.invoice_id,
+            from_chain,
+            to_chain,
+            // TODO: ideally we should also check that this address is valid but probably 1inch will do it for us
+            from_token_address: params.from_token_address,
+            to_token_address,
+            from_amount_units: params.from_amount_units,
+            from_address: params.from_address,
+            to_address,
+        };
+
+        self.swaps_executor.build_order(data).await
+    }
+
+    pub async fn submit_swap(
+        &self,
+        params: SubmitOneInchSwapParams,
+    ) -> Result<OneInchSwap, SwapsExecutorError> {
+        self.swaps_executor
+            .submit_order(
+                params.swap_id,
+                params.invoice_id,
+                params.order_hash,
+                params.signature,
+            )
+            .await
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
 
+    use secrecy::SecretString;
     use mockall::predicate::eq;
 
     use crate::chain_client::KeyringError;
@@ -353,6 +400,7 @@ mod tests {
         MockDaoInterface,
         MockDaoTransactionInterface,
     };
+    use crate::swaps::OneInchClient;
     use crate::types::{
         Invoice,
         InvoiceCart,
@@ -382,13 +430,22 @@ mod tests {
         };
 
         let keyring = KeyringClient::default();
-        let dao = MockDaoInterface::default();
+        let app_state_dao = MockDaoInterface::default();
+        let swaps_executor_dao = MockDaoInterface::default();
         let registry = InvoiceRegistry::new();
+
+        // TODO: use mock 1inch client
+        let one_inch_client = OneInchClient::new(
+            SecretString::from(std::env::var("ONE_INCH_API_KEY").unwrap()),
+        );
+
+        let swaps_executor = SwapsExecutor::new(swaps_executor_dao, one_inch_client);
 
         AppState::new(
             keyring,
-            dao,
+            app_state_dao,
             registry,
+            swaps_executor,
             asset_names_map,
             config,
         )
