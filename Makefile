@@ -24,7 +24,7 @@ install-sqlx-cli: # Install sqlx-cli into the project directory
 
 # TODO: read URL from json config and/or env var instead of hardcode
 download-node-metadata: # Download metadata of configured Asset Hub node. Required for subxt compilation. By default use ws://localhost:9000 url.
-	PATH="${PWD}/bin:${PATH}" subxt metadata -f bytes --url ws://localhost:9000 > metadata.scale
+	PATH="${PWD}/bin:${PATH}" subxt metadata -f bytes --url wss://asset-hub-polkadot-rpc.n.dwellir.com > metadata.scale
 
 # TODO: read alternative value from env
 download-node-metadata-ci: # Download metadata of Asset Hub node. Required for subxt compilation. By default use wss://polkadot-asset-hub-rpc.polkadot.io url.
@@ -36,6 +36,9 @@ copy-configs: # Copy .example configs to actual configs
 	do \
 		cp "$$i" "$${i%.*}"; \
 	done
+
+setup: install-subxt-cli download-node-metadata copy-configs # Sets up the project for local run
+	echo "Make sure you have SQLite installed. Check README.md for the instructions"
 
 #####################
 ### Build and run ###
