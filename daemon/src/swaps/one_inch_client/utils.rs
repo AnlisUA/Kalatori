@@ -2,7 +2,7 @@ use alloy::primitives::{keccak256, B256, U256, Address};
 use alloy::sol_types::SolValue;
 use rand::prelude::*;
 
-use super::QuoteResponse;
+use super::{CrossQuoteResponse, IntentQuoteResponse};
 
 use super::hash_lock::HashLock;
 
@@ -49,7 +49,7 @@ pub fn create_hashlock_from_secrets(secrets: &[B256]) -> HashLock {
     }
 }
 
-fn build_interaction_data(
+fn build_cross_interaction_data(
     auction_start_time: u32,
     whitelist: &Vec<Address>,
 ) -> Vec<u8> {
@@ -76,7 +76,7 @@ fn build_interaction_data(
 /// Format: ABI.encode([hashLock, dstChainId, dstToken, safetyDeposits, timeLocks])
 fn encode_extra_data(
     hashlock: B256,
-    quote: &QuoteResponse,
+    quote: &CrossQuoteResponse,
     dst_chain_id: u64,
     dst_token: Address,
 ) -> Vec<u8> {
@@ -118,11 +118,11 @@ fn encode_extra_data(
 /// - makingAmountData = address + auctionDetails + fees + whitelist addresses
 /// - takingAmountData = same as makingAmountData
 /// - postInteraction = address + interactionData + escrowExtraData
-pub fn build_extension(
+pub fn build_cross_extension(
     hash_lock: B256,
     dst_chain_id: u64,
     dst_token_address: Address,
-    quote_response: &QuoteResponse,
+    quote_response: &CrossQuoteResponse,
     auction_start_time: u32,
 ) -> Vec<u8> {
     let preset = quote_response.get_recommended_preset();
@@ -152,7 +152,7 @@ pub fn build_extension(
     let pre_interaction: Vec<u8> = vec![];
 
     // Field 8: postInteraction - escrow factory + FusionExtension interaction data + escrow extra data
-    let interaction_data = build_interaction_data(auction_start_time, &quote_response.whitelist);
+    let interaction_data = build_cross_interaction_data(auction_start_time, &quote_response.whitelist);
     let extra_data = encode_extra_data(
         hash_lock,
         quote_response,
@@ -208,6 +208,184 @@ pub fn build_extension(
 
     // Then customData
     extension.extend_from_slice(&custom_data);
+    extension
+}
+
+fn build_amount_getter_data(
+    quote: &IntentQuoteResponse,
+    auction_start_time: u32,
+    auction_details: &[u8],
+    for_amount_getters: bool,
+) -> Vec<u8> {
+    let mut data = Vec::new();
+
+    // Auction details only for amount getters
+    if for_amount_getters {
+        data.extend_from_slice(&auction_details);
+    }
+
+    // Fees data (same for both)
+    data.extend_from_slice(&quote.integrator_fee.unwrap_or(0).to_be_bytes()); // uint16
+    data.push(quote.integrator_fee_share.unwrap_or(0)); // uint8
+    data.extend_from_slice(&quote.fee.as_ref().map(|fee| fee.bps).flatten().unwrap_or(0).to_be_bytes()); // uint16
+    data.push(100 - quote.fee.as_ref().map(|fee| fee.whitelist_discount_percent).flatten().unwrap_or(0).min(100)); // uint8
+
+    if for_amount_getters {
+        // For amount getters: just address halves (no delays)
+        data.push(quote.whitelist.len() as u8);
+        for item in &quote.whitelist {
+            data.extend_from_slice(&item.0.0[10..20]);
+        }
+    } else {
+        // For post-interaction: full whitelist with delays
+        data.extend_from_slice(&auction_start_time.to_be_bytes()); // uint32
+        data.push(quote.whitelist.len() as u8);
+        for item in &quote.whitelist {
+            data.extend_from_slice(&item.0.0[10..20]);
+            data.extend_from_slice(&0u16.to_be_bytes()); // uint16
+        }
+    }
+
+    data
+}
+
+fn build_interaction_data(
+    quote: &IntentQuoteResponse,
+    to_address: Option<Address>,
+    auction_start_time: u32,
+    auction_details: &[u8],
+) -> Vec<u8> {
+    let preset = quote.get_recommended_preset();
+    let mut data = Vec::new();
+
+    // Flags (1 byte) - bit 0 = has custom receiver
+    let has_custom_receiver = to_address.map(|r| !r.is_zero()).unwrap_or(false);
+    let flags: u8 = if has_custom_receiver { 1 } else { 0 };
+    data.push(flags);
+
+    // Integrator fee recipient (20 bytes)
+    data.extend_from_slice(quote.integrator_fee_receiver.unwrap_or(Address::ZERO).as_slice());
+
+    // Protocol fee recipient (20 bytes)
+    data.extend_from_slice(quote.fee.as_ref().map(|fee| fee.receiver).flatten().unwrap_or(Address::ZERO).as_slice());
+
+    // Custom receiver if flag is set
+    if let Some(receiver) = to_address {
+        if !receiver.is_zero() {
+            data.extend_from_slice(receiver.as_slice());
+        }
+    }
+
+    // Fees data + whitelist with delays
+    data.extend_from_slice(&build_amount_getter_data(quote, auction_start_time, auction_details, false));
+
+    // Surplus parameters - share of price improvement with protocol
+    // estimated_taking_amount = marketAmount (expected return based on current market price)
+    // protocol_surplus_fee = percentage of surplus (price improvement) that goes to protocol
+    //
+    // If resolver gets better price than estimated, the surplus is split:
+    //   - protocol gets (surplus * protocol_surplus_fee / 100)
+    //   - user gets the rest
+    let mut estimated_taking_amount = U256::MAX;
+    let mut protocol_surplus_fee = 0;
+
+    let taking_amount = U256::from_str_radix(&preset.auction_end_amount, 10).unwrap_or(U256::ZERO);
+    if let Some(ref market_amount) = quote.market_amount {
+        let market = U256::from_str_radix(market_amount, 10).unwrap_or(U256::ZERO);
+        // Only enable surplus tracking if market price > order taking amount
+        if market > taking_amount {
+            estimated_taking_amount = market;
+            // Set surplus fee percentage from quote (0-100)
+            if let Some(surplus_fee) = quote.surplus_fee {
+                protocol_surplus_fee = surplus_fee.min(100) as u8;
+            }
+        }
+    }
+
+    // Surplus params
+    // estimated taking amount (32 bytes, big-endian)
+    data.extend_from_slice(&estimated_taking_amount.to_be_bytes::<32>());
+    // protocol surplus fee as percentage (1 byte)
+    data.push(protocol_surplus_fee);
+
+    data
+}
+
+pub fn build_intent_extension(
+    quote: &IntentQuoteResponse,
+    auction_start_time: u32,
+    to_address: Option<Address>,
+) -> Vec<u8> {
+    let preset = quote.get_recommended_preset();
+
+    // Field 1: makerAssetSuffix - empty
+    let maker_asset_suffix: Vec<u8> = vec![];
+
+    // Field 2: takerAssetSuffix - empty
+    let taker_asset_suffix: Vec<u8> = vec![];
+
+    // Field 3: makingAmountData
+    let mut making_amount_data = Vec::new();
+    let auction_details = preset.encode_auction_details(auction_start_time);
+    making_amount_data.extend_from_slice(quote.settlement_address.as_slice());
+    making_amount_data.extend_from_slice(&build_amount_getter_data(&quote, auction_start_time, &auction_details, true));
+
+    // Field 4: takingAmountData - must be identical to makingAmountData
+    let taking_amount_data = making_amount_data.clone();
+
+    // Field 5: predicate - empty
+    let predicate: Vec<u8> = vec![];
+
+    // Field 6: makerPermit - empty
+    let maker_permit: Vec<u8> = vec![];
+
+    // Field 7: preInteraction - empty
+    let pre_interaction: Vec<u8> = vec![];
+
+    // Field 8: postInteraction
+    let mut post_interaction = Vec::new();
+    post_interaction.extend_from_slice(quote.settlement_address.as_slice());
+    post_interaction.extend_from_slice(&build_interaction_data(quote, to_address, auction_start_time, &auction_details));
+
+    // Calculate cumulative offsets for each field
+    let fields = [
+        &maker_asset_suffix,
+        &taker_asset_suffix,
+        &making_amount_data,
+        &taking_amount_data,
+        &predicate,
+        &maker_permit,
+        &pre_interaction,
+        &post_interaction,
+    ];
+
+    let mut cumulative_offset = 0u32;
+    let mut offsets = [0u32; 8];
+
+    for (i, field) in fields.iter().enumerate() {
+        cumulative_offset += field.len() as u32;
+        offsets[i] = cumulative_offset;
+    }
+
+    // Pack 8 offsets into a uint256 (each offset is 32 bits)
+    // offset[0] at bits 0-31, offset[1] at bits 32-63, etc.
+    let mut offsets_u256 = U256::ZERO;
+    for (i, &offset) in offsets.iter().enumerate() {
+        offsets_u256 |= U256::from(offset) << (i * 32);
+    }
+
+    // Build the final extension bytes
+    let mut extension = Vec::new();
+
+    // First 32 bytes: the packed offsets
+    let offset_bytes: [u8; 32] = offsets_u256.to_be_bytes();
+    extension.extend_from_slice(&offset_bytes);
+
+    // Then all 8 fields concatenated
+    for field in &fields {
+        extension.extend_from_slice(field);
+    }
+
     extension
 }
 

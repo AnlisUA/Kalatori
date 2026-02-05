@@ -17,7 +17,7 @@ use rust_decimal::Decimal;
 
 use crate::types::CreateOneInchSwapData;
 
-use utils::{generate_secrets, create_hashlock_from_secrets, build_extension, get_secret_hashes, MakerTraits};
+use utils::{generate_secrets, create_hashlock_from_secrets, build_cross_extension, build_intent_extension, get_secret_hashes, MakerTraits};
 
 const ONE_INCH_BASE_URL: &'static str = "https://api.1inch.dev";
 
@@ -51,7 +51,7 @@ sol! {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GetQuoteParams {
+pub struct GetCrossQuoteParams {
     pub src_chain: u64,
     pub dst_chain: u64,
     pub src_token_address: Address,
@@ -79,7 +79,7 @@ pub struct AuctionPoint {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct QuotePreset {
+pub struct CrossQuotePreset {
     pub auction_duration: u32,
     pub start_auction_in: u64,
     pub initial_rate_bump: u32,
@@ -95,7 +95,7 @@ pub struct QuotePreset {
     pub secrets_count: usize,
 }
 
-impl QuotePreset {
+impl CrossQuotePreset {
     pub fn encode_auction_details(&self, auction_start_time: u32) -> Vec<u8> {
         let mut data = Vec::new();
 
@@ -165,10 +165,10 @@ impl TimeLocks {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Presets {
-    pub fast: Option<QuotePreset>,
-    pub medium: Option<QuotePreset>,
-    pub slow: Option<QuotePreset>,
+pub struct CrossQuotePresets {
+    pub fast: Option<CrossQuotePreset>,
+    pub medium: Option<CrossQuotePreset>,
+    pub slow: Option<CrossQuotePreset>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -181,11 +181,11 @@ pub enum RecommendedPreset {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct QuoteResponse {
+pub struct CrossQuoteResponse {
     pub quote_id: Uuid,
     pub src_token_amount: String,
     pub dst_token_amount: String,
-    pub presets: Presets,
+    pub presets: CrossQuotePresets,
     pub time_locks: TimeLocks,
     pub src_escrow_factory: Address,
     pub dst_escrow_factory: Address,
@@ -195,8 +195,8 @@ pub struct QuoteResponse {
     pub recommended_preset: RecommendedPreset,
 }
 
-impl QuoteResponse {
-    pub fn get_recommended_preset(&self) -> &QuotePreset {
+impl CrossQuoteResponse {
+    pub fn get_recommended_preset(&self) -> &CrossQuotePreset {
         match self.recommended_preset {
             RecommendedPreset::Fast => self.presets.fast.as_ref(),
             RecommendedPreset::Medium => self.presets.medium.as_ref(),
@@ -222,8 +222,10 @@ impl OneInchOrder {
     pub fn new(
         maker: Address,
         maker_asset: Address,
+        taker_asset: Address,
         making_amount: String,
         taking_amount: String,
+        receiver: Address,
         expiration: u64,
         nonce: u64,
         extension: &[u8],
@@ -257,9 +259,9 @@ impl OneInchOrder {
             salt,
             // Use `.to_string()` because 1inch awaits checksummed address while serde serializes into other one
             maker: maker.to_string(),
-            receiver: Address::ZERO.to_string(), // Will be set by extension for cross-chain
+            receiver: receiver.to_string(), // Will be set by extension for cross-chain
             maker_asset: maker_asset.to_string(),
-            taker_asset: TRUE_ERC20.to_string(),
+            taker_asset: taker_asset.to_string(),
             making_amount,
             taking_amount,
             maker_traits,
@@ -366,7 +368,7 @@ pub struct EscrowEvent {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct FillStatusInfo {
+pub struct CrossFillStatusInfo {
     #[serde(default)]
     pub tx_hash: Option<String>,
     #[serde(default)]
@@ -381,18 +383,18 @@ pub struct FillStatusInfo {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct OrderStatusResponse {
+pub struct CrossOrderStatusResponse {
     pub status: OrderStatus,
     pub src_chain_id: u64,
     pub dst_chain_id: u64,
     #[serde(default)]
-    pub fills: Vec<FillStatusInfo>,
+    pub fills: Vec<CrossFillStatusInfo>,
     pub order_hash: B256,
     pub remaining_maker_amount: String,
     pub approximate_taking_amount: String,
 }
 
-impl OrderStatusResponse {
+impl CrossOrderStatusResponse {
     pub fn has_dst_deployed_escrow(&self) -> bool {
         self.fills
             .iter()
@@ -455,6 +457,186 @@ impl From<GetPricesResponse> for crate::types::GetPricesResponse {
             usd_prices: value.usd_prices,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetIntentQuoteParams {
+    pub from_token_address: Address,
+    pub to_token_address: Address,
+    pub amount: String,
+    pub wallet_address: Address,
+    pub enable_estimate: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IntentQuotePreset {
+    pub auction_duration: u32,
+    pub start_auction_in: u64,
+    pub initial_rate_bump: u32,
+    pub auction_start_amount: String,
+    pub auction_end_amount: String,
+    pub points: Vec<AuctionPoint>,
+    #[serde(default)]
+    pub allow_partial_fills: bool,
+    #[serde(default)]
+    pub allow_multiple_fills: bool,
+    pub gas_cost: GasCost,
+    #[serde(default)]
+    pub exclusive_resolver: Option<String>,
+    #[serde(default)]
+    pub token_fee: Option<String>,
+    #[serde(default)]
+    pub start_amount: Option<String>,
+}
+
+impl IntentQuotePreset {
+    fn encode_auction_details(&self, auction_start_time: u32) -> Vec<u8> {
+        let mut data = Vec::new();
+
+        // gasBumpEstimate (3 bytes, big endian uint24)
+        let gas_bump_bytes = self.gas_cost.gas_bump_estimate.to_be_bytes();
+        data.extend_from_slice(&gas_bump_bytes[1..4]); // Take last 3 bytes
+
+        // gasPriceEstimate (4 bytes, big endian uint32)
+        data.extend_from_slice(&self.gas_cost.gas_price_estimate.parse::<u32>().unwrap_or(0).to_be_bytes());
+
+        // startTime (4 bytes, big endian uint32)
+        data.extend_from_slice(&auction_start_time.to_be_bytes());
+
+        // duration (3 bytes, big endian uint24)
+        let duration_bytes = self.auction_duration.to_be_bytes();
+        data.extend_from_slice(&duration_bytes[1..4]); // Take last 3 bytes
+
+        // initialRateBump (3 bytes, big endian uint24)
+        let bump_bytes = self.initial_rate_bump.to_be_bytes();
+        data.extend_from_slice(&bump_bytes[1..4]); // Take last 3 bytes
+
+        // pointsCount (1 byte, uint8)
+        data.push(self.points.len() as u8);
+
+        // Points: each point is coefficient(3 bytes) + delay(2 bytes) = 5 bytes
+        for point in &self.points {
+            // coefficient (3 bytes, uint24)
+            let coef_bytes = point.coefficient.to_be_bytes();
+            data.extend_from_slice(&coef_bytes[1..4]); // Take last 3 bytes
+
+            // delay (2 bytes, uint16)
+            data.extend_from_slice(&point.delay.to_be_bytes());
+        }
+
+        data
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IntentQuotePresets {
+    pub fast: Option<IntentQuotePreset>,
+    pub medium: Option<IntentQuotePreset>,
+    pub slow: Option<IntentQuotePreset>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IntentFee {
+    #[serde(default)]
+    pub receiver: Option<Address>,
+    #[serde(default)]
+    pub bps: Option<u16>,
+    #[serde(default)]
+    pub whitelist_discount_percent: Option<u8>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IntentQuoteResponse {
+    pub quote_id: Uuid,
+    pub from_token_amount: String,
+    pub to_token_amount: String,
+    pub presets: IntentQuotePresets,
+    pub whitelist: Vec<Address>,
+    pub settlement_address: Address,
+    #[serde(alias = "recommended_preset")]
+    pub recommended_preset: RecommendedPreset,
+    #[serde(default)]
+    pub fee_token: Option<String>,
+    #[serde(default)]
+    pub fee: Option<IntentFee>,
+    #[serde(default)]
+    pub integrator_fee: Option<u16>,
+    #[serde(default)]
+    pub integrator_fee_receiver: Option<Address>,
+    #[serde(default)]
+    pub integrator_fee_share: Option<u8>,
+    #[serde(default)]
+    pub price_impact_percent: Option<f64>,
+    #[serde(default)]
+    pub market_amount: Option<String>,
+    #[serde(default)]
+    pub gas: Option<u64>,
+    #[serde(default)]
+    pub surplus_fee: Option<u8>,
+}
+
+impl IntentQuoteResponse {
+    pub fn get_recommended_preset(&self) -> &IntentQuotePreset {
+        match self.recommended_preset {
+            RecommendedPreset::Fast => self.presets.fast.as_ref(),
+            RecommendedPreset::Medium => self.presets.medium.as_ref(),
+            RecommendedPreset::Slow => self.presets.slow.as_ref(),
+        }.unwrap()
+    }
+}
+
+// TODO: refactor types. OrderSubmitRequest can include this data as a single field
+// with `#[serde(flatten)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IntentOrderSubmitRequest {
+    pub order: OneInchOrder,
+    pub signature: String,
+    pub quote_id: Uuid,
+    pub extension: String,
+}
+
+impl From<OrderSubmitRequest> for IntentOrderSubmitRequest {
+    fn from(value: OrderSubmitRequest) -> Self {
+        Self {
+            order: value.order,
+            signature: value.signature,
+            quote_id: value.quote_id,
+            extension: value.extension,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IntentFillInfo {
+    #[serde(default)]
+    pub tx_hash: Option<String>,
+    #[serde(default)]
+    pub filled_maker_amount: Option<String>,
+    #[serde(default)]
+    pub filled_taker_amount: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IntentOrderStatusResponse {
+    pub status: OrderStatus,
+    pub order_hash: B256,
+    #[serde(default)]
+    pub fills: Vec<IntentFillInfo>,
+    #[serde(default)]
+    pub auction_start_time: Option<u64>,
+    #[serde(default)]
+    pub auction_end_time: Option<u64>,
+    #[serde(default)]
+    pub remaining_maker_amount: Option<String>,
+    #[serde(default)]
+    pub is_native_payment: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -565,9 +747,9 @@ impl OneInchClient {
     }
 
     #[tracing::instrument]
-    pub async fn get_prices(&self, chain: u64, tokens: &[Address]) -> Result<GetPricesResponse, OneInchError> {
+    pub async fn get_prices(&self, chain_id: u64, tokens: &[Address]) -> Result<GetPricesResponse, OneInchError> {
         self.send_request(
-            format!("/price/v1.1/{}", chain),
+            format!("/price/v1.1/{chain_id}"),
             reqwest::Method::POST,
             GetPricesRequest {
                 tokens,
@@ -576,7 +758,41 @@ impl OneInchClient {
         ).await
     }
 
-    pub async fn get_quote(&self, params: GetQuoteParams) -> Result<QuoteResponse, OneInchError> {
+    pub async fn get_intent_quote(&self, chain_id: u64, params: GetIntentQuoteParams) -> Result<IntentQuoteResponse, OneInchError> {
+        self.send_request(
+            format!("/fusion/quoter/v2.0/{chain_id}/quote/receive"),
+            reqwest::Method::GET,
+            params,
+        ).await
+    }
+
+    pub async fn submit_intent_order(
+        &self,
+        chain_id: u64,
+        params: IntentOrderSubmitRequest,
+    ) -> Result<(), OneInchError> {
+        self.send_request(
+            format!("/fusion/relayer/v2.0/{chain_id}/order/submit"),
+            reqwest::Method::POST,
+            params,
+        ).await
+    }
+
+    pub async fn get_intent_orders_by_hashes(
+        &self,
+        chain_id: u64,
+        order_hashes: &[B256],
+    ) -> Result<Vec<IntentOrderStatusResponse>, OneInchError> {
+        self.send_request(
+            format!("/fusion/orders/orders/v2.0/{chain_id}/order/status"),
+            reqwest::Method::POST,
+            GetOrdersByHashesRequest {
+                order_hashes,
+            },
+        ).await
+    }
+
+    pub async fn get_cross_quote(&self, params: GetCrossQuoteParams) -> Result<CrossQuoteResponse, OneInchError> {
         self.send_request(
             "/fusion-plus/quoter/v1.1/quote/receive",
             reqwest::Method::GET,
@@ -584,7 +800,7 @@ impl OneInchClient {
         ).await
     }
 
-    pub async fn submit_order(&self, params: OrderSubmitRequest) -> Result<(), OneInchError> {
+    pub async fn submit_cross_order(&self, params: OrderSubmitRequest) -> Result<(), OneInchError> {
         self.send_request(
             "/fusion-plus/relayer/v1.1/submit",
             reqwest::Method::POST,
@@ -592,7 +808,7 @@ impl OneInchClient {
         ).await
     }
 
-    pub async fn get_orders_by_hashes(&self, order_hashes: &[B256]) -> Result<Vec<OrderStatusResponse>, OneInchError> {
+    pub async fn get_cross_orders_by_hashes(&self, order_hashes: &[B256]) -> Result<Vec<CrossOrderStatusResponse>, OneInchError> {
         self.send_request(
             "/fusion-plus/orders/v1.1/order/status",
             reqwest::Method::POST,
@@ -603,7 +819,7 @@ impl OneInchClient {
     }
 
     pub async fn get_ready_to_accept_secret_fills(&self, order_hash: B256) -> Result<ReadyToAcceptSecretFills, OneInchError> {
-        let path = format!("/fusion-plus/orders/v1.1/order/ready-to-accept-secret-fills/{}", order_hash);
+        let path = format!("/fusion-plus/orders/v1.1/order/ready-to-accept-secret-fills/{order_hash}");
 
         self.send_request(
             path,
@@ -625,12 +841,12 @@ impl OneInchClient {
         ).await
     }
 
-    pub async fn build_order_from_request_data(
+    async fn build_cross_order_from_request_data(
         &self,
         data: CreateOneInchSwapData,
         auction_time_buffer_secs: u64,
     ) -> Result<UnsignedOrderData, OneInchError> {
-        let quote_params = GetQuoteParams {
+        let quote_params = GetCrossQuoteParams {
             src_chain: data.from_chain.chain_id(),
             dst_chain: data.to_chain.chain_id(),
             src_token_address: data.from_token_address,
@@ -641,7 +857,7 @@ impl OneInchClient {
             enable_estimate: Some(true),
         };
 
-        let quote = self.get_quote(quote_params).await?;
+        let quote = self.get_cross_quote(quote_params).await?;
         let quote_id = quote.quote_id;
 
         // build secrets and hashlock
@@ -655,7 +871,7 @@ impl OneInchClient {
         let auction_start_time = now + preset.start_auction_in;
         let expiration = auction_start_time + preset.auction_duration as u64 + auction_time_buffer_secs;
 
-        let extension = build_extension(
+        let extension = build_cross_extension(
             hashlock.value(),
             data.to_chain.chain_id(),
             data.to_token_address,
@@ -666,8 +882,10 @@ impl OneInchClient {
         let order = OneInchOrder::new(
             data.from_address,
             data.from_token_address,
+            TRUE_ERC20,
             quote.src_token_amount.clone(),
             preset.auction_end_amount.clone(),
+            Address::ZERO,
             expiration,
             now,
             &extension,
@@ -689,6 +907,90 @@ impl OneInchClient {
 
         Ok(data)
     }
+
+    async fn build_intent_order_from_request_data(
+        &self,
+        data: CreateOneInchSwapData,
+        auction_time_buffer_secs: u64,
+    ) -> Result<UnsignedOrderData, OneInchError> {
+        let quote_params = GetIntentQuoteParams {
+            from_token_address: data.from_token_address,
+            to_token_address: data.to_token_address,
+            amount: data.from_amount_units.to_string(),
+            wallet_address: data.from_address,
+            enable_estimate: true,
+        };
+
+        let quote = self
+            .get_intent_quote(
+                data.from_chain.chain_id(),
+                quote_params,
+            )
+            .await?;
+
+        let quote_id = quote.quote_id;
+        let preset = quote.get_recommended_preset();
+
+        // timing parameters
+        let now = Utc::now().timestamp() as u64;
+        let auction_start_time = now + preset.start_auction_in;
+        let expiration = auction_start_time + preset.auction_duration as u64 + auction_time_buffer_secs;
+
+        let to_address_for_extension = if data.from_address == data.to_address {
+            None
+        } else {
+            Some(data.to_address)
+        };
+
+        let extension = build_intent_extension(
+            &quote,
+            auction_start_time as u32,
+            to_address_for_extension,
+        );
+
+        let order = OneInchOrder::new(
+            data.from_address,
+            data.from_token_address,
+            data.to_token_address,
+            quote.from_token_amount.clone(),
+            preset.auction_end_amount.clone(),
+            // TODO: it's not always will be settlement address, fix it
+            quote.settlement_address,
+            expiration,
+            now,
+            &extension,
+        );
+
+        let order_hash = order.compute_hash(
+            data.from_chain.chain_id(),
+            data.from_chain.verifying_protocol(),
+        );
+
+        let data = UnsignedOrderData {
+            order,
+            order_hash,
+            // TODO: unused fields, might be not obvious. Probably will be better to
+            // use enum with separate variants
+            secrets: vec![],
+            secret_hashes: None,
+            quote_id,
+            extension,
+        };
+
+        Ok(data)
+    }
+
+    pub async fn build_order_from_request_data(
+        &self,
+        data: CreateOneInchSwapData,
+        auction_time_buffer_secs: u64,
+    ) -> Result<UnsignedOrderData, OneInchError> {
+        if data.is_cross_chain() {
+            self.build_cross_order_from_request_data(data, auction_time_buffer_secs).await
+        } else {
+            self.build_intent_order_from_request_data(data, auction_time_buffer_secs).await
+        }
+    }
 }
 
 #[cfg(test)]
@@ -704,9 +1006,15 @@ mod tests {
         );
 
         let resp = client
-            .get_prices(
+            .get_intent_quote(
                 137,
-                &[address!("0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"), address!("0xc2132D05D31c914a87C6611C10748AEb04B58e8F")],
+                GetIntentQuoteParams {
+                    from_token_address: address!("0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"),
+                    to_token_address: address!("0xc2132D05D31c914a87C6611C10748AEb04B58e8F"),
+                    amount: "1000000".to_string(),
+                    wallet_address: address!("0x0E3Ca7fD040144900AdaA5f9B8917f3933A4F5e9"),
+                    enable_estimate: true,
+                }
             )
             .await
             .unwrap();

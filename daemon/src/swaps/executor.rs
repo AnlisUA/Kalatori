@@ -190,7 +190,13 @@ impl<D: DaoInterface + 'static> SwapsExecutor<D> {
         let swap = prepared_swap.to_signed(signature);
         let swap = self.dao.create_swap(swap).await?;
 
-        match self.one_inch_client.submit_order(swap.raw_order.clone()).await {
+        let result = if swap.is_cross_chain() {
+            self.one_inch_client.submit_cross_order(swap.raw_order).await
+        } else {
+            self.one_inch_client.submit_intent_order(swap.request.from_chain.chain_id(), swap.raw_order.into()).await
+        };
+
+        match result {
             Ok(()) => {
                 let swap = self.dao.update_swap_submitted(swap.id).await?;
                 Ok(swap)

@@ -9,9 +9,10 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::dao::{DaoInterface, DaoSwapError};
+use crate::swaps::one_inch_client::IntentOrderStatusResponse;
 use crate::types::OneInchSwap;
 
-use one_inch_client::{OrderStatusResponse, OrderStatus, OneInchError};
+use one_inch_client::{CrossOrderStatusResponse, OrderStatus, OneInchError};
 
 pub use one_inch_client::{OneInchClient, OrderSubmitRequest, UnsignedOrderData};
 pub use executor::{SwapsExecutor, SwapsExecutorError};
@@ -72,6 +73,12 @@ impl MonitoredSwaps {
             .collect()
     }
 
+    pub fn get_intent_swaps_hashes(&self) -> HashMap<B256, Uuid> {
+        self.on_chain_swaps
+            .iter()
+            .map(|(id, swap)| (swap.order_hash, *id))
+            .collect()
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -133,18 +140,17 @@ impl<D: DaoInterface + 'static> SwapsMonitor<D> {
         Ok(())
     }
 
-    #[tracing::instrument(skip(self, order), fields(order_hash = ?order.order_hash))]
-    async fn check_monitored_cross_order(
+    async fn check_order_status(
         &mut self,
         swap_id: Uuid,
-        order: OrderStatusResponse,
+        order_status: OrderStatus
     ) -> Result<(), SwapsMonitorError> {
-        match order.status {
+        match order_status {
             OrderStatus::Executed => {
                 self.dao.update_swap_completed(swap_id).await?;
                 self.monitored_swaps.remove_cross_swap(&swap_id);
                 tracing::info!(
-                    "Cross chain order has been executed successfully and marked as Completed"
+                    "Swap has been executed successfully and marked as Completed"
                 );
             },
             OrderStatus::Expired
@@ -159,19 +165,33 @@ impl<D: DaoInterface + 'static> SwapsMonitor<D> {
             },
             OrderStatus::Pending
             | OrderStatus::Filled => {
-                tracing::trace!("Cross chain order has non-final status, continue monitoring");
-
-                if order.has_dst_deployed_escrow() {
-                    self.get_ready_to_fill_escrows_and_submit_secrets(swap_id).await?;
-                }
+                tracing::trace!("Swap has non-final status, continue monitoring");
             },
         }
 
         return Ok(());
     }
 
+    #[tracing::instrument(skip(self, order), fields(order_hash = ?order.order_hash))]
+    async fn check_monitored_cross_order(
+        &mut self,
+        swap_id: Uuid,
+        order: CrossOrderStatusResponse,
+    ) -> Result<(), SwapsMonitorError> {
+        self.check_order_status(swap_id, order.status).await?;
+
+        if matches!(order.status, OrderStatus::Pending | OrderStatus::Filled) {
+            tracing::trace!("Cross chain order has non-final status, continue monitoring");
+
+            if order.has_dst_deployed_escrow() {
+                self.get_ready_to_fill_escrows_and_submit_secrets(swap_id).await?;
+            }
+        }
+
+        return Ok(());
+    }
+
     async fn check_monitored_cross_orders(&mut self) {
-        // let cross_swaps = self.monitored_swaps.get_cross_swaps();
         let hashes_with_ids = self.monitored_swaps.get_cross_swaps_hashes();
 
         let hashes: Vec<_> = hashes_with_ids.keys().copied().collect();
@@ -183,10 +203,8 @@ impl<D: DaoInterface + 'static> SwapsMonitor<D> {
             "Check cross chain swaps statuses"
         );
 
-        println!("Request hashes: {:?}", hashes);
-
         let cross_orders = self.one_inch_client
-            .get_orders_by_hashes(&hashes)
+            .get_cross_orders_by_hashes(&hashes)
             .await
             // TODO: handle error
             .unwrap();
@@ -211,6 +229,44 @@ impl<D: DaoInterface + 'static> SwapsMonitor<D> {
         }
     }
 
+    async fn check_monitored_intent_orders(&mut self) {
+        let hashes_with_ids = self.monitored_swaps.get_intent_swaps_hashes();
+        // TODO: change it
+        let chain_id = 137;
+        let hashes: Vec<_> = hashes_with_ids.keys().copied().collect();
+
+        tracing::trace!(
+            swaps_count = hashes_with_ids.len(),
+            swaps_hashes = ?hashes,
+            swaps_ids = ?hashes_with_ids.values(),
+            "Check intent swaps statuses"
+        );
+
+        let intent_orders = self.one_inch_client
+            .get_intent_orders_by_hashes(chain_id, &hashes)
+            .await
+            // TODO: handle error
+            .unwrap();
+
+        for order in intent_orders {
+            let order_hash = order.order_hash;
+
+            let swap_id = hashes_with_ids
+                .get(&order_hash)
+                .copied()
+                .unwrap();
+
+            if let Err(e) = self.check_order_status(swap_id, order.status).await {
+                tracing::debug!(
+                    ?swap_id,
+                    ?order_hash,
+                    error = ?e,
+                    "Error while check intent order"
+                );
+            };
+        }
+    }
+
     async fn perform(
         mut self,
         token: CancellationToken,
@@ -228,6 +284,10 @@ impl<D: DaoInterface + 'static> SwapsMonitor<D> {
                 _ = api_polling_interval.tick(), if self.monitored_swaps.has_any_swaps() => {
                     if self.monitored_swaps.has_cross_swaps() {
                         self.check_monitored_cross_orders().await;
+                    }
+
+                    if self.monitored_swaps.has_on_chain_swaps() {
+                        self.check_monitored_intent_orders().await;
                     }
                 },
                 _ = database_polling_interval.tick() => {
@@ -257,5 +317,118 @@ impl<D: DaoInterface + 'static> SwapsMonitor<D> {
         tokio::spawn(async move {
             self.perform(token).await;
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloy::primitives::{Address, address, U256};
+    use alloy::network::EthereumWallet;
+    use alloy::signers::SignerSync;
+    use alloy::providers::ProviderBuilder;
+    use alloy::signers::local::PrivateKeySigner;
+    use alloy::sol;
+    use secrecy::SecretString;
+
+    use crate::configs::DatabaseConfig;
+    use crate::dao::DAO;
+    use crate::swaps::executor::SwapsExecutor;
+    use crate::types::{OneInchSupportedChain, CreateOneInchSwapData, default_create_invoice_data};
+
+    use super::*;
+
+    const USDC_BASE: Address = address!("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913");
+    const USDC_POLYGON: Address = address!("0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359");
+    const USDT_POLYGON: Address = address!("0xc2132D05D31c914a87C6611C10748AEb04B58e8F");
+    const EURC_BASE: Address = address!("0x60a3E35Cc302bFA44Cb288Bc5a4F316Fdb1adb42");
+    const SRC_CHAIN_ID: u64 = 137;  // Polygon
+    // const SRC_CHAIN_ID: u64 = 8453;  // Base
+    const DST_CHAIN_ID: u64 = 137;  // Polygon
+    // const DST_CHAIN_ID: u64 = 8453;  // Base
+    const SOURCE_WALLET_ADDRESS: Address = address!("0x0E3Ca7fD040144900AdaA5f9B8917f3933A4F5e9");
+    const DESTINATION_WALLET_ADDRESS: Address = address!("0x45f077823C8d036a1a9f7Cd28e86Bd98191dF2b7");
+    // const AMOUNT_FROM_FRONT_END: u128 = 1_000_000; // 1 USDC (6 decimals)
+    const AMOUNT_FROM_FRONT_END: u128 = 978_000;
+    const LIMIT_ORDER_PROTOCOL: Address = address!("0x111111125421ca6dc452d289314280a0f8842a65");
+    const BASE_RPC: &str = "https://base-rpc.publicnode.com";
+    const POLYGON_RPC: &str = "https://polygon-bor-rpc.publicnode.com";
+
+    sol! {
+        #[sol(rpc)]
+        contract IERC20 {
+            function allowance(address owner, address spender) external view returns (uint256);
+            function approve(address spender, uint256 amount) external returns (bool);
+            function balanceOf(address account) external view returns (uint256);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_swaps() {
+        let one_inch_client = OneInchClient::new(
+            SecretString::from(std::env::var("ONE_INCH_API_KEY").unwrap()),
+        );
+
+        let database_config = DatabaseConfig {
+            dir: "../database".to_string(),
+            temporary: false,
+        };
+
+        let dao = DAO::new(database_config).await.unwrap();
+
+        let executor = SwapsExecutor::new(dao.clone(), one_inch_client.clone());
+        let monitor = SwapsMonitor::new(dao.clone(), one_inch_client);
+
+        let invoice = dao.create_invoice(default_create_invoice_data()).await.unwrap();
+
+        let request_data = CreateOneInchSwapData {
+            invoice_id: invoice.id,
+            from_chain: OneInchSupportedChain::from_chain_id(SRC_CHAIN_ID).unwrap(),
+            to_chain: OneInchSupportedChain::from_chain_id(DST_CHAIN_ID).unwrap(),
+            from_token_address: USDT_POLYGON,
+            to_token_address: USDC_POLYGON,
+            from_amount_units: AMOUNT_FROM_FRONT_END,
+            from_address: SOURCE_WALLET_ADDRESS,
+            to_address: DESTINATION_WALLET_ADDRESS,
+        };
+
+        let response = executor.build_order(request_data).await.unwrap();
+        println!("Order built");
+
+        let base_private_key = std::env::var("TEST_BASE_PRIVATE_KEY").unwrap();
+        let signer: PrivateKeySigner = base_private_key.parse().unwrap();
+        let signature = const_hex::encode_prefixed(&signer.sign_hash_sync(&response.unsigned_order.order_hash).unwrap().as_bytes());
+
+        let wallet = EthereumWallet::from(signer.clone());
+
+        let provider = ProviderBuilder::new()
+            .wallet(wallet)
+            .connect_http(POLYGON_RPC.parse().unwrap());
+
+        let usdc = IERC20::new(USDT_POLYGON, &provider);
+
+        let allowance = usdc.allowance(SOURCE_WALLET_ADDRESS, LIMIT_ORDER_PROTOCOL).call().await.unwrap();
+        let amount_needed = U256::from(AMOUNT_FROM_FRONT_END);
+
+        if allowance < amount_needed {
+            println!("Approving token spending...");
+
+            let tx = usdc.approve(LIMIT_ORDER_PROTOCOL, amount_needed);
+            let receipt = tx.send().await.unwrap().get_receipt().await.unwrap();
+
+            println!("Approval tx: {}", receipt.transaction_hash);
+            println!("Approval confirmed!");
+        } else {
+            println!("Sufficient allowance already exists");
+        }
+
+        println!("Order signed, allowance permited");
+
+        let _order_sent = executor.submit_order(response.id, invoice.id, response.unsigned_order.order_hash, signature).await.unwrap();
+
+        println!("Order sent, start watching");
+
+        let token = CancellationToken::new();
+
+        monitor.perform(token).await;
     }
 }
