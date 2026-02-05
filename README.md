@@ -17,6 +17,28 @@ Download the latest Docker container or x86-64 release from the [GitHub releases
 
 ### Compile from Source
 
+#### Database Setup
+
+The daemon relies on SQL syntax that is supported starting from SQLite `3.47.0`. At the moment, `sqlx` allows using the bundled (built-in) SQLite with `sqlite` feature enabled, but it enforces an older SQLite dependency. Once selecting the SQLite version is supported by `sqlx` (expected around `sqlx 0.9`), the bundled SQLite will be used, and a local SQLite installation will no longer be required.
+
+If you plan to run the daemon on Linux, it is recommended to build SQLite from source, as the version provided by the package manager may be outdated. Build instructions can be found [here](https://sqlite.org/src/doc/trunk/doc/compile-for-unix.md), the latest version can be downloaded from [this page](https://www.sqlite.org/download.html).
+
+There is a setup example for MacOS, which may be usefull for tests and local development.
+
+1. Install SQLite via `brew`:
+```sh
+brew install sqlite3
+```
+
+2. Export the following environmental variables:
+```sh
+export PATH="/opt/homebrew/opt/sqlite/bin:$PATH"
+export SQLITE3_LIB_DIR=/opt/homebrew/opt/sqlite/lib
+export SQLITE3_INCLUDE_DIR=/opt/homebrew/opt/sqlite/include
+```
+
+#### Compilation
+
 To compile the daemon, ensure you have the latest stable version of the Rust compiler installed. In order to compile
 the daemon it also required to have blockchain node's metadata which can be fetched using `subxt-cli`. Step by step
 workflow to compile the project will be following:
@@ -73,19 +95,15 @@ export MY_SUPER_KALATORI_RECIPIENT=your_recipient_here
 
 For development and testing purposes Kalatori can be configured to connect to `chopsticks` instead of real chain.
 In order to run Kalatori with `chopsticks` connection follow next steps:
-1. Create docker network, required for `chopsticks`:
-```sh
-make create-network
-```
-2. Copy configs from example files:
+1. Copy configs from example files:
 ```sh
 make copy-configs
 ```
-3. Run `chopsticks` in docker and build and run Kalatori daemon locally:
+2. Run `chopsticks` in docker and build and run Kalatori daemon locally:
 ```sh
 make run
 ```
-4. When you finished, clean up `chopsticks` containers:
+3. When you finished, clean up `chopsticks` containers:
 ```sh
 make stop-chopsticks
 ```
