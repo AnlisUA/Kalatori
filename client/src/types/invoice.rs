@@ -118,6 +118,7 @@ pub struct InvoiceCartItem {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InvoiceCart {
+    #[serde(default)]
     pub items: Vec<InvoiceCartItem>,
 }
 

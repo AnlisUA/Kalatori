@@ -23,6 +23,7 @@ use crate::chain_client::{
 use crate::configs::PaymentsConfig;
 use crate::dao::{
     DAO,
+    DaoChangesError,
     DaoInterface,
     DaoInvoiceError,
     DaoTransactionError,
@@ -34,6 +35,7 @@ use crate::types::{
     InvoiceEventType,
     InvoiceWithReceivedAmount,
     KalatoriEventExt,
+    PublicChangesResponse,
     Transaction,
     UpdateInvoiceData,
 };
@@ -339,6 +341,19 @@ impl<D: DaoInterface> AppState<D> {
         self.dao
             .get_invoice_transactions(invoice_id)
             .await
+    }
+
+    #[tracing::instrument(skip_all)]
+    pub async fn get_invoice_changes(
+        &self,
+        since: chrono::DateTime<Utc>,
+    ) -> Result<PublicChangesResponse, DaoChangesError> {
+        let internal_response = self
+            .dao
+            .get_invoice_changes(since)
+            .await?;
+
+        Ok(internal_response.into_public(&self.payments_config.payment_url_base))
     }
 }
 

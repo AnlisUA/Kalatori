@@ -13,6 +13,7 @@ use chrono::{
 use uuid::Uuid;
 
 use crate::types::{
+    ChangesResponse,
     CreateInvoiceData,
     GeneralTransactionId,
     Invoice,
@@ -26,6 +27,10 @@ use crate::types::{
     WebhookEvent,
 };
 
+use super::changes::{
+    DaoChangesError,
+    DaoChangesMethods,
+};
 use super::invoice::{
     DaoInvoiceError,
     DaoInvoiceMethods,
@@ -203,6 +208,15 @@ pub trait DaoInterface: Send + Sync + 'static {
         &self,
         event_id: Uuid,
     ) -> Result<WebhookEvent, DaoWebhookEventError>;
+
+    // === Changes Methods ===
+
+    /// Get all invoices and related entities modified since the given
+    /// timestamp.
+    async fn get_invoice_changes(
+        &self,
+        since: DateTime<Utc>,
+    ) -> Result<ChangesResponse, DaoChangesError>;
 }
 
 /// Interface for database transaction operations.
@@ -497,6 +511,13 @@ impl DaoInterface for DAO {
         event_id: Uuid,
     ) -> Result<WebhookEvent, DaoWebhookEventError> {
         DaoWebhookEventMethods::mark_webhook_event_as_sent(self, event_id).await
+    }
+
+    async fn get_invoice_changes(
+        &self,
+        since: DateTime<Utc>,
+    ) -> Result<ChangesResponse, DaoChangesError> {
+        DaoChangesMethods::get_invoice_changes(self, since).await
     }
 }
 
