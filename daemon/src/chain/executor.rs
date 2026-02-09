@@ -330,6 +330,10 @@ impl<
         client: &Arc<C>,
         request: &ChainPayoutRequest<T>,
     ) -> Result<SignedTransaction<T>, ChainExecutorError> {
+        // TODO: in request (and in database) we've got quite specific amount
+        // but the real amount might be different. While we're not support refunds
+        // we can receive 100 dollars while expecting just 10 and create database
+        // record with payout request for 10 dollars but actually execute it for 100
         let transaction = client
             .build_transfer_all(
                 &request.source_address,

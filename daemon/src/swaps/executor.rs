@@ -173,6 +173,7 @@ impl<D: DaoInterface + 'static> SwapsExecutor<D> {
         Ok(swap)
     }
 
+    #[tracing::instrument(skip(self, signature))]
     pub async fn submit_order(
         &self,
         swap_id: Uuid,
@@ -188,6 +189,14 @@ impl<D: DaoInterface + 'static> SwapsExecutor<D> {
             })?;
 
         let swap = prepared_swap.to_signed(signature);
+
+        let is_cross_chain = swap.is_cross_chain();
+
+        tracing::info!(
+            is_cross_chain,
+            "Trying to create and submit swap...",
+        );
+
         let swap = self.dao.create_swap(swap).await?;
 
         let result = if swap.is_cross_chain() {
@@ -199,9 +208,21 @@ impl<D: DaoInterface + 'static> SwapsExecutor<D> {
         match result {
             Ok(()) => {
                 let swap = self.dao.update_swap_submitted(swap.id).await?;
+
+                tracing::info!(
+                    is_cross_chain,
+                    "Swap has been created and submitted succesfully"
+                );
+
                 Ok(swap)
             },
             Err(e) => {
+                tracing::info!(
+                    is_cross_chain,
+                    error.source = ?e,
+                    "Got error while "
+                );
+
                 self.dao.update_swap_failed(swap.id, e.to_string()).await?;
                 Err(e.into())
             }

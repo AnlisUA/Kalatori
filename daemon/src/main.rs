@@ -208,6 +208,8 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
     let shop_config = shop_config_with_prefix(&configs_path, &env_prefix);
     let one_inch_config = one_inch_config_with_prefix(&configs_path, &env_prefix);
 
+    tracing::info!("Configs loaded successfully, start components initialization");
+
     let hmac_config = HmacConfig::new(
         secrets_config
             .api_secret_key
@@ -248,7 +250,7 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
     let asset_hub_client = AssetHubClient::new(asset_hub_chain_config)
         .await
         .map_err(|_| {
-            tracing::warn!("Failed to initialize Asset Hub client, continuing without it");
+            tracing::warn!("Failed to initialize Asset Hub client");
             Error::Fatal
         })?;
 
@@ -393,6 +395,8 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
         shutdown_notification.token.clone(),
     )
     .await;
+
+    tracing::info!("Web server has been started at address {}:{}", web_server_config.host, web_server_config.port);
 
     let shutdown_completed = CancellationToken::new();
     let mut shutdown_listener = tokio::spawn(shutdown::listener(

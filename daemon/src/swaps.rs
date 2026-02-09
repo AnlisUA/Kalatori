@@ -203,11 +203,22 @@ impl<D: DaoInterface + 'static> SwapsMonitor<D> {
             "Check cross chain swaps statuses"
         );
 
-        let cross_orders = self.one_inch_client
+        let cross_orders = match self.one_inch_client
             .get_cross_orders_by_hashes(&hashes)
             .await
-            // TODO: handle error
-            .unwrap();
+        {
+            Ok(resp) => resp,
+            Err(e) => {
+                tracing::warn!(
+                    error.source = ?e,
+                    swaps_hashes = ?hashes,
+                    swaps_ids = ?hashes_with_ids.values(),
+                    "Error while request cross orders by hashes from 1Inch API"
+                );
+
+                return;
+            }
+        };
 
         for order in cross_orders {
             let order_hash = order.order_hash;
@@ -328,12 +339,9 @@ mod tests {
     use alloy::providers::ProviderBuilder;
     use alloy::signers::local::PrivateKeySigner;
     use alloy::sol;
-    use secrecy::SecretString;
+    use serde::Deserialize;
 
-    use crate::configs::DatabaseConfig;
-    use crate::dao::DAO;
-    use crate::swaps::executor::SwapsExecutor;
-    use crate::types::{OneInchSupportedChain, CreateOneInchSwapData, default_create_invoice_data};
+    use crate::types::{CreateOneInchSwapParams, PublicOneInchPreparedSwap, PublicOneInchSwap, SubmitOneInchSwapParams};
 
     use super::*;
 
@@ -341,17 +349,13 @@ mod tests {
     const USDC_POLYGON: Address = address!("0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359");
     const USDT_POLYGON: Address = address!("0xc2132D05D31c914a87C6611C10748AEb04B58e8F");
     const EURC_BASE: Address = address!("0x60a3E35Cc302bFA44Cb288Bc5a4F316Fdb1adb42");
-    const SRC_CHAIN_ID: u64 = 137;  // Polygon
-    // const SRC_CHAIN_ID: u64 = 8453;  // Base
-    const DST_CHAIN_ID: u64 = 137;  // Polygon
-    // const DST_CHAIN_ID: u64 = 8453;  // Base
+    // const SRC_CHAIN_ID: u64 = 137;  // Polygon
+    const SRC_CHAIN_ID: u64 = 8453;  // Base
     const SOURCE_WALLET_ADDRESS: Address = address!("0x0E3Ca7fD040144900AdaA5f9B8917f3933A4F5e9");
-    const DESTINATION_WALLET_ADDRESS: Address = address!("0x45f077823C8d036a1a9f7Cd28e86Bd98191dF2b7");
-    // const AMOUNT_FROM_FRONT_END: u128 = 1_000_000; // 1 USDC (6 decimals)
-    const AMOUNT_FROM_FRONT_END: u128 = 978_000;
-    const LIMIT_ORDER_PROTOCOL: Address = address!("0x111111125421ca6dc452d289314280a0f8842a65");
+    const AMOUNT_FROM_FRONT_END: u128 = 1_000_000; // 1 USDC (6 decimals)
     const BASE_RPC: &str = "https://base-rpc.publicnode.com";
     const POLYGON_RPC: &str = "https://polygon-bor-rpc.publicnode.com";
+    const INVOICE_ID: Uuid = uuid::uuid!("3612cb08-cef9-474c-973b-8fa7b72e710f");
 
     sol! {
         #[sol(rpc)]
@@ -362,57 +366,63 @@ mod tests {
         }
     }
 
+    #[derive(Debug, Clone, Deserialize)]
+    struct ApiResponseResult<T> {
+        result: T,
+    }
+
     #[tokio::test]
     async fn test_swaps() {
-        let one_inch_client = OneInchClient::new(
-            SecretString::from(std::env::var("ONE_INCH_API_KEY").unwrap()),
-        );
-
-        let database_config = DatabaseConfig {
-            dir: "../database".to_string(),
-            temporary: false,
+        let rpc_node_url = if SRC_CHAIN_ID == 137 {
+            POLYGON_RPC
+        } else {
+            BASE_RPC
         };
 
-        let dao = DAO::new(database_config).await.unwrap();
-
-        let executor = SwapsExecutor::new(dao.clone(), one_inch_client.clone());
-        let monitor = SwapsMonitor::new(dao.clone(), one_inch_client);
-
-        let invoice = dao.create_invoice(default_create_invoice_data()).await.unwrap();
-
-        let request_data = CreateOneInchSwapData {
-            invoice_id: invoice.id,
-            from_chain: OneInchSupportedChain::from_chain_id(SRC_CHAIN_ID).unwrap(),
-            to_chain: OneInchSupportedChain::from_chain_id(DST_CHAIN_ID).unwrap(),
-            from_token_address: USDT_POLYGON,
-            to_token_address: USDC_POLYGON,
-            from_amount_units: AMOUNT_FROM_FRONT_END,
+        let request_params = CreateOneInchSwapParams {
+            invoice_id: INVOICE_ID,
+            from_chain: SRC_CHAIN_ID,
+            from_token_address: USDC_BASE,
             from_address: SOURCE_WALLET_ADDRESS,
-            to_address: DESTINATION_WALLET_ADDRESS,
+            from_amount_units: AMOUNT_FROM_FRONT_END,
         };
 
-        let response = executor.build_order(request_data).await.unwrap();
-        println!("Order built");
+        let client = reqwest::Client::new();
+
+        let response = client
+            .post("http://localhost:8080/public/swap/create")
+            .json(&request_params)
+            .send()
+            .await
+            .unwrap();
+
+        let response_text = response.text().await.unwrap();
+
+        println!("Create swap response text: {:#?}", response_text);
+
+        let response = serde_json::from_str::<ApiResponseResult<PublicOneInchPreparedSwap>>(&response_text).unwrap().result;
+
+        println!("Create swap response: {:#?}", response);
 
         let base_private_key = std::env::var("TEST_BASE_PRIVATE_KEY").unwrap();
         let signer: PrivateKeySigner = base_private_key.parse().unwrap();
-        let signature = const_hex::encode_prefixed(&signer.sign_hash_sync(&response.unsigned_order.order_hash).unwrap().as_bytes());
+        let signature = const_hex::encode_prefixed(&signer.sign_hash_sync(&response.order_hash).unwrap().as_bytes());
 
         let wallet = EthereumWallet::from(signer.clone());
 
         let provider = ProviderBuilder::new()
             .wallet(wallet)
-            .connect_http(POLYGON_RPC.parse().unwrap());
+            .connect_http(rpc_node_url.parse().unwrap());
 
-        let usdc = IERC20::new(USDT_POLYGON, &provider);
+        let token_address = IERC20::new(response.from_token_address, &provider);
 
-        let allowance = usdc.allowance(SOURCE_WALLET_ADDRESS, LIMIT_ORDER_PROTOCOL).call().await.unwrap();
-        let amount_needed = U256::from(AMOUNT_FROM_FRONT_END);
+        let allowance = token_address.allowance(response.from_address, response.verifying_protocol).call().await.unwrap();
+        let amount_needed = U256::from(response.from_amount_units);
 
         if allowance < amount_needed {
             println!("Approving token spending...");
 
-            let tx = usdc.approve(LIMIT_ORDER_PROTOCOL, amount_needed);
+            let tx = token_address.approve(response.verifying_protocol, amount_needed);
             let receipt = tx.send().await.unwrap().get_receipt().await.unwrap();
 
             println!("Approval tx: {}", receipt.transaction_hash);
@@ -422,13 +432,24 @@ mod tests {
         }
 
         println!("Order signed, allowance permited");
+        println!("Sending order hash: {:?}", const_hex::encode_prefixed(response.order_hash));
+        let swap_submit_request = SubmitOneInchSwapParams {
+            swap_id: response.id,
+            invoice_id: response.invoice_id,
+            order_hash: response.order_hash,
+            signature,
+        };
 
-        let _order_sent = executor.submit_order(response.id, invoice.id, response.unsigned_order.order_hash, signature).await.unwrap();
+        let swap_submit_response = client
+            .post("http://localhost:8080/public/swap/submit")
+            .json(&swap_submit_request)
+            .send()
+            .await
+            .unwrap()
+            .json::<ApiResponseResult<PublicOneInchSwap>>()
+            .await
+            .unwrap();
 
-        println!("Order sent, start watching");
-
-        let token = CancellationToken::new();
-
-        monitor.perform(token).await;
+        println!("Swap submit response: {:#?}", swap_submit_response);
     }
 }

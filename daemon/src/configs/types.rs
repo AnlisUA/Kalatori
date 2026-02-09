@@ -228,7 +228,7 @@ fn default_port() -> u16 {
 }
 
 // TODO: configure enable/disable health/metrics/etc handlers?
-#[derive(Deserialize, Debug)]
+#[derive(Debug, Clone, Copy, Deserialize)]
 pub struct WebServerConfig {
     /// By default use 0.0.0.0
     #[serde(default = "default_host")]

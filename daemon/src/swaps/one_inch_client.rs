@@ -885,7 +885,7 @@ impl OneInchClient {
             TRUE_ERC20,
             quote.src_token_amount.clone(),
             preset.auction_end_amount.clone(),
-            Address::ZERO,
+            data.to_address,
             expiration,
             now,
             &extension,
@@ -990,34 +990,5 @@ impl OneInchClient {
         } else {
             self.build_intent_order_from_request_data(data, auction_time_buffer_secs).await
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use alloy::primitives::address;
-
-    use super::*;
-
-    #[tokio::test]
-    async fn test_get_prices() {
-        let client = OneInchClient::new(
-            SecretString::from(std::env::var("ONE_INCH_API_KEY").unwrap()),
-        );
-
-        let resp = client
-            .get_intent_quote(
-                137,
-                GetIntentQuoteParams {
-                    from_token_address: address!("0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"),
-                    to_token_address: address!("0xc2132D05D31c914a87C6611C10748AEb04B58e8F"),
-                    amount: "1000000".to_string(),
-                    wallet_address: address!("0x0E3Ca7fD040144900AdaA5f9B8917f3933A4F5e9"),
-                    enable_estimate: true,
-                }
-            )
-            .await
-            .unwrap();
-        println!("Resp: {:#?}", resp);
     }
 }

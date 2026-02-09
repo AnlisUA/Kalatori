@@ -199,6 +199,10 @@ pub struct OneInchPreparedSwap {
 }
 
 impl OneInchPreparedSwap {
+    pub fn is_cross_chain(&self) -> bool {
+        self.request.from_chain == self.request.to_chain
+    }
+
     pub fn to_signed(self, signature: String) -> OneInchSwap {
         let raw_order = OrderSubmitRequest {
             src_chain_id: self.request.from_chain.chain_id(),
@@ -239,6 +243,7 @@ pub struct PublicOneInchPreparedSwap {
     pub from_amount_units: u128,
     pub from_address: Address,
     pub to_amount: Decimal,
+    pub verifying_protocol: Address,
     pub order_hash: B256,
     pub valid_till: DateTime<Utc>,
 }
@@ -253,6 +258,7 @@ impl From<OneInchPreparedSwap> for PublicOneInchPreparedSwap {
             from_amount_units: value.request.from_amount_units,
             from_address: value.request.from_address,
             to_amount: value.to_amount,
+            verifying_protocol: value.request.from_chain.verifying_protocol(),
             order_hash: value.unsigned_order.order_hash,
             valid_till: value.valid_till,
         }

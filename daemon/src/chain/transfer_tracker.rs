@@ -300,6 +300,7 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
                 sender = %transfer.sender,
                 recipient = %transfer.recipient,
                 amount = %transfer.amount,
+                tx_hash = ?transfer.transaction_hash,
                 "Processing incoming transfer for invoice"
             );
 

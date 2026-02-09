@@ -358,19 +358,32 @@ impl<D: DaoInterface> AppState<D> {
         params: CreateOneInchSwapParams,
     ) -> Result<OneInchPreparedSwap, SwapsExecutorError> {
         // On this step unwraps are safe, we ensure that all required values are set on the program startup
-        let recipient_chain = self.payments_config.default_chain;
-        let recipient_token_address = self.payments_config.default_asset_id.get(&recipient_chain).unwrap();
-        let recipient_address = self.payments_config.recipient.get(&recipient_chain).unwrap();
+        // TODO: handle errors
+        let invoice = self.dao
+            .get_invoice_by_id(params.invoice_id)
+            .await
+            .unwrap()
+            .unwrap();
+
+        let to_chain = invoice.chain.try_into().unwrap();
+
+        // Those unwraps should be safe
+        let to_token_address = invoice.asset_id.parse().unwrap();
+        let to_address = invoice.payment_address.parse().unwrap();
+
+        // let recipient_chain = self.payments_config.default_chain;
+        // let recipient_token_address = self.payments_config.default_asset_id.get(&recipient_chain).unwrap();
+        // let recipient_address = self.payments_config.recipient.get(&recipient_chain).unwrap();
 
         // TODO: get rid of unwraps here, if configured chain isn't supported by 1Inch, we should
         // return an error, same if user want's to transfer from unsupported chain
-        let to_chain = recipient_chain.try_into().unwrap();
+        // let to_chain = recipient_chain.try_into().unwrap();
         let from_chain = OneInchSupportedChain::from_chain_id(params.from_chain).unwrap();
 
         // Those unwraps should be safe too. We must check recipient address to be valid Address on startup.
         // Also we must check that recipient token address is valid Address too.
-        let to_address = recipient_address.parse().unwrap();
-        let to_token_address = recipient_token_address.parse().unwrap();
+        // let to_address = recipient_address.parse().unwrap();
+        // let to_token_address = recipient_token_address.parse().unwrap();
 
         let data = CreateOneInchSwapData {
             invoice_id: params.invoice_id,
