@@ -389,6 +389,7 @@ mod tests {
                 "5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty".to_string(),
             )]),
             payment_url_base: "https://payments.example.com".to_string(),
+            slippage_params: HashMap::new(),
         };
 
         let shop_meta = ShopMetaConfig {
