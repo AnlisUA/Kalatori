@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::net::IpAddr;
 use std::str::FromStr;
 
+use rust_decimal::Decimal;
 use secrecy::SecretString;
 use serde::{
     Deserialize,
@@ -136,6 +137,25 @@ fn default_invoice_lifetime_millis() -> u64 {
     DEFAULT_INVOICE_LIFETIME_MILLIS
 }
 
+// TODO: add validations for that params. At least we have to ensure that they
+// are not negative. Ideally, we have to also validate their estimate price and
+// don't allow to exceed it some constant amount like 5 dollars or something
+// similar. Also, later we'll probably add some minimal invoice amount. We'll
+// have to ensure that tolerance doesn't allow to avoid invoice payment at all
+// (or pay just the very minimal amount).
+#[derive(Deserialize, Clone, Copy, Debug, Default)]
+pub struct SlippageParams {
+    /// Maximum amount below the expected payment that will still be accepted.
+    /// If set to 0, will require exact amount or more. By default is 0.
+    #[serde(default)]
+    pub underpayment_tolerance: Decimal,
+    /// Maximum acceptable overpayment before triggering a partial refund of the
+    /// excess amount. If set to 0, will trigger partial refund for any
+    /// overpayment. By default is 0.
+    #[serde(default)]
+    pub overpayment_tolerance: Decimal,
+}
+
 // TODO: add some docs for fields, their purpose might be not obvious
 #[derive(Deserialize, Clone, Debug)]
 pub struct PaymentsConfig {
@@ -156,6 +176,10 @@ pub struct PaymentsConfig {
     pub default_asset_id: HashMap<ChainType, String>,
     /// Base URL for payment links, e.g. "https://shop.example.com". Should be an address of Kalatori instance.
     pub payment_url_base: String,
+    /// Slippage parameters can be configured for each specific asset. If not
+    /// set, default settings will be used.
+    #[serde(default)]
+    pub slippage_params: HashMap<ChainType, HashMap<String, SlippageParams>>,
 }
 
 impl PaymentsConfig {
@@ -220,6 +244,36 @@ impl PaymentsConfig {
         }
 
         Ok(())
+    }
+
+    pub fn get_asset_slippage_params(
+        &self,
+        chain: ChainType,
+        asset_id: &str,
+    ) -> SlippageParams {
+        self.slippage_params
+            .get(&chain)
+            .and_then(|map| map.get(asset_id).copied())
+            .unwrap_or_default()
+    }
+
+    pub fn get_asset_underpayment_tolerance(
+        &self,
+        chain: ChainType,
+        asset_id: &str,
+    ) -> Decimal {
+        self.get_asset_slippage_params(chain, asset_id)
+            .underpayment_tolerance
+    }
+
+    #[expect(dead_code)]
+    pub fn get_asset_overpayment_tolerance(
+        &self,
+        chain: ChainType,
+        asset_id: &str,
+    ) -> Decimal {
+        self.get_asset_slippage_params(chain, asset_id)
+            .overpayment_tolerance
     }
 }
 

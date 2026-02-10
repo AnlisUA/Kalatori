@@ -277,6 +277,7 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
     }
 
     #[expect(clippy::arithmetic_side_effects)]
+    #[tracing::instrument(skip(self))]
     async fn process_transfer(
         &self,
         transfer: GeneralChainTransfer,
@@ -295,19 +296,19 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
         {
             tracing::info!(
                 invoice_id = %invoice.id,
-                chain = %transfer.chain,
-                asset_id = %transfer.asset_id,
-                sender = %transfer.sender,
-                recipient = %transfer.recipient,
-                amount = %transfer.amount,
                 "Processing incoming transfer for invoice"
             );
 
             let transaction = IncomingTransaction::from_chain_transfer(invoice.id, transfer);
             total_received_amount += transaction.transfer_info.amount;
 
+            let underpayment_tolerance = self
+                .config
+                .get_asset_underpayment_tolerance(invoice.chain, &invoice.asset_id);
+            let min_paid_amount = invoice.amount - underpayment_tolerance;
+
             // TODO: handle overpayments
-            let updated_status = if total_received_amount >= invoice.amount {
+            let updated_status = if total_received_amount >= min_paid_amount {
                 InvoiceStatus::Paid
             } else {
                 InvoiceStatus::PartiallyPaid
@@ -324,7 +325,9 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
                 Ok(()) if updated_status == InvoiceStatus::Paid => {
                     tracing::info!(
                         invoice_id = %invoice.id,
-                        "Invoice has been fully paid, removing from registry"
+                        filled_amount = %total_received_amount,
+                        min_fill_amount = %min_paid_amount,
+                        "Invoice has been paid, removing from registry, stop monitoring"
                     );
 
                     self.registry
@@ -335,6 +338,7 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
                     tracing::info!(
                         invoice_id = %invoice.id,
                         filled_amount = %total_received_amount,
+                        min_fill_amount = %min_paid_amount,
                         "Invoice has been partially paid, updating filled amount in registry"
                     );
 
