@@ -21,7 +21,6 @@ use tokio_util::sync::CancellationToken;
 use tracing::Level;
 use zeroize::Zeroize;
 
-
 use chain::{
     InvoiceRegistry,
     TransfersExecutor,
