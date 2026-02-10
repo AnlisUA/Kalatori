@@ -37,6 +37,7 @@ use configs::{
     PaymentsConfig,
     chains_config_with_prefix,
     database_config_with_prefix,
+    logger_config_with_prefix,
     payments_config_with_prefix,
     secrets_config_with_prefix,
     shop_config_with_prefix,
@@ -116,15 +117,9 @@ fn main() -> ExitCode {
 }
 
 fn try_main(shutdown_notification: ShutdownNotification) -> Result<(), Error> {
-    logger::initialize("")?;
     shutdown::set_panic_hook(
-        |panic| tracing::error!("{panic}"),
+        |panic| eprintln!("{panic}"),
         shutdown_notification.clone(),
-    );
-
-    tracing::info!(
-        "Kalatori {} is starting...",
-        env!("CARGO_PKG_VERSION")
     );
 
     Runtime::new()
@@ -179,23 +174,24 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
     rustls::crypto::aws_lc_rs::default_provider()
         .install_default()
         .unwrap();
-    // Planned start order
-    // 1. Load configs
-    // 2. Init database
-    // 3. Load data from old database to the new one
-    // 4. Get info about required chains and assets from database and configs
-    // 5. Start keyring (background task)
-    // 6. Start chain monitoring (incoming transactions, background task)
-    // 7. Fetch balances of "pending" payments, ensure balance equals to expected
-    //    (can be made in background)
-    //  7.1 If balance > sum(related transactions amount), fetch related
-    // transactions using API and update Invoice statuses respectively
-    // 8. Start payments executor (background task)
-    // 9. Start API (background task)
+
     let env_prefix =
         std::env::var("KALATORI_APP_ENV_PREFIX").unwrap_or_else(|_| DEFAULT_ENV_PREFIX.to_string());
 
     let configs_path = std::env::var(format!("{env_prefix}_CONFIG_DIR_PATH")).unwrap_or_default();
+
+    let logger_config = logger_config_with_prefix(&configs_path, &env_prefix);
+    let loki_controller = logger::initialize(&logger_config)?;
+
+    shutdown::set_panic_hook(
+        |panic| tracing::error!("{panic}"),
+        shutdown_notification.clone(),
+    );
+
+    tracing::info!(
+        "Kalatori {} is starting...",
+        env!("CARGO_PKG_VERSION")
+    );
 
     let mut secrets_config = secrets_config_with_prefix(&configs_path, &env_prefix);
     let mut chains_config = chains_config_with_prefix(&configs_path, &env_prefix);
@@ -382,7 +378,7 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
 
     // Start the main loop and wait for it to gracefully end or the early
     // termination signal.
-    tokio::select! {
+    let result = tokio::select! {
         biased;
         () = task_tracker.wait_and_shutdown(error_rx, shutdown_notification) => {
             shutdown_completed.cancel();
@@ -411,5 +407,13 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
         }
         shutdown_listener_result = &mut shutdown_listener => shutdown_listener_result
     }
-    .expect("shutdown listener shouldn't panic")
+    .expect("shutdown listener shouldn't panic");
+
+    // Flush remaining logs to Loki after all components have stopped, so no
+    // log records are lost.
+    if let Some(controller) = loki_controller {
+        controller.shutdown().await;
+    }
+
+    result
 }
