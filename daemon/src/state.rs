@@ -20,7 +20,7 @@ use crate::chain_client::{
     GenerateAddressData,
     KeyringClient,
 };
-use crate::configs::PaymentsConfig;
+use crate::configs::{PaymentsConfig, ShopMetaConfig};
 use crate::dao::{
     DAO,
     DaoInterface,
@@ -44,6 +44,7 @@ pub struct AppState<D: DaoInterface = DAO> {
     registry: InvoiceRegistry,
     asset_names_map: HashMap<String, String>,
     payments_config: PaymentsConfig,
+    shop_meta: ShopMetaConfig,
 }
 
 impl<D: DaoInterface> AppState<D> {
@@ -53,6 +54,7 @@ impl<D: DaoInterface> AppState<D> {
         registry: InvoiceRegistry,
         asset_names_map: HashMap<String, String>,
         payments_config: PaymentsConfig,
+        shop_meta: ShopMetaConfig,
     ) -> Self {
         Self {
             keyring,
@@ -60,6 +62,7 @@ impl<D: DaoInterface> AppState<D> {
             registry,
             asset_names_map,
             payments_config,
+            shop_meta,
         }
     }
 
@@ -340,6 +343,10 @@ impl<D: DaoInterface> AppState<D> {
             .get_invoice_transactions(invoice_id)
             .await
     }
+
+    pub fn get_shop_meta(&self) -> ShopMetaConfig {
+        self.shop_meta.clone()
+    }
 }
 
 #[cfg(test)]
@@ -381,6 +388,11 @@ mod tests {
             payment_url_base: "https://payments.example.com".to_string(),
         };
 
+        let shop_meta = ShopMetaConfig {
+            shop_name: "Mega shop".to_string(),
+            logo_url: None,
+        };
+
         let keyring = KeyringClient::default();
         let dao = MockDaoInterface::default();
         let registry = InvoiceRegistry::new();
@@ -391,6 +403,7 @@ mod tests {
             registry,
             asset_names_map,
             config,
+            shop_meta,
         )
     }
 

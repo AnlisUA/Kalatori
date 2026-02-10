@@ -3,7 +3,7 @@ use std::net::IpAddr;
 use std::str::FromStr;
 
 use secrecy::SecretString;
-use serde::Deserialize;
+use serde::{Serialize, Deserialize};
 
 use crate::chain::utils::to_base58_string;
 use crate::types::ChainType;
@@ -255,11 +255,20 @@ fn default_signature_max_age_secs() -> u64 {
     DEFAULT_SIGNATURE_MAX_AGE_SECS
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShopMetaConfig {
+    pub shop_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logo_url: Option<String>,
+}
+
 #[derive(Deserialize, Clone)]
 pub struct ShopConfig {
     pub invoices_webhook_url: String,
     #[serde(default = "default_signature_max_age_secs")]
     pub signature_max_age_secs: u64,
+    #[serde(flatten)]
+    pub meta: ShopMetaConfig,
 }
 
 fn default_log_directives() -> String {
