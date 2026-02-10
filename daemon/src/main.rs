@@ -357,6 +357,7 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
         invoice_registry,
         asset_names_map,
         payments_config,
+        shop_config.meta,
     );
 
     let api_handle = api::api_server(

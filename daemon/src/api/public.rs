@@ -12,7 +12,10 @@ use axum::response::{
 use serde::Deserialize;
 use uuid::Uuid;
 
+use crate::configs::ShopMetaConfig;
+
 use super::ApiState;
+use super::utils::SuccessWrapper;
 
 #[derive(Debug, PartialEq, Eq, Deserialize)]
 struct IndexParams {
@@ -59,8 +62,13 @@ async fn invoice(
     }
 }
 
+async fn shop_meta(ExtractState(state): ExtractState<ApiState>) -> SuccessWrapper<ShopMetaConfig> {
+    state.get_shop_meta().into()
+}
+
 pub fn routes() -> axum::Router<ApiState> {
     axum::Router::new()
         .route("/", axum::routing::get(index))
         .route("/invoice", axum::routing::get(invoice))
+        .route("/info", axum::routing::get(shop_meta))
 }
