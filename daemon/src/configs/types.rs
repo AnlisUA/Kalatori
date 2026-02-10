@@ -3,7 +3,10 @@ use std::net::IpAddr;
 use std::str::FromStr;
 
 use secrecy::SecretString;
-use serde::{Serialize, Deserialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 use crate::chain::utils::to_base58_string;
 use crate::types::ChainType;

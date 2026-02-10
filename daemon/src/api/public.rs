@@ -62,9 +62,7 @@ async fn invoice(
     }
 }
 
-async fn shop_meta(
-    ExtractState(state): ExtractState<ApiState>,
-) -> SuccessWrapper<ShopMetaConfig> {
+async fn shop_meta(ExtractState(state): ExtractState<ApiState>) -> SuccessWrapper<ShopMetaConfig> {
     state.get_shop_meta().into()
 }
 

@@ -20,7 +20,10 @@ use crate::chain_client::{
     GenerateAddressData,
     KeyringClient,
 };
-use crate::configs::{PaymentsConfig, ShopMetaConfig};
+use crate::configs::{
+    PaymentsConfig,
+    ShopMetaConfig,
+};
 use crate::dao::{
     DAO,
     DaoInterface,
