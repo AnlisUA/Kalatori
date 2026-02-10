@@ -19,6 +19,7 @@ use super::consts::{
     DEFAULT_POLYGON_ENDPOINTS,
     DEFAULT_POLYGON_USDC_ADDRESS,
     DEFAULT_PORT,
+    DEFAULT_LOG_DIRECTIVES,
     DEFAULT_SIGNATURE_MAX_AGE_SECS,
 };
 
@@ -259,4 +260,16 @@ pub struct ShopConfig {
     pub invoices_webhook_url: String,
     #[serde(default = "default_signature_max_age_secs")]
     pub signature_max_age_secs: u64,
+}
+
+fn default_log_directives() -> String {
+    DEFAULT_LOG_DIRECTIVES.to_string()
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct LoggerConfig {
+    #[serde(default = "default_log_directives")]
+    pub directives: String,
+    #[serde(default)]
+    pub loki_url: Option<String>,
 }
