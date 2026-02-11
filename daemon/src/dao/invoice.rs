@@ -201,9 +201,9 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
             .bind(invoice.status)
             .bind(Json(invoice.cart))
             .bind(invoice.redirect_url)
-            .bind(invoice.valid_till)
-            .bind(invoice.created_at)
-            .bind(invoice.updated_at);
+            .bind(invoice.valid_till.naive_utc())
+            .bind(invoice.created_at.naive_utc())
+            .bind(invoice.updated_at.naive_utc());
 
         self.fetch_one(query)
             .await
@@ -389,7 +389,7 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
         )
         .bind(Text(data.amount))
         .bind(Json(data.cart))
-        .bind(data.valid_till)
+        .bind(data.valid_till.naive_utc())
         .bind(data.invoice_id);
 
         self.fetch_one(query)
