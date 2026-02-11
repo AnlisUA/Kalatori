@@ -9,6 +9,8 @@ use thiserror::Error;
 
 use crate::types::{
     ChangesResponse,
+    FrontEndSwap,
+    FrontEndSwapJson,
     InvoiceChanges,
     InvoiceRow,
     Payout,
@@ -89,6 +91,7 @@ struct InvoiceChangesRow {
     transactions_json: String,
     payouts_json: String,
     refunds_json: String,
+    swaps_json: String,
 }
 
 // ============================================================================
@@ -163,7 +166,20 @@ SELECT
             'updated_at', r.updated_at
         )) FROM refunds r WHERE r.invoice_id = i.id),
         '[]'
-    ) as refunds_json
+    ) as refunds_json,
+    COALESCE(
+        (SELECT json_group_array(json_object(
+            'id', hex(s.id),
+            'invoice_id', hex(s.invoice_id),
+            'from_amount_units', s.from_amount_units,
+            'from_chain_id', s.from_chain_id,
+            'from_asset_id', s.from_asset_id,
+            'transaction_hash', s.transaction_hash,
+            'created_at', s.created_at,
+            'updated_at', s.updated_at
+        )) FROM front_end_swaps s WHERE s.invoice_id = i.id),
+        '[]'
+    ) as swaps_json
 FROM invoices i
 WHERE i.id IN (
     SELECT DISTINCT i2.id
@@ -171,10 +187,12 @@ WHERE i.id IN (
     LEFT JOIN transactions t2 ON i2.id = t2.invoice_id
     LEFT JOIN payouts p2 ON i2.id = p2.invoice_id
     LEFT JOIN refunds r2 ON i2.id = r2.invoice_id
+    LEFT JOIN front_end_swaps s2 ON i2.id = s2.invoice_id
     WHERE i2.updated_at > ?1
        OR (t2.updated_at IS NOT NULL AND t2.updated_at > ?1)
        OR (p2.updated_at IS NOT NULL AND p2.updated_at > ?1)
        OR (r2.updated_at IS NOT NULL AND r2.updated_at > ?1)
+       OR (s2.updated_at IS NOT NULL AND s2.updated_at > ?1)
 )
 ORDER BY i.updated_at ASC
 "#;
@@ -196,10 +214,10 @@ pub trait DaoChangesMethods: DaoExecutor + 'static {
         &self,
         since: DateTime<Utc>,
     ) -> Result<ChangesResponse, DaoChangesError> {
-        // Note: We bind `since` directly (not naive_utc) because invoices store
-        // DateTime<Utc> with timezone info. SQLite compares as strings, so format must
-        // match.
-        let query = sqlx::query_as::<_, InvoiceChangesRow>(GET_INVOICE_CHANGES_SQL).bind(since);
+        // Invoices store timestamps as naive UTC (via .naive_utc()), so we must
+        // also bind `since` as naive UTC for correct string comparison in SQLite.
+        let query =
+            sqlx::query_as::<_, InvoiceChangesRow>(GET_INVOICE_CHANGES_SQL).bind(since.naive_utc());
 
         let rows: Vec<InvoiceChangesRow> = self
             .fetch_all(query)
@@ -361,11 +379,35 @@ fn parse_invoice_changes_row(row: InvoiceChangesRow) -> Result<InvoiceChanges, D
         })
         .collect();
 
+    // Parse swaps JSON
+    let swaps_json: Vec<FrontEndSwapJson> =
+        serde_json::from_str(&row.swaps_json).map_err(|e| {
+            tracing::warn!(
+                error.category = "dao.changes",
+                error.operation = "parse_swaps_json",
+                json = %row.swaps_json,
+                error.source = ?e,
+                "Failed to parse swaps JSON"
+            );
+            DaoChangesError::JsonParseError {
+                message: format!("swaps: {e}"),
+            }
+        })?;
+
+    let swaps: Vec<FrontEndSwap> = swaps_json
+        .into_iter()
+        .map(FrontEndSwap::try_from)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| DaoChangesError::JsonParseError {
+            message: format!("swap conversion: {e}"),
+        })?;
+
     Ok(InvoiceChanges {
         invoice: row.invoice.into(),
         transactions: incoming_transactions,
         payouts: payout_changes,
         refunds: refund_changes,
+        swaps,
     })
 }
 
@@ -434,6 +476,7 @@ mod tests {
         );
         assert!(result.invoices[0].payouts.is_empty());
         assert!(result.invoices[0].refunds.is_empty());
+        assert!(result.invoices[0].swaps.is_empty());
     }
 
     #[tokio::test]
@@ -625,6 +668,57 @@ mod tests {
         assert_eq!(
             inv.payouts[0].transactions[0].transaction_type,
             TransactionType::Outgoing
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_invoice_changes_with_swaps() {
+        use crate::dao::swap::DaoSwapMethods;
+        use crate::types::FrontEndSwap;
+        use alloy::primitives::Address;
+
+        let dao = create_test_dao().await;
+
+        // Create invoice
+        let invoice_data = default_create_invoice_data();
+        let invoice = dao
+            .create_invoice(invoice_data.clone())
+            .await
+            .unwrap();
+
+        // Create front-end swap
+        let swap = FrontEndSwap {
+            invoice_id: invoice.id,
+            from_amount_units: 1_000_000,
+            from_chain_id: 1,
+            from_asset_id: Address::ZERO,
+            transaction_hash: "0xabc123".to_string(),
+        };
+        let created_swap = dao
+            .create_front_end_swap(swap.clone())
+            .await
+            .unwrap();
+
+        // Query
+        let since = Utc::now() - Duration::hours(1);
+        let result = dao
+            .get_invoice_changes(since)
+            .await
+            .unwrap();
+
+        assert_eq!(result.invoices.len(), 1);
+        assert_eq!(result.invoices[0].swaps.len(), 1);
+        assert_eq!(
+            result.invoices[0].swaps[0].invoice_id,
+            invoice.id
+        );
+        assert_eq!(
+            result.invoices[0].swaps[0].from_amount_units,
+            created_swap.from_amount_units
+        );
+        assert_eq!(
+            result.invoices[0].swaps[0].transaction_hash,
+            created_swap.transaction_hash
         );
     }
 }

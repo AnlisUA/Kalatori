@@ -23,6 +23,7 @@ use kalatori_client::types::{
 };
 
 use super::{
+    FrontEndSwap,
     InitiatorType,
     Invoice,
     OutgoingTransactionMeta,
@@ -76,6 +77,8 @@ pub struct PublicInvoiceChanges {
     pub payouts: Vec<PublicPayoutChanges>,
     /// Refunds with their outgoing transactions
     pub refunds: Vec<PublicRefundChanges>,
+    /// Front-end swaps (cross-chain payments via bridge)
+    pub swaps: Vec<FrontEndSwap>,
 }
 
 /// Public response for the changes sync endpoint (for API responses).
@@ -121,6 +124,8 @@ pub struct InvoiceChanges {
     pub payouts: Vec<PayoutChanges>,
     /// Refunds with their outgoing transactions
     pub refunds: Vec<RefundChanges>,
+    /// Front-end swaps (cross-chain payments via bridge)
+    pub swaps: Vec<FrontEndSwap>,
 }
 
 /// Response for the changes sync endpoint.
@@ -188,6 +193,7 @@ impl InvoiceChanges {
                 .into_iter()
                 .map(RefundChanges::into_public)
                 .collect(),
+            swaps: self.swaps,
         }
     }
 }
@@ -299,6 +305,18 @@ pub struct RefundJson {
     pub created_at: DateTime<Utc>,
     #[serde(deserialize_with = "deserialize_sqlite_datetime")]
     pub updated_at: DateTime<Utc>,
+}
+
+/// Front-end swap as returned from SQLite JSON aggregation.
+#[derive(Debug, Clone, Deserialize)]
+pub struct FrontEndSwapJson {
+    #[expect(dead_code)]
+    pub id: String,         // hex-encoded UUID (unused, but present in DB)
+    pub invoice_id: String, // hex-encoded UUID
+    pub from_amount_units: String, // u128 stored as TEXT
+    pub from_chain_id: u32,
+    pub from_asset_id: String, // hex address
+    pub transaction_hash: String,
 }
 
 // ============================================================================
@@ -487,6 +505,32 @@ impl TryFrom<RefundJson> for Refund {
                 next_retry_at: json.next_retry_at,
                 failure_message: json.failure_message,
             },
+        })
+    }
+}
+
+impl TryFrom<FrontEndSwapJson> for FrontEndSwap {
+    type Error = String;
+
+    fn try_from(json: FrontEndSwapJson) -> Result<Self, Self::Error> {
+        use alloy::primitives::Address;
+
+        let invoice_id = parse_hex_uuid(&json.invoice_id)?;
+        let from_amount_units: u128 = json
+            .from_amount_units
+            .parse()
+            .map_err(|e| format!("Invalid from_amount_units '{}': {e}", json.from_amount_units))?;
+        let from_asset_id: Address = json
+            .from_asset_id
+            .parse()
+            .map_err(|e| format!("Invalid from_asset_id '{}': {e}", json.from_asset_id))?;
+
+        Ok(FrontEndSwap {
+            invoice_id,
+            from_amount_units,
+            from_chain_id: json.from_chain_id,
+            from_asset_id,
+            transaction_hash: json.transaction_hash,
         })
     }
 }
