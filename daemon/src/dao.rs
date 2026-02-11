@@ -172,16 +172,22 @@ impl DAO {
                 .in_memory(true);
             (pool_opts, conn_opts)
         } else {
+            let sqlite_file_name = "kalatori_db.sqlite";
+
             if !std::fs::exists(&config.dir)? {
                 std::fs::create_dir_all(&config.dir)?;
-                tracing::warn!("Created {} directory", config.dir)
+                tracing::warn!(
+                    "Failed to find sqlite3 database directory at {}. Created new directory at {} with database file {} inside.",
+                    config.dir, config.dir, sqlite_file_name
+                )
             }
             let pool_opts = sqlx::sqlite::SqlitePoolOptions::new();
             let conn_opts = sqlx::sqlite::SqliteConnectOptions::new()
                 .create_if_missing(true)
                 .filename(format!(
-                    "{}/kalatori_db.sqlite",
-                    config.dir
+                    "{}/{}",
+                    config.dir,
+                    sqlite_file_name,
                 ));
             (pool_opts, conn_opts)
         };
