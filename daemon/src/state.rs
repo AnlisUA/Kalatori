@@ -28,12 +28,14 @@ use crate::dao::{
     DAO,
     DaoInterface,
     DaoInvoiceError,
+    DaoSwapError,
     DaoTransactionError,
     DaoTransactionInterface,
 };
 use crate::types::{
     ChainType,
     CreateInvoiceData,
+    FrontEndSwap,
     InvoiceEventType,
     InvoiceWithReceivedAmount,
     KalatoriEventExt,
@@ -349,6 +351,15 @@ impl<D: DaoInterface> AppState<D> {
 
     pub fn get_shop_meta(&self) -> ShopMetaConfig {
         self.shop_meta.clone()
+    }
+
+    pub async fn create_front_end_swap(
+        &self,
+        data: FrontEndSwap,
+    ) -> Result<FrontEndSwap, DaoSwapError> {
+        self.dao
+            .create_front_end_swap(data)
+            .await
     }
 }
 

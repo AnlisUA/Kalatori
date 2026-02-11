@@ -14,6 +14,7 @@ mod interface;
 mod invoice;
 mod payout;
 mod refund;
+mod swap;
 mod transaction;
 mod webhook_event;
 
@@ -31,6 +32,7 @@ pub use invoice::DaoInvoiceError;
 pub use payout::DaoPayoutError;
 #[expect(unused_imports)]
 pub use refund::DaoRefundError;
+pub use swap::DaoSwapError;
 pub use transaction::DaoTransactionError;
 
 // Export high-level interface traits

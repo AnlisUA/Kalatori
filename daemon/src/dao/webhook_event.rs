@@ -27,8 +27,8 @@ pub trait DaoWebhookEventMethods: DaoExecutor + 'static {
         .bind(event.entity_id)
         .bind(event.payload)
         .bind(event.sent)
-        .bind(event.created_at)
-        .bind(event.updated_at);
+        .bind(event.created_at.naive_utc())
+        .bind(event.updated_at.naive_utc());
 
         self.fetch_one(query)
             .await

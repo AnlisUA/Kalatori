@@ -14,6 +14,7 @@ use uuid::Uuid;
 
 use crate::types::{
     CreateInvoiceData,
+    FrontEndSwap,
     GeneralTransactionId,
     Invoice,
     InvoiceStatus,
@@ -33,6 +34,10 @@ use super::invoice::{
 use super::payout::{
     DaoPayoutError,
     DaoPayoutMethods,
+};
+use super::swap::{
+    DaoSwapError,
+    DaoSwapMethods,
 };
 use super::transaction::{
     DaoTransactionError,
@@ -203,6 +208,13 @@ pub trait DaoInterface: Send + Sync + 'static {
         &self,
         event_id: Uuid,
     ) -> Result<WebhookEvent, DaoWebhookEventError>;
+
+    // === Swap Methods ===
+
+    async fn create_front_end_swap(
+        &self,
+        swap: FrontEndSwap,
+    ) -> Result<FrontEndSwap, DaoSwapError>;
 }
 
 /// Interface for database transaction operations.
@@ -321,6 +333,13 @@ pub trait DaoTransactionInterface {
         &self,
         event_id: Uuid,
     ) -> Result<WebhookEvent, DaoWebhookEventError>;
+
+    // === Swap Methods ===
+
+    async fn create_front_end_swap(
+        &self,
+        swap: FrontEndSwap,
+    ) -> Result<FrontEndSwap, DaoSwapError>;
 
     // === Transaction Control ===
 
@@ -498,6 +517,13 @@ impl DaoInterface for DAO {
     ) -> Result<WebhookEvent, DaoWebhookEventError> {
         DaoWebhookEventMethods::mark_webhook_event_as_sent(self, event_id).await
     }
+
+    async fn create_front_end_swap(
+        &self,
+        swap: FrontEndSwap,
+    ) -> Result<FrontEndSwap, DaoSwapError> {
+        DaoSwapMethods::create_front_end_swap(self, swap).await
+    }
 }
 
 // ============================================================================
@@ -654,6 +680,13 @@ impl DaoTransactionInterface for DaoTransaction {
         event_id: Uuid,
     ) -> Result<WebhookEvent, DaoWebhookEventError> {
         DaoWebhookEventMethods::mark_webhook_event_as_sent(self, event_id).await
+    }
+
+    async fn create_front_end_swap(
+        &self,
+        swap: FrontEndSwap,
+    ) -> Result<FrontEndSwap, DaoSwapError> {
+        DaoSwapMethods::create_front_end_swap(self, swap).await
     }
 
     async fn commit(self) -> DaoResult<()> {

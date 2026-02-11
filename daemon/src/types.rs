@@ -15,6 +15,7 @@ mod common;
 mod invoice;
 mod payout;
 mod refund;
+mod swap;
 mod transaction;
 mod webhook_event;
 
@@ -23,5 +24,6 @@ pub use common::*;
 pub use invoice::*;
 pub use payout::*;
 pub use refund::*;
+pub use swap::*;
 pub use transaction::*;
 pub use webhook_event::*;

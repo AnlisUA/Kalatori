@@ -94,8 +94,8 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
             .bind(transaction.status)
             .bind(transaction.transaction_type)
             .bind(Json(&transaction.outgoing_meta))
-            .bind(transaction.created_at)
-            .bind(transaction.updated_at);
+            .bind(transaction.created_at.naive_utc())
+            .bind(transaction.updated_at.naive_utc());
 
         self.fetch_one(query)
             .await
@@ -147,9 +147,7 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
         .bind(chain_transaction_id.block_number)
         .bind(chain_transaction_id.position_in_block)
         .bind(chain_transaction_id.tx_hash)
-        .bind(confirmed_at)
-        // TODO: Naive datetime does not work here for some reason, using rfc3339 string
-        // It doesn't seem to be critical for now but it's quite inconsistent with other places
+        .bind(confirmed_at.naive_utc())
         .bind(confirmed_at.to_rfc3339())
         .bind(transaction_id);
 
@@ -200,9 +198,7 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
         .bind(chain_transaction_id.block_number)
         .bind(chain_transaction_id.position_in_block)
         .bind(chain_transaction_id.tx_hash)
-        .bind(failed_at)
-        // TODO: Naive datetime does not work here for some reason, using rfc3339 string
-        // It doesn't seem to be critical for now but it's quite inconsistent with other places
+        .bind(failed_at.naive_utc())
         .bind(failed_at.to_rfc3339())
         .bind(failure_message)
         .bind(transaction_id);
