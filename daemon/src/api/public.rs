@@ -12,7 +12,16 @@ use axum::response::{
 use serde::Deserialize;
 use uuid::Uuid;
 
+use crate::configs::ShopMetaConfig;
+use crate::dao::DaoSwapError;
+use crate::types::FrontEndSwap;
+
 use super::ApiState;
+use super::utils::{
+    ApiResult,
+    AppJson,
+    SuccessWrapper,
+};
 
 #[derive(Debug, PartialEq, Eq, Deserialize)]
 struct IndexParams {
@@ -59,8 +68,28 @@ async fn invoice(
     }
 }
 
+async fn shop_meta(ExtractState(state): ExtractState<ApiState>) -> SuccessWrapper<ShopMetaConfig> {
+    state.get_shop_meta().into()
+}
+
+async fn create_front_end_swap(
+    ExtractState(state): ExtractState<ApiState>,
+    AppJson(data): AppJson<FrontEndSwap>,
+) -> ApiResult<FrontEndSwap, DaoSwapError> {
+    let result = state
+        .create_front_end_swap(data)
+        .await?;
+
+    Ok(result.into())
+}
+
 pub fn routes() -> axum::Router<ApiState> {
     axum::Router::new()
         .route("/", axum::routing::get(index))
         .route("/invoice", axum::routing::get(invoice))
+        .route("/info", axum::routing::get(shop_meta))
+        .route(
+            "/swap/register",
+            axum::routing::post(create_front_end_swap),
+        )
 }

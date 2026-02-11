@@ -42,11 +42,7 @@ use rust_decimal::prelude::{
     Decimal,
     ToPrimitive,
 };
-use tracing::{
-    debug,
-    instrument,
-    warn,
-};
+use tracing::instrument;
 
 use crate::types::ChainType;
 use crate::utils::logging::category::CHAIN_CLIENT;
@@ -595,11 +591,11 @@ impl BlockChainClient<PolygonChainConfig> for PolygonClient {
         &self,
         asset_id: &PolygonAssetId,
     ) -> Result<AssetInfo<PolygonChainConfig>, QueryError> {
-        debug!(message = "Fetching ERC-20 token info...", asset_id = %asset_id);
+        tracing::trace!("Fetching ERC-20 token info...");
         let contract = IERC20::new(*asset_id, self.provider.clone());
 
         // Fetch symbol
-        let symbol_result = contract
+        let symbol = contract
             .symbol()
             .call()
             .await
@@ -614,11 +610,8 @@ impl BlockChainClient<PolygonChainConfig> for PolygonClient {
             })
             .map_err(|_| QueryError::RpcRequestFailed)?;
 
-        // alloy 1.4 returns the value directly for single return values
-        let symbol = symbol_result;
-
         // Fetch decimals
-        let decimals_result = contract
+        let decimals = contract
             .decimals()
             .call()
             .await
@@ -633,16 +626,13 @@ impl BlockChainClient<PolygonChainConfig> for PolygonClient {
             })
             .map_err(|_| QueryError::RpcRequestFailed)?;
 
-        // alloy 1.4 returns the value directly
-        let decimals = decimals_result;
-
         let info = AssetInfo {
             id: *asset_id,
             name: symbol,
             decimals,
         };
 
-        debug!(message = "Asset info fetched successfully", asset_info = ?info);
+        tracing::trace!(asset_info = ?info, "Asset info fetched successfully");
 
         Ok(info)
     }
@@ -653,14 +643,14 @@ impl BlockChainClient<PolygonChainConfig> for PolygonClient {
         asset_id: &PolygonAssetId,
         account: &PolygonAccountId,
     ) -> Result<Decimal, QueryError> {
-        debug!(message = "Fetching ERC-20 balance...", asset_id = %asset_id, account = %account);
+        tracing::trace!("Fetching ERC-20 balance...");
 
         let decimals = self
             .asset_info_store
             .get_asset_info(asset_id)
             .await
             .ok_or_else(|| {
-                warn!("Asset info not found in local store");
+                tracing::warn!("Asset info not found in local store");
                 QueryError::NotFound {
                     query_type: format!("asset info for {asset_id}"),
                 }
@@ -748,13 +738,13 @@ impl BlockChainClient<PolygonChainConfig> for PolygonClient {
                         let event = decoded.inner.data;
                         match client.log_to_transfer(&log, &event).await {
                             Ok(transfer) => {
-                                tracing::debug!(
-                                    from = %transfer.sender,
-                                    to = %transfer.recipient,
-                                    amount = %transfer.amount,
-                                    asset = %transfer.asset_name,
-                                    "Detected ERC-20 transfer"
-                                );
+                                // tracing::trace!(
+                                //     from = %transfer.sender,
+                                //     to = %transfer.recipient,
+                                //     amount = %transfer.amount,
+                                //     asset = %transfer.asset_name,
+                                //     "Detected ERC-20 transfer"
+                                // );
                                 yield vec![transfer];
                             }
                             Err(e) => {

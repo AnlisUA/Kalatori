@@ -35,3 +35,5 @@ pub const DEFAULT_PORT: u16 = 8080;
 pub const DEFAULT_DATABASE_DIR: &str = "./database";
 
 pub const DEFAULT_SIGNATURE_MAX_AGE_SECS: u64 = 300; // 5 minutes
+
+pub const DEFAULT_LOG_DIRECTIVES: &str = "info";

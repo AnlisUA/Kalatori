@@ -1,3 +1,4 @@
 {
-    "invoices_webhook_url": "http://localhost:8000/webhooks/invoices"
+    "invoices_webhook_url": "http://localhost:8000/webhooks/invoices",
+    "shop_name": "Mega shop"
 }

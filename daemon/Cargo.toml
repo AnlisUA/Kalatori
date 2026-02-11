@@ -5,7 +5,7 @@ edition = "2024"
 description = "A non-castodial crypto payment-gateway daemon."
 homepage = "https://github.com/Kalapaja/Kalatori"
 documentation = "https://docs.rs/Kalatori"
-rust-version = "1.85"
+rust-version = "1.88"
 license.workspace = true
 authors.workspace = true
 readme.workspace = true
@@ -86,6 +86,7 @@ parity-scale-codec = { version = "3", features = ["derive"] }
 # Tracing
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "time", "json"] }
+tracing-loki = "0.2"
 
 # Utils
 config = "0.15"

@@ -77,6 +77,15 @@ pub fn shop_config_with_prefix(
     config_from_file_or_env(&config_path, &env_prefix)
 }
 
+pub fn logger_config_with_prefix(
+    config_dir_path: &str,
+    prefix: &str,
+) -> LoggerConfig {
+    let config_path = format_config_path(config_dir_path, "logger.json");
+    let env_prefix = format_prefix(prefix, "LOGGER");
+    config_from_file_or_env(&config_path, &env_prefix)
+}
+
 // #[cfg(test)]
 // mod tests {
 //     use super::*;

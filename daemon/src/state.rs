@@ -20,18 +20,23 @@ use crate::chain_client::{
     GenerateAddressData,
     KeyringClient,
 };
-use crate::configs::PaymentsConfig;
+use crate::configs::{
+    PaymentsConfig,
+    ShopMetaConfig,
+};
 use crate::dao::{
     DAO,
     DaoChangesError,
     DaoInterface,
     DaoInvoiceError,
+    DaoSwapError,
     DaoTransactionError,
     DaoTransactionInterface,
 };
 use crate::types::{
     ChainType,
     CreateInvoiceData,
+    FrontEndSwap,
     InvoiceEventType,
     InvoiceWithReceivedAmount,
     KalatoriEventExt,
@@ -46,6 +51,7 @@ pub struct AppState<D: DaoInterface = DAO> {
     registry: InvoiceRegistry,
     asset_names_map: HashMap<String, String>,
     payments_config: PaymentsConfig,
+    shop_meta: ShopMetaConfig,
 }
 
 impl<D: DaoInterface> AppState<D> {
@@ -55,6 +61,7 @@ impl<D: DaoInterface> AppState<D> {
         registry: InvoiceRegistry,
         asset_names_map: HashMap<String, String>,
         payments_config: PaymentsConfig,
+        shop_meta: ShopMetaConfig,
     ) -> Self {
         Self {
             keyring,
@@ -62,6 +69,7 @@ impl<D: DaoInterface> AppState<D> {
             registry,
             asset_names_map,
             payments_config,
+            shop_meta,
         }
     }
 
@@ -355,6 +363,19 @@ impl<D: DaoInterface> AppState<D> {
 
         Ok(internal_response.into_public(&self.payments_config.payment_url_base))
     }
+
+    pub fn get_shop_meta(&self) -> ShopMetaConfig {
+        self.shop_meta.clone()
+    }
+
+    pub async fn create_front_end_swap(
+        &self,
+        data: FrontEndSwap,
+    ) -> Result<FrontEndSwap, DaoSwapError> {
+        self.dao
+            .create_front_end_swap(data)
+            .await
+    }
 }
 
 #[cfg(test)]
@@ -394,6 +415,12 @@ mod tests {
                 "5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty".to_string(),
             )]),
             payment_url_base: "https://payments.example.com".to_string(),
+            slippage_params: HashMap::new(),
+        };
+
+        let shop_meta = ShopMetaConfig {
+            shop_name: "Mega shop".to_string(),
+            logo_url: None,
         };
 
         let keyring = KeyringClient::default();
@@ -406,6 +433,7 @@ mod tests {
             registry,
             asset_names_map,
             config,
+            shop_meta,
         )
     }
 
