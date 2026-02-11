@@ -178,7 +178,9 @@ impl DAO {
                 std::fs::create_dir_all(&config.dir)?;
                 tracing::warn!(
                     "Failed to find sqlite3 database directory at {}. Created new directory at {} with database file {} inside.",
-                    config.dir, config.dir, sqlite_file_name
+                    config.dir,
+                    config.dir,
+                    sqlite_file_name,
                 )
             }
             let pool_opts = sqlx::sqlite::SqlitePoolOptions::new();
@@ -186,8 +188,7 @@ impl DAO {
                 .create_if_missing(true)
                 .filename(format!(
                     "{}/{}",
-                    config.dir,
-                    sqlite_file_name,
+                    config.dir, sqlite_file_name,
                 ));
             (pool_opts, conn_opts)
         };
