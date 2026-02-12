@@ -38,6 +38,8 @@ use super::{
     TransferInfo,
 };
 
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GetChangesParams {
     /// Return entities modified after this timestamp
@@ -87,6 +89,7 @@ pub struct PublicChangesResponse {
     pub invoices: Vec<PublicInvoiceChanges>,
     /// Use this timestamp for the next sync request
     pub sync_timestamp: DateTime<Utc>,
+    pub kalatori_version: &'static str,
 }
 
 // ============================================================================
@@ -154,6 +157,7 @@ impl ChangesResponse {
                 .map(|ic| ic.into_public(payment_url_base))
                 .collect(),
             sync_timestamp: self.sync_timestamp,
+            kalatori_version: VERSION,
         }
     }
 }
