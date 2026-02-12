@@ -674,7 +674,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_invoice_changes_with_swaps() {
         use crate::dao::swap::DaoSwapMethods;
-        use crate::types::FrontEndSwap;
+        use crate::types::CreateFrontEndSwapParams;
         use alloy::primitives::Address;
 
         let dao = create_test_dao().await;
@@ -687,7 +687,7 @@ mod tests {
             .unwrap();
 
         // Create front-end swap
-        let swap = FrontEndSwap {
+        let swap = CreateFrontEndSwapParams {
             invoice_id: invoice.id,
             from_amount_units: 1_000_000,
             from_chain_id: 1,

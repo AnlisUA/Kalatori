@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use crate::configs::ShopMetaConfig;
 use crate::dao::DaoSwapError;
-use crate::types::FrontEndSwap;
+use crate::types::CreateFrontEndSwapParams;
 
 use super::ApiState;
 use super::utils::{
@@ -74,13 +74,21 @@ async fn shop_meta(ExtractState(state): ExtractState<ApiState>) -> SuccessWrappe
 
 async fn create_front_end_swap(
     ExtractState(state): ExtractState<ApiState>,
-    AppJson(data): AppJson<FrontEndSwap>,
-) -> ApiResult<FrontEndSwap, DaoSwapError> {
+    AppJson(data): AppJson<CreateFrontEndSwapParams>,
+) -> ApiResult<CreateFrontEndSwapParams, DaoSwapError> {
     let result = state
         .create_front_end_swap(data)
         .await?;
 
-    Ok(result.into())
+    let response = CreateFrontEndSwapParams {
+        invoice_id: result.invoice_id,
+        from_amount_units: result.from_amount_units,
+        from_chain_id: result.from_chain_id,
+        from_asset_id: result.from_asset_id,
+        transaction_hash: result.transaction_hash,
+    };
+
+    Ok(response.into())
 }
 
 pub fn routes() -> axum::Router<ApiState> {

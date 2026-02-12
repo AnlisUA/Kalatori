@@ -310,13 +310,16 @@ pub struct RefundJson {
 /// Front-end swap as returned from SQLite JSON aggregation.
 #[derive(Debug, Clone, Deserialize)]
 pub struct FrontEndSwapJson {
-    #[expect(dead_code)]
-    pub id: String,         // hex-encoded UUID (unused, but present in DB)
+    pub id: String,
     pub invoice_id: String, // hex-encoded UUID
     pub from_amount_units: String, // u128 stored as TEXT
     pub from_chain_id: u32,
     pub from_asset_id: String, // hex address
     pub transaction_hash: String,
+    #[serde(deserialize_with = "deserialize_sqlite_datetime")]
+    pub created_at: DateTime<Utc>,
+    #[serde(deserialize_with = "deserialize_sqlite_datetime")]
+    pub updated_at: DateTime<Utc>,
 }
 
 // ============================================================================
@@ -515,6 +518,7 @@ impl TryFrom<FrontEndSwapJson> for FrontEndSwap {
     fn try_from(json: FrontEndSwapJson) -> Result<Self, Self::Error> {
         use alloy::primitives::Address;
 
+        let id = parse_hex_uuid(&json.id)?;
         let invoice_id = parse_hex_uuid(&json.invoice_id)?;
         let from_amount_units: u128 = json
             .from_amount_units
@@ -526,11 +530,14 @@ impl TryFrom<FrontEndSwapJson> for FrontEndSwap {
             .map_err(|e| format!("Invalid from_asset_id '{}': {e}", json.from_asset_id))?;
 
         Ok(FrontEndSwap {
+            id,
             invoice_id,
             from_amount_units,
             from_chain_id: json.from_chain_id,
             from_asset_id,
             transaction_hash: json.transaction_hash,
+            created_at: json.created_at,
+            updated_at: json.updated_at,
         })
     }
 }

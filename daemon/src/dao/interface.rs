@@ -15,6 +15,7 @@ use uuid::Uuid;
 use crate::types::{
     ChangesResponse,
     CreateInvoiceData,
+    CreateFrontEndSwapParams,
     FrontEndSwap,
     GeneralTransactionId,
     Invoice,
@@ -227,7 +228,7 @@ pub trait DaoInterface: Send + Sync + 'static {
 
     async fn create_front_end_swap(
         &self,
-        swap: FrontEndSwap,
+        swap: CreateFrontEndSwapParams,
     ) -> Result<FrontEndSwap, DaoSwapError>;
 }
 
@@ -352,7 +353,7 @@ pub trait DaoTransactionInterface {
 
     async fn create_front_end_swap(
         &self,
-        swap: FrontEndSwap,
+        swap: CreateFrontEndSwapParams,
     ) -> Result<FrontEndSwap, DaoSwapError>;
 
     // === Transaction Control ===
@@ -541,7 +542,7 @@ impl DaoInterface for DAO {
 
     async fn create_front_end_swap(
         &self,
-        swap: FrontEndSwap,
+        swap: CreateFrontEndSwapParams,
     ) -> Result<FrontEndSwap, DaoSwapError> {
         DaoSwapMethods::create_front_end_swap(self, swap).await
     }
@@ -705,7 +706,7 @@ impl DaoTransactionInterface for DaoTransaction {
 
     async fn create_front_end_swap(
         &self,
-        swap: FrontEndSwap,
+        swap: CreateFrontEndSwapParams,
     ) -> Result<FrontEndSwap, DaoSwapError> {
         DaoSwapMethods::create_front_end_swap(self, swap).await
     }

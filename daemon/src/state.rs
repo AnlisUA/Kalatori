@@ -36,6 +36,7 @@ use crate::dao::{
 use crate::types::{
     ChainType,
     CreateInvoiceData,
+    CreateFrontEndSwapParams,
     FrontEndSwap,
     InvoiceEventType,
     InvoiceWithReceivedAmount,
@@ -370,7 +371,7 @@ impl<D: DaoInterface> AppState<D> {
 
     pub async fn create_front_end_swap(
         &self,
-        data: FrontEndSwap,
+        data: CreateFrontEndSwapParams,
     ) -> Result<FrontEndSwap, DaoSwapError> {
         self.dao
             .create_front_end_swap(data)
