@@ -406,6 +406,7 @@ mod tests {
         let shop_meta = ShopMetaConfig {
             shop_name: "Mega shop".to_string(),
             logo_url: None,
+            reown_project_id: "test".to_string(),
         };
 
         let keyring = KeyringClient::default();

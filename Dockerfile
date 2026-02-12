@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y \
     curl \
     libssl-dev \
     git \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Rust
@@ -78,6 +79,9 @@ RUN make install-subxt-cli
 # Download metadata
 RUN make download-node-metadata-ci
 
+# Download front-end
+RUN make download-front-end
+
 # Build the release binary
 RUN CARGO_PROFILE_RELEASE_STRIP=false cargo build --release -p kalatori
 
@@ -98,6 +102,7 @@ RUN cd /usr/local/lib && ln -s libsqlite3.so.0 libsqlite3.so && ldconfig
 
 # Copy the binary from builder
 COPY --from=builder /usr/src/kalatori/target/release/kalatori /app/kalatori
+COPY --from=builder /usr/src/kalatori/static /app/static
 
 # Expose the default port
 EXPOSE 8080

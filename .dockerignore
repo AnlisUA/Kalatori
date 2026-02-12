@@ -8,6 +8,8 @@ docs
 target
 tests
 bin
+static
+database
 
 Dockerfile
 
