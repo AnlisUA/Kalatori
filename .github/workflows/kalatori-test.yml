@@ -58,6 +58,8 @@ jobs:
       - name: Download chain metadata
         run: make download-node-metadata-ci
       - run: mkdir database
+      - name: Download front-end (required for daemon compilation)
+        run: make download-front-end
       - name: Run the daemon and chopsticks in background
         run: make run &
       - name: Wait for the daemon to start in background

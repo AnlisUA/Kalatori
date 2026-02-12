@@ -62,6 +62,8 @@ jobs:
         run: make install-subxt-cli
       - name: Download chain metadata
         run: make download-node-metadata-ci
+      - name: Download front-end (required for daemon compilation)
+        run: make download-front-end
       - name: cargo nextest
         run: cargo nextest run
         env:
