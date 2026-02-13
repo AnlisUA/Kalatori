@@ -380,19 +380,18 @@ fn parse_invoice_changes_row(row: InvoiceChangesRow) -> Result<InvoiceChanges, D
         .collect();
 
     // Parse swaps JSON
-    let swaps_json: Vec<FrontEndSwapJson> =
-        serde_json::from_str(&row.swaps_json).map_err(|e| {
-            tracing::warn!(
-                error.category = "dao.changes",
-                error.operation = "parse_swaps_json",
-                json = %row.swaps_json,
-                error.source = ?e,
-                "Failed to parse swaps JSON"
-            );
-            DaoChangesError::JsonParseError {
-                message: format!("swaps: {e}"),
-            }
-        })?;
+    let swaps_json: Vec<FrontEndSwapJson> = serde_json::from_str(&row.swaps_json).map_err(|e| {
+        tracing::warn!(
+            error.category = "dao.changes",
+            error.operation = "parse_swaps_json",
+            json = %row.swaps_json,
+            error.source = ?e,
+            "Failed to parse swaps JSON"
+        );
+        DaoChangesError::JsonParseError {
+            message: format!("swaps: {e}"),
+        }
+    })?;
 
     let swaps: Vec<FrontEndSwap> = swaps_json
         .into_iter()

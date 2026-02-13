@@ -1,9 +1,12 @@
 use alloy::primitives::Address;
+use chrono::{
+    DateTime,
+    Utc,
+};
 use serde::{
     Deserialize,
     Serialize,
 };
-use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

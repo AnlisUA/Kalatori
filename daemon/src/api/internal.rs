@@ -2,7 +2,10 @@ use axum::extract::State;
 use axum::routing::get;
 
 use crate::dao::DaoChangesError;
-use crate::types::{GetChangesParams, PublicChangesResponse};
+use crate::types::{
+    GetChangesParams,
+    PublicChangesResponse,
+};
 
 use super::ApiState;
 use super::utils::{

@@ -1,16 +1,21 @@
 use alloy::primitives::Address;
+use chrono::{
+    DateTime,
+    Utc,
+};
 use sqlx::types::Text;
 use thiserror::Error;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
-use crate::types::{CreateFrontEndSwapParams, FrontEndSwap};
+use crate::types::{
+    CreateFrontEndSwapParams,
+    FrontEndSwap,
+};
 
 use super::DaoExecutor;
 
 #[derive(sqlx::FromRow)]
 struct FrontEndSwapRow {
-    #[expect(dead_code)]
     pub id: Uuid,
     pub invoice_id: Uuid,
     pub from_amount_units: Text<u128>,

@@ -14,8 +14,8 @@ use uuid::Uuid;
 
 use crate::types::{
     ChangesResponse,
-    CreateInvoiceData,
     CreateFrontEndSwapParams,
+    CreateInvoiceData,
     FrontEndSwap,
     GeneralTransactionId,
     Invoice,

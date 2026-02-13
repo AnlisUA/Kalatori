@@ -315,7 +315,7 @@ pub struct RefundJson {
 #[derive(Debug, Clone, Deserialize)]
 pub struct FrontEndSwapJson {
     pub id: String,
-    pub invoice_id: String, // hex-encoded UUID
+    pub invoice_id: String,        // hex-encoded UUID
     pub from_amount_units: String, // u128 stored as TEXT
     pub from_chain_id: u32,
     pub from_asset_id: String, // hex address
@@ -527,11 +527,21 @@ impl TryFrom<FrontEndSwapJson> for FrontEndSwap {
         let from_amount_units: u128 = json
             .from_amount_units
             .parse()
-            .map_err(|e| format!("Invalid from_amount_units '{}': {e}", json.from_amount_units))?;
+            .map_err(|e| {
+                format!(
+                    "Invalid from_amount_units '{}': {e}",
+                    json.from_amount_units
+                )
+            })?;
         let from_asset_id: Address = json
             .from_asset_id
             .parse()
-            .map_err(|e| format!("Invalid from_asset_id '{}': {e}", json.from_asset_id))?;
+            .map_err(|e| {
+                format!(
+                    "Invalid from_asset_id '{}': {e}",
+                    json.from_asset_id
+                )
+            })?;
 
         Ok(FrontEndSwap {
             id,
