@@ -242,8 +242,7 @@ impl<D: DaoInterface> AppState<D> {
             .await
             .map_err(|_| DaoInvoiceError::DatabaseError)?;
 
-        let result = self
-            .dao
+        let result = dao_transaction
             .update_invoice_data(data)
             .await?;
         let invoice_with_amount = result
@@ -422,6 +421,7 @@ mod tests {
         let shop_meta = ShopMetaConfig {
             shop_name: "Mega shop".to_string(),
             logo_url: None,
+            reown_project_id: "test".to_string(),
         };
 
         let keyring = KeyringClient::default();

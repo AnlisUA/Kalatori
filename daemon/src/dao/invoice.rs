@@ -372,8 +372,6 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
                     return error;
                 }
 
-                println!("Error: {:?}", e);
-
                 match e {
                     sqlx::Error::RowNotFound => DaoInvoiceError::NotFound {
                         invoice_id,

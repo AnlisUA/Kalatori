@@ -10,6 +10,7 @@ use axum::response::{
     Response,
 };
 use serde::Deserialize;
+use tower_http::services::ServeDir;
 use uuid::Uuid;
 
 use crate::configs::ShopMetaConfig;
@@ -24,19 +25,35 @@ use super::utils::{
 };
 
 #[derive(Debug, PartialEq, Eq, Deserialize)]
-struct IndexParams {
-    #[serde(default)]
-    invoice_id: String,
-}
-
-#[derive(Debug, PartialEq, Eq, Deserialize)]
 struct Params {
     invoice_id: Uuid,
 }
 
-async fn index(Query(params): Query<IndexParams>) -> Html<String> {
+async fn index(ExtractState(state): ExtractState<ApiState>) -> Html<String> {
     let raw_html = include_str!("../../../static/index.html");
-    let html = raw_html.replace("{{INVOICE_ID}}", &params.invoice_id);
+    let shop_meta = state.get_shop_meta();
+
+    let html = raw_html
+        .replace(
+            "%VITE_MERCHANT_NAME%",
+            &shop_meta.shop_name,
+        )
+        .replace(
+            "%VITE_MERCHANT_LOGO_URL%",
+            &shop_meta.logo_url.unwrap_or_default(),
+        )
+        .replace(
+            "%VITE_REWON_PROJECT_ID%",
+            &shop_meta.reown_project_id,
+        )
+        .replace(
+            "%VITE_PAYMENT_PAGE_TITLE%",
+            &format!(
+                "{} Payment | Kalatori",
+                &shop_meta.shop_name
+            ),
+        );
+
     Html(html)
 }
 
@@ -99,5 +116,9 @@ pub fn routes() -> axum::Router<ApiState> {
         .route(
             "/swap/register",
             axum::routing::post(create_front_end_swap),
+        )
+        .nest_service(
+            "/assets",
+            ServeDir::new("static/assets"),
         )
 }

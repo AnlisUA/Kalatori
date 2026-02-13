@@ -317,6 +317,7 @@ pub struct ShopMetaConfig {
     pub shop_name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub logo_url: Option<String>,
+    pub reown_project_id: String,
 }
 
 #[derive(Deserialize, Clone)]

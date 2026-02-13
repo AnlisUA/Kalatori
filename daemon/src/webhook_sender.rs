@@ -22,6 +22,7 @@ use crate::types::WebhookEvent;
 
 const WEBHOOK_SENDER_INTERVAL_MILLIS: u64 = 100;
 const WEBHOOK_SENDER_MAX_CONCURRENT_REQUESTS: usize = 10;
+const WEBHOOK_SENDER_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Debug)]
 struct SendWebhookResult {
@@ -50,10 +51,6 @@ async fn send_webhook(
         Ok(response) => {
             let status = response.status();
             let response_text = response.text().await;
-            println!(
-                "Response non200 text: {:#?}",
-                response_text
-            );
 
             tracing::warn!(
                 event_id = %event_id,
@@ -112,8 +109,18 @@ impl<D: DaoInterface + 'static> WebhookSender<D> {
             .client
             .post(&self.webhook_url)
             .json(&event.payload)
+            .timeout(WEBHOOK_SENDER_REQUEST_TIMEOUT)
             .build()
-            // TODO: anything can really go wrong here? Need to research
+            // This can fail only if we have invalid URL or serialization fails.
+            // So we need to check URL on startup. Don't expect serialization failures.
+            .inspect_err(|e| {
+                tracing::error!(
+                    error.source = ?e,
+                    "Error while building webhook event request"
+                )
+            })
+            // TODO: Normally this shouldn't fail at all, but we don't check URL validity on startup
+            // for now
             .unwrap();
 
         add_headers_to_reqwest(&self.hmac_config, &mut request);
