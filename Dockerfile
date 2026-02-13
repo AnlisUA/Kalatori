@@ -104,6 +104,11 @@ RUN cd /usr/local/lib && ln -s libsqlite3.so.0 libsqlite3.so && ldconfig
 COPY --from=builder /usr/src/kalatori/target/release/kalatori /app/kalatori
 COPY --from=builder /usr/src/kalatori/static /app/static
 
+RUN useradd --no-create-home --system --uid 1000 kalatori \
+    && chown kalatori:kalatori /app
+
+USER kalatori
+
 # Expose the default port
 EXPOSE 8080
 

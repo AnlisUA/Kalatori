@@ -239,8 +239,7 @@ impl<D: DaoInterface> AppState<D> {
             .await
             .map_err(|_| DaoInvoiceError::DatabaseError)?;
 
-        let result = self
-            .dao
+        let result = dao_transaction
             .update_invoice_data(data)
             .await?;
         let invoice_with_amount = result

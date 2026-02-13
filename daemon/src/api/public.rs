@@ -40,11 +40,7 @@ async fn index(ExtractState(state): ExtractState<ApiState>) -> Html<String> {
         )
         .replace(
             "%VITE_MERCHANT_LOGO_URL%",
-            shop_meta
-                .logo_url
-                .as_ref()
-                .map(AsRef::as_ref)
-                .unwrap_or("/public/assets/logo.svg"),
+            &shop_meta.logo_url.unwrap_or_default(),
         )
         .replace(
             "%VITE_REWON_PROJECT_ID%",

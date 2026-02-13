@@ -10,7 +10,7 @@ subxt_cli_version := 0.44.0
 sqlx_cli_version := 0.8.6
 
 # Front end release version compatible with current daemon version
-front_end_version := 0.0.3
+front_end_version := 0.0.4
 
 help: # Show help for each of the Makefile recipes
 	@grep -E '^[a-zA-Z0-9 -]+:.*#'  Makefile | sort | while read -r l; do printf "\033[1;32m$$(echo $$l | cut -f 1 -d':')\033[00m:$$(echo $$l | cut -f 2- -d'#')\n"; done
