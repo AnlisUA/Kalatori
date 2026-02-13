@@ -13,6 +13,8 @@ use chrono::{
 use uuid::Uuid;
 
 use crate::types::{
+    ChangesResponse,
+    CreateFrontEndSwapParams,
     CreateInvoiceData,
     FrontEndSwap,
     GeneralTransactionId,
@@ -27,6 +29,10 @@ use crate::types::{
     WebhookEvent,
 };
 
+use super::changes::{
+    DaoChangesError,
+    DaoChangesMethods,
+};
 use super::invoice::{
     DaoInvoiceError,
     DaoInvoiceMethods,
@@ -209,11 +215,20 @@ pub trait DaoInterface: Send + Sync + 'static {
         event_id: Uuid,
     ) -> Result<WebhookEvent, DaoWebhookEventError>;
 
+    // === Changes Methods ===
+
+    /// Get all invoices and related entities modified since the given
+    /// timestamp.
+    async fn get_invoice_changes(
+        &self,
+        since: DateTime<Utc>,
+    ) -> Result<ChangesResponse, DaoChangesError>;
+
     // === Swap Methods ===
 
     async fn create_front_end_swap(
         &self,
-        swap: FrontEndSwap,
+        swap: CreateFrontEndSwapParams,
     ) -> Result<FrontEndSwap, DaoSwapError>;
 }
 
@@ -338,7 +353,7 @@ pub trait DaoTransactionInterface {
 
     async fn create_front_end_swap(
         &self,
-        swap: FrontEndSwap,
+        swap: CreateFrontEndSwapParams,
     ) -> Result<FrontEndSwap, DaoSwapError>;
 
     // === Transaction Control ===
@@ -518,9 +533,16 @@ impl DaoInterface for DAO {
         DaoWebhookEventMethods::mark_webhook_event_as_sent(self, event_id).await
     }
 
+    async fn get_invoice_changes(
+        &self,
+        since: DateTime<Utc>,
+    ) -> Result<ChangesResponse, DaoChangesError> {
+        DaoChangesMethods::get_invoice_changes(self, since).await
+    }
+
     async fn create_front_end_swap(
         &self,
-        swap: FrontEndSwap,
+        swap: CreateFrontEndSwapParams,
     ) -> Result<FrontEndSwap, DaoSwapError> {
         DaoSwapMethods::create_front_end_swap(self, swap).await
     }
@@ -684,7 +706,7 @@ impl DaoTransactionInterface for DaoTransaction {
 
     async fn create_front_end_swap(
         &self,
-        swap: FrontEndSwap,
+        swap: CreateFrontEndSwapParams,
     ) -> Result<FrontEndSwap, DaoSwapError> {
         DaoSwapMethods::create_front_end_swap(self, swap).await
     }

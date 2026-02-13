@@ -1,31 +1,42 @@
 use alloy::primitives::Address;
+use chrono::{
+    DateTime,
+    Utc,
+};
 use sqlx::types::Text;
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::types::FrontEndSwap;
+use crate::types::{
+    CreateFrontEndSwapParams,
+    FrontEndSwap,
+};
 
 use super::DaoExecutor;
 
 #[derive(sqlx::FromRow)]
 struct FrontEndSwapRow {
-    #[expect(dead_code)]
     pub id: Uuid,
     pub invoice_id: Uuid,
     pub from_amount_units: Text<u128>,
     pub from_chain_id: u32,
     pub from_asset_id: Text<Address>,
     pub transaction_hash: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 impl From<FrontEndSwapRow> for FrontEndSwap {
     fn from(value: FrontEndSwapRow) -> Self {
         Self {
+            id: value.id,
             invoice_id: value.invoice_id,
             from_amount_units: value.from_amount_units.0,
             from_chain_id: value.from_chain_id,
             from_asset_id: value.from_asset_id.0,
             transaction_hash: value.transaction_hash,
+            created_at: value.created_at,
+            updated_at: value.updated_at,
         }
     }
 }
@@ -88,7 +99,7 @@ impl crate::api::ApiErrorExt for DaoSwapError {
 pub trait DaoSwapMethods: DaoExecutor + 'static {
     async fn create_front_end_swap(
         &self,
-        swap: FrontEndSwap,
+        swap: CreateFrontEndSwapParams,
     ) -> Result<FrontEndSwap, DaoSwapError> {
         let query = sqlx::query_as::<_, FrontEndSwapRow>(
             "INSERT INTO front_end_swaps (id, invoice_id, from_amount_units, from_chain_id, from_asset_id, transaction_hash)

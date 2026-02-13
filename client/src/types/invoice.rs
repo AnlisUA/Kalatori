@@ -118,6 +118,7 @@ pub struct InvoiceCartItem {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InvoiceCart {
+    #[serde(default)]
     pub items: Vec<InvoiceCartItem>,
 }
 
@@ -148,6 +149,7 @@ pub struct Invoice {
     pub redirect_url: String,
     pub cart: InvoiceCart,
     pub total_received_amount: Decimal,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub transactions: Vec<Transaction>,
     pub valid_till: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
