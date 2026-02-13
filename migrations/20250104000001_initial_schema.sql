@@ -192,7 +192,7 @@ CREATE INDEX IF NOT EXISTS idx_webhook_events_sent_entity_created_id ON webhook_
 -- Status Transition Triggers
 -- ============================================================================
 -- These triggers enforce valid status transitions at the database level.
--- Error format: "ERROR_TYPE|old_status=VALUE|new_status=VALUE|id=VALUE"
+-- Error format: "ERROR_TYPE|old_status=VALUE|new_status=VALUE"
 -- This allows parsing in application code without additional diagnostic queries.
 
 -- Invoice status transition enforcement

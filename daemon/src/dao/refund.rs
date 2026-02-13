@@ -229,8 +229,8 @@ pub trait DaoRefundMethods: DaoExecutor + 'static {
             RETURNING *",
         )
         .bind(retry_count)
-        .bind(last_attempt_at)
-        .bind(next_retry_at)
+        .bind(last_attempt_at.naive_utc())
+        .bind(next_retry_at.map(|dt| dt.naive_utc()))
         .bind(&failure_message)
         .bind(refund_id);
 

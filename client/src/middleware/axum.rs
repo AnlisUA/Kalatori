@@ -28,7 +28,7 @@ impl IntoResponse for HmacValidationError {
         let (status, category, code, message) = match self {
             Self::MissingSignature => (
                 StatusCode::UNAUTHORIZED,
-                "INVALID_REQUET",
+                "INVALID_REQUEST",
                 "SIGNATURE_HEADER_NOT_SET",
                 "Header x-kalatori-signature should be set",
             ),

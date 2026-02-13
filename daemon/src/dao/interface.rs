@@ -123,7 +123,6 @@ pub trait DaoInterface: Send + Sync + 'static {
     ) -> Result<Invoice, DaoInvoiceError>;
 
     /// Update invoice data (amount, cart, `valid_till`).
-    /// Requires expected version for optimistic locking.
     async fn update_invoice_data(
         &self,
         data: UpdateInvoiceData,

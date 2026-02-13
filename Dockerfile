@@ -63,7 +63,7 @@ COPY . .
 RUN echo "fn main() {}" > daemon/src/main.rs
 RUN echo "fn lib() {}" > client/src/lib.rs
 
-# Build dependencies only (will fail on build.rs but that's ok for now)
+# Build dependencies only
 RUN cargo build --release --all-features
 
 # Copy real main functions back

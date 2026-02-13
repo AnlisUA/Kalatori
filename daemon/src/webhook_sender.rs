@@ -213,7 +213,7 @@ impl<D: DaoInterface + 'static> WebhookSender<D> {
 
                     if futures_set.is_empty() && shutdown_expected {
                         tracing::info!(
-                            "All pending tasks finished, expiration detector is shutting down"
+                            "All pending tasks finished, webhook sender is shutting down"
                         );
 
                         break;
@@ -221,14 +221,14 @@ impl<D: DaoInterface + 'static> WebhookSender<D> {
                 }
                 () = token.cancelled() => {
                     tracing::info!(
-                        "Expiration detector received shutdown signal, finishing pending tasks before shutting down"
+                        "Webhook sender received shutdown signal, finishing pending tasks before shutting down"
                     );
 
                     shutdown_expected = true;
 
                     if futures_set.is_empty() {
                         tracing::info!(
-                            "No pending tasks, expiration detector is shutting down"
+                            "No pending tasks, webhook sender is shutting down"
                         );
 
                         break;
