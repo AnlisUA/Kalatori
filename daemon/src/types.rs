@@ -11,6 +11,7 @@
 ///    // Create and return a default Invoice instance for testing
 /// }
 /// ```
+mod changes;
 mod common;
 mod invoice;
 mod payout;
@@ -20,6 +21,7 @@ mod transaction;
 mod webhook_event;
 
 // Re-export commonly used types for convenience
+pub use changes::*;
 pub use common::*;
 pub use invoice::*;
 pub use payout::*;

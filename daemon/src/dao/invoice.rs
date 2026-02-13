@@ -21,6 +21,15 @@ use super::error_parsing::{
     StatusTriggerError,
 };
 
+#[derive(sqlx::FromRow)]
+struct UuidWrapper(Uuid);
+
+impl From<UuidWrapper> for Uuid {
+    fn from(value: UuidWrapper) -> Self {
+        value.0
+    }
+}
+
 // ============================================================================
 // Invoice Domain Errors
 // ============================================================================

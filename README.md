@@ -75,6 +75,8 @@ Required configs are:
 - `payments.json`: only `recipient` field is mandatory;
 - `seed.json`: only `seed` field is mandatory.
 
+Non-required configs are optional. If you don’t set them, default values will be used.
+
 All config examples can be found in `configs` folder of this project.
 Any config field (except `chain.json`'s `assets`) can be overridden using environment variables. If both value in `.json` file and env var present,
 daemon will use the one from env var.

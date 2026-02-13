@@ -25,6 +25,7 @@
 //!   standard 404 HTML response.
 #[cfg(feature = "dev_api")]
 mod dev;
+mod internal;
 mod private;
 mod public;
 mod utils;
@@ -98,6 +99,7 @@ pub async fn api_server(
 
     let router = axum::Router::new()
         .nest("/dev", dev::routes())
+        .nest("/internal", internal::routes())
         .nest("/private", private::routes(hmac_config))
         .nest("/public", public::routes())
         .layer(

@@ -26,6 +26,7 @@ use crate::configs::{
 };
 use crate::dao::{
     DAO,
+    DaoChangesError,
     DaoInterface,
     DaoInvoiceError,
     DaoSwapError,
@@ -34,11 +35,13 @@ use crate::dao::{
 };
 use crate::types::{
     ChainType,
+    CreateFrontEndSwapParams,
     CreateInvoiceData,
     FrontEndSwap,
     InvoiceEventType,
     InvoiceWithReceivedAmount,
     KalatoriEventExt,
+    PublicChangesResponse,
     Transaction,
     UpdateInvoiceData,
 };
@@ -348,13 +351,26 @@ impl<D: DaoInterface> AppState<D> {
             .await
     }
 
+    #[tracing::instrument(skip_all)]
+    pub async fn get_invoice_changes(
+        &self,
+        since: chrono::DateTime<Utc>,
+    ) -> Result<PublicChangesResponse, DaoChangesError> {
+        let internal_response = self
+            .dao
+            .get_invoice_changes(since)
+            .await?;
+
+        Ok(internal_response.into_public(&self.payments_config.payment_url_base))
+    }
+
     pub fn get_shop_meta(&self) -> ShopMetaConfig {
         self.shop_meta.clone()
     }
 
     pub async fn create_front_end_swap(
         &self,
-        data: FrontEndSwap,
+        data: CreateFrontEndSwapParams,
     ) -> Result<FrontEndSwap, DaoSwapError> {
         self.dao
             .create_front_end_swap(data)

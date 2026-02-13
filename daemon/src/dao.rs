@@ -9,6 +9,7 @@
 /// - We want to be able to compare datetime fields directly in SQL queries,
 ///   so we convert `chrono::DateTime<Utc>` to `NaiveDateTime` when binding parameters
 ///   (see details [here](https://docs.rs/sqlx/latest/sqlx/sqlite/types/index.html#note-current_timestamp-and-comparisoninteroperability-of-datetime-values)).
+mod changes;
 mod error_parsing;
 mod interface;
 mod invoice;
@@ -27,6 +28,7 @@ use tokio::sync::Mutex;
 use crate::configs::DatabaseConfig;
 
 // Export domain-specific errors
+pub use changes::DaoChangesError;
 pub use invoice::DaoInvoiceError;
 #[expect(unused_imports)]
 pub use payout::DaoPayoutError;
@@ -47,6 +49,8 @@ pub use interface::{
     MockDaoInterface,
     MockDaoTransactionInterface,
 };
+
+const SQLITE_FILE_NAME: &str = "kalatori_db.sqlite";
 
 // Keep DaoResult for internal use (DaoExecutor trait methods)
 pub(crate) type DaoResult<T> = Result<T, sqlx::Error>;
@@ -174,12 +178,21 @@ impl DAO {
                 .in_memory(true);
             (pool_opts, conn_opts)
         } else {
+            if !std::fs::exists(&config.dir)? {
+                std::fs::create_dir_all(&config.dir)?;
+                tracing::warn!(
+                    "Failed to find sqlite3 database directory at {}. Created new directory at {} with database file {} inside.",
+                    config.dir,
+                    config.dir,
+                    SQLITE_FILE_NAME,
+                )
+            }
             let pool_opts = sqlx::sqlite::SqlitePoolOptions::new();
             let conn_opts = sqlx::sqlite::SqliteConnectOptions::new()
                 .create_if_missing(true)
                 .filename(format!(
-                    "{}/kalatori_db.sqlite",
-                    config.dir
+                    "{}/{}",
+                    config.dir, SQLITE_FILE_NAME,
                 ));
             (pool_opts, conn_opts)
         };
