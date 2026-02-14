@@ -243,6 +243,25 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
             })
     }
 
+    async fn get_all_invoices(&self) -> Result<Vec<Invoice>, DaoInvoiceError> {
+        let query = sqlx::query_as::<_, InvoiceRow>(
+            "SELECT *
+            FROM invoices"
+        );
+
+        self.fetch_all(query)
+            .await
+            .map_err(|e| {
+                tracing::debug!(
+                    error.category = "dao.invoice",
+                    error.operation = "get_all_invoices",
+                    error.source = ?e,
+                    "Failed to fetch all invoices"
+                );
+                DaoInvoiceError::DatabaseError
+            })
+    }
+
     #[cfg_attr(not(test), expect(dead_code))]
     async fn get_invoice_by_id(
         &self,

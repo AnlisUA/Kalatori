@@ -36,4 +36,4 @@ pub const DEFAULT_DATABASE_DIR: &str = "./database";
 
 pub const DEFAULT_SIGNATURE_MAX_AGE_SECS: u64 = 300; // 5 minutes
 
-pub const DEFAULT_LOG_DIRECTIVES: &str = "info";
+pub const DEFAULT_LOG_DIRECTIVES: &str = "kalatori=trace,info";

@@ -141,6 +141,25 @@ pub trait DaoSwapMethods: DaoExecutor + 'static {
                 }
             })
     }
+
+    async fn get_all_front_end_swaps(&self) -> Result<Vec<FrontEndSwap>, DaoSwapError> {
+        let query = sqlx::query_as::<_, FrontEndSwapRow>(
+            "SELECT *
+            FROM front_end_swaps"
+        );
+
+        self.fetch_all(query)
+            .await
+            .map_err(|e| {
+                tracing::debug!(
+                    error.category = "dao.swap",
+                    error.operation = "get_all_front_end_swaps",
+                    error.source = ?e,
+                    "Failed to fetch all front end swaps"
+                );
+                DaoSwapError::DatabaseError
+            })
+    }
 }
 
 impl<T: DaoExecutor + 'static> DaoSwapMethods for T {}

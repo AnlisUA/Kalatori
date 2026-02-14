@@ -119,6 +119,25 @@ pub trait DaoRefundMethods: DaoExecutor + 'static {
             })
     }
 
+    async fn get_all_refunds(&self) -> Result<Vec<Refund>, DaoRefundError> {
+        let query = sqlx::query_as::<_, RefundRow>(
+            "SELECT *
+            FROM refunds"
+        );
+
+        self.fetch_all(query)
+            .await
+            .map_err(|e| {
+                tracing::debug!(
+                    error.category = "dao.refund",
+                    error.operation = "get_all_refunds",
+                    error.source = ?e,
+                    "Failed to fetch all refunds"
+                );
+                DaoRefundError::DatabaseError
+            })
+    }
+
     #[cfg_attr(not(test), expect(dead_code))]
     async fn get_refund_by_id(
         &self,

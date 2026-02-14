@@ -134,6 +134,12 @@ pub struct Transaction {
     pub updated_at: DateTime<Utc>,
 }
 
+impl Transaction {
+    pub fn is_incoming(&self) -> bool {
+        self.transaction_type == TransactionType::Incoming
+    }
+}
+
 impl From<Transaction> for PublicTransaction {
     fn from(value: Transaction) -> Self {
         let transaction_link = match value.transfer_info.chain {

@@ -126,6 +126,26 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
             })
     }
 
+    async fn get_all_completed_transactions(&self) -> Result<Vec<Transaction>, DaoTransactionError> {
+        let query = sqlx::query_as::<_, TransactionRow>(
+            "SELECT *
+            FROM transactions
+            WHERE status = 'Completed'"
+        );
+
+        self.fetch_all(query)
+            .await
+            .map_err(|e| {
+                tracing::debug!(
+                    error.category = "dao.transacton",
+                    error.operation = "get_all_transactions",
+                    error.source = ?e,
+                    "Failed to fetch all transactions"
+                );
+                DaoTransactionError::DatabaseError
+            })
+    }
+
     async fn update_transaction_successful(
         &self,
         transaction_id: Uuid,

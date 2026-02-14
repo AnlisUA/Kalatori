@@ -23,6 +23,7 @@ use crate::types::{
     InvoiceWithReceivedAmount,
     Payout,
     PayoutStatus,
+    Refund,
     RetryMeta,
     Transaction,
     UpdateInvoiceData,
@@ -40,6 +41,10 @@ use super::invoice::{
 use super::payout::{
     DaoPayoutError,
     DaoPayoutMethods,
+};
+use super::refund::{
+    DaoRefundError,
+    DaoRefundMethods,
 };
 use super::swap::{
     DaoSwapError,
@@ -96,6 +101,9 @@ pub trait DaoInterface: Send + Sync + 'static {
         invoice: CreateInvoiceData,
     ) -> Result<Invoice, DaoInvoiceError>;
 
+    /// Get all existing invoices.
+    async fn get_all_invoices(&self) -> Result<Vec<Invoice>, DaoInvoiceError>;
+
     /// Get an invoice by its unique ID.
     async fn get_invoice_by_id(
         &self,
@@ -138,6 +146,9 @@ pub trait DaoInterface: Send + Sync + 'static {
         transaction: Transaction,
     ) -> Result<Transaction, DaoTransactionError>;
 
+    /// Get all transactions.
+    async fn get_all_transactions(&self) -> Result<Vec<Transaction>, DaoTransactionError>;
+
     /// Mark a transaction as successful with blockchain coordinates.
     async fn update_transaction_successful(
         &self,
@@ -168,6 +179,9 @@ pub trait DaoInterface: Send + Sync + 'static {
         &self,
         payout: Payout,
     ) -> Result<Payout, DaoPayoutError>;
+
+    /// Get all payouts.
+    async fn get_all_payouts(&self) -> Result<Vec<Payout>, DaoPayoutError>;
 
     /// Get a payout by its ID.
     async fn get_payout_by_id(
@@ -229,6 +243,12 @@ pub trait DaoInterface: Send + Sync + 'static {
         &self,
         swap: CreateFrontEndSwapParams,
     ) -> Result<FrontEndSwap, DaoSwapError>;
+
+    async fn get_all_front_end_swaps(&self) -> Result<Vec<FrontEndSwap>, DaoSwapError>;
+
+    // === Refund Methods ===
+
+    async fn get_all_refunds(&self) -> Result<Vec<Refund>, DaoRefundError>;
 }
 
 /// Interface for database transaction operations.
@@ -254,6 +274,8 @@ pub trait DaoTransactionInterface {
         &self,
         invoice: CreateInvoiceData,
     ) -> Result<Invoice, DaoInvoiceError>;
+
+    async fn get_all_invoices(&self) -> Result<Vec<Invoice>, DaoInvoiceError>;
 
     async fn get_invoice_by_id(
         &self,
@@ -285,6 +307,8 @@ pub trait DaoTransactionInterface {
         transaction: Transaction,
     ) -> Result<Transaction, DaoTransactionError>;
 
+    async fn get_all_transactions(&self) -> Result<Vec<Transaction>, DaoTransactionError>;
+
     async fn update_transaction_successful(
         &self,
         transaction_id: Uuid,
@@ -311,19 +335,25 @@ pub trait DaoTransactionInterface {
         &self,
         payout: Payout,
     ) -> Result<Payout, DaoPayoutError>;
+
+    async fn get_all_payouts(&self) -> Result<Vec<Payout>, DaoPayoutError>;
+
     async fn get_payout_by_id(
         &self,
         payout_id: Uuid,
     ) -> Result<Option<Payout>, DaoPayoutError>;
+
     async fn get_pending_payouts(
         &self,
         limit: u32,
     ) -> Result<Vec<Payout>, DaoPayoutError>;
+
     async fn update_payout_status(
         &self,
         payout_id: Uuid,
         new_status: PayoutStatus,
     ) -> Result<Payout, DaoPayoutError>;
+
     async fn update_payout_retry(
         &self,
         payout_id: Uuid,
@@ -355,6 +385,12 @@ pub trait DaoTransactionInterface {
         swap: CreateFrontEndSwapParams,
     ) -> Result<FrontEndSwap, DaoSwapError>;
 
+    async fn get_all_front_end_swaps(&self) -> Result<Vec<FrontEndSwap>, DaoSwapError>;
+
+    // === Refund Methods ===
+
+    async fn get_all_refunds(&self) -> Result<Vec<Refund>, DaoRefundError>;
+
     // === Transaction Control ===
 
     /// Commit the transaction, persisting all changes.
@@ -380,6 +416,10 @@ impl DaoInterface for DAO {
         invoice: CreateInvoiceData,
     ) -> Result<Invoice, DaoInvoiceError> {
         DaoInvoiceMethods::create_invoice(self, invoice).await
+    }
+
+    async fn get_all_invoices(&self) -> Result<Vec<Invoice>, DaoInvoiceError> {
+        DaoInvoiceMethods::get_all_invoices(self).await
     }
 
     async fn get_invoice_by_id(
@@ -428,6 +468,10 @@ impl DaoInterface for DAO {
         DaoTransactionMethods::create_transaction(self, transaction).await
     }
 
+    async fn get_all_transactions(&self) -> Result<Vec<Transaction>, DaoTransactionError> {
+        DaoTransactionMethods::get_all_completed_transactions(self).await
+    }
+
     async fn update_transaction_successful(
         &self,
         transaction_id: Uuid,
@@ -472,6 +516,10 @@ impl DaoInterface for DAO {
         payout: Payout,
     ) -> Result<Payout, DaoPayoutError> {
         DaoPayoutMethods::create_payout(self, payout).await
+    }
+
+    async fn get_all_payouts(&self) -> Result<Vec<Payout>, DaoPayoutError> {
+        DaoPayoutMethods::get_all_payouts(self).await
     }
 
     async fn get_payout_by_id(
@@ -545,6 +593,14 @@ impl DaoInterface for DAO {
     ) -> Result<FrontEndSwap, DaoSwapError> {
         DaoSwapMethods::create_front_end_swap(self, swap).await
     }
+
+    async fn get_all_front_end_swaps(&self) -> Result<Vec<FrontEndSwap>, DaoSwapError> {
+        DaoSwapMethods::get_all_front_end_swaps(self).await
+    }
+
+    async fn get_all_refunds(&self) -> Result<Vec<Refund>, DaoRefundError> {
+        DaoRefundMethods::get_all_refunds(self).await
+    }
 }
 
 // ============================================================================
@@ -557,6 +613,10 @@ impl DaoTransactionInterface for DaoTransaction {
         invoice: CreateInvoiceData,
     ) -> Result<Invoice, DaoInvoiceError> {
         DaoInvoiceMethods::create_invoice(self, invoice).await
+    }
+
+    async fn get_all_invoices(&self) -> Result<Vec<Invoice>, DaoInvoiceError> {
+        DaoInvoiceMethods::get_all_invoices(self).await
     }
 
     async fn get_invoice_by_id(
@@ -597,6 +657,10 @@ impl DaoTransactionInterface for DaoTransaction {
         transaction: Transaction,
     ) -> Result<Transaction, DaoTransactionError> {
         DaoTransactionMethods::create_transaction(self, transaction).await
+    }
+
+    async fn get_all_transactions(&self) -> Result<Vec<Transaction>, DaoTransactionError> {
+        DaoTransactionMethods::get_all_completed_transactions(self).await
     }
 
     async fn update_transaction_successful(
@@ -643,6 +707,10 @@ impl DaoTransactionInterface for DaoTransaction {
         payout: Payout,
     ) -> Result<Payout, DaoPayoutError> {
         DaoPayoutMethods::create_payout(self, payout).await
+    }
+
+    async fn get_all_payouts(&self) -> Result<Vec<Payout>, DaoPayoutError> {
+        DaoPayoutMethods::get_all_payouts(self).await
     }
 
     async fn get_payout_by_id(
@@ -708,6 +776,14 @@ impl DaoTransactionInterface for DaoTransaction {
         swap: CreateFrontEndSwapParams,
     ) -> Result<FrontEndSwap, DaoSwapError> {
         DaoSwapMethods::create_front_end_swap(self, swap).await
+    }
+
+    async fn get_all_front_end_swaps(&self) -> Result<Vec<FrontEndSwap>, DaoSwapError> {
+        DaoSwapMethods::get_all_front_end_swaps(self).await
+    }
+
+    async fn get_all_refunds(&self) -> Result<Vec<Refund>, DaoRefundError> {
+        DaoRefundMethods::get_all_refunds(self).await
     }
 
     async fn commit(self) -> DaoResult<()> {

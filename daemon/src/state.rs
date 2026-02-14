@@ -34,16 +34,7 @@ use crate::dao::{
     DaoTransactionInterface,
 };
 use crate::types::{
-    ChainType,
-    CreateFrontEndSwapParams,
-    CreateInvoiceData,
-    FrontEndSwap,
-    InvoiceEventType,
-    InvoiceWithReceivedAmount,
-    KalatoriEventExt,
-    PublicChangesResponse,
-    Transaction,
-    UpdateInvoiceData,
+    ChainType, ChangesResponse, CreateFrontEndSwapParams, CreateInvoiceData, FrontEndSwap, InvoiceChanges, InvoiceEventType, InvoiceWithReceivedAmount, KalatoriEventExt, PayoutChanges, PublicChangesResponse, Transaction, UpdateInvoiceData, RefundChanges,
 };
 
 pub struct AppState<D: DaoInterface = DAO> {
@@ -354,12 +345,138 @@ impl<D: DaoInterface> AppState<D> {
     #[tracing::instrument(skip_all)]
     pub async fn get_invoice_changes(
         &self,
-        since: chrono::DateTime<Utc>,
+        since: Option<chrono::DateTime<Utc>>,
     ) -> Result<PublicChangesResponse, DaoChangesError> {
-        let internal_response = self
-            .dao
-            .get_invoice_changes(since)
-            .await?;
+        let mut internal_response = if let Some(since) = since {
+           self
+                .dao
+                .get_invoice_changes(since)
+                .await?
+        } else {
+            let sync_timestamp = Utc::now();
+
+            let invoices = self.dao
+                .get_all_invoices()
+                .await
+                .map_err(|_| DaoChangesError::DatabaseError)?;
+
+            let transactions = self.dao
+                .get_all_transactions()
+                .await
+                .map_err(|_| DaoChangesError::DatabaseError)?;
+
+            let mut transactions_by_invoice_id = HashMap::<_, Vec<_>>::new();
+
+            for transaction in transactions {
+                transactions_by_invoice_id
+                    .entry(transaction.invoice_id)
+                    .or_default()
+                    .push(transaction);
+            }
+
+            let payouts = self.dao
+                .get_all_payouts()
+                .await
+                .map_err(|_| DaoChangesError::DatabaseError)?;
+
+            let mut payouts_by_invoice_id = HashMap::<_, Vec<_>>::new();
+
+            for payout in payouts {
+                let transactions = transactions_by_invoice_id
+                    .get(&payout.invoice_id)
+                    .map(|trans| trans.iter()
+                        .filter(|trans| trans.origin.payout_id == Some(payout.id))
+                        .cloned()
+                        .collect()
+                    )
+                    .unwrap_or_default();
+
+                let changes = PayoutChanges {
+                    payout,
+                    transactions,
+                };
+
+                payouts_by_invoice_id
+                    .entry(changes.payout.invoice_id)
+                    .or_default()
+                    .push(changes);
+            }
+
+            let refunds = self.dao
+                .get_all_refunds()
+                .await
+                .map_err(|_| DaoChangesError::DatabaseError)?;
+
+            let mut refunds_by_invoice_id = HashMap::<_, Vec<_>>::new();
+
+            for refund in refunds {
+                let transactions = transactions_by_invoice_id
+                    .get(&refund.invoice_id)
+                    .map(|trans| trans.iter()
+                        .filter(|trans| trans.origin.refund_id == Some(refund.id))
+                        .cloned()
+                        .collect()
+                    )
+                    .unwrap_or_default();
+
+                let changes = RefundChanges {
+                    refund,
+                    transactions,
+                };
+
+                refunds_by_invoice_id
+                    .entry(changes.refund.invoice_id)
+                    .or_default()
+                    .push(changes);
+            }
+
+            let swaps = self.dao
+                .get_all_front_end_swaps()
+                .await
+                .map_err(|_| DaoChangesError::DatabaseError)?;
+
+            let mut swaps_by_invoice_id = HashMap::<_, Vec<_>>::new();
+
+            for swap in swaps {
+                swaps_by_invoice_id
+                    .entry(swap.invoice_id)
+                    .or_default()
+                    .push(swap);
+            }
+
+            let invoices_response: Vec<_> = invoices
+                .into_iter()
+                .map(|invoice| {
+                    let payouts = payouts_by_invoice_id.remove(&invoice.id).unwrap_or_default();
+                    let refunds = refunds_by_invoice_id.remove(&invoice.id).unwrap_or_default();
+                    let swaps = swaps_by_invoice_id.remove(&invoice.id).unwrap_or_default();
+
+                    let transactions = transactions_by_invoice_id
+                        .remove(&invoice.id)
+                        .map(|trans| trans
+                            .into_iter()
+                            .filter(|t| t.is_incoming())
+                            .collect()
+                        )
+                        .unwrap_or_default();
+
+                    InvoiceChanges {
+                        invoice,
+                        payouts,
+                        refunds,
+                        swaps,
+                        transactions,
+                    }
+                })
+                .collect();
+
+            ChangesResponse {
+                invoices: invoices_response,
+                sync_timestamp,
+            }
+        };
+
+        internal_response.invoices.sort_by_key(|i| i.invoice.updated_at);
 
         Ok(internal_response.into_public(&self.payments_config.payment_url_base))
     }

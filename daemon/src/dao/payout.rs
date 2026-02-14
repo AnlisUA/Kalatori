@@ -119,6 +119,25 @@ pub trait DaoPayoutMethods: DaoExecutor + 'static {
             })
     }
 
+    async fn get_all_payouts(&self) -> Result<Vec<Payout>, DaoPayoutError> {
+        let query = sqlx::query_as::<_, PayoutRow>(
+            "SELECT *
+            FROM payouts"
+        );
+
+        self.fetch_all(query)
+            .await
+            .map_err(|e| {
+                tracing::debug!(
+                    error.category = "dao.payout",
+                    error.operation = "get_all_payouts",
+                    error.source = ?e,
+                    "Failed to fetch all payouts"
+                );
+                DaoPayoutError::DatabaseError
+            })
+    }
+
     #[cfg_attr(not(test), expect(dead_code))]
     async fn get_payout_by_id(
         &self,
