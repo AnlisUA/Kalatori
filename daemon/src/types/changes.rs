@@ -42,7 +42,8 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GetChangesParams {
-    /// Return entities modified after this timestamp. If timestamp is not specified, returns all entities.
+    /// Return entities modified after this timestamp. If timestamp is not
+    /// specified, returns all entities.
     pub since: Option<DateTime<Utc>>,
 }
 

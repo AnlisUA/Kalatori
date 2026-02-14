@@ -122,7 +122,7 @@ pub trait DaoRefundMethods: DaoExecutor + 'static {
     async fn get_all_refunds(&self) -> Result<Vec<Refund>, DaoRefundError> {
         let query = sqlx::query_as::<_, RefundRow>(
             "SELECT *
-            FROM refunds"
+            FROM refunds",
         );
 
         self.fetch_all(query)

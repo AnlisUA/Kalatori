@@ -34,7 +34,20 @@ use crate::dao::{
     DaoTransactionInterface,
 };
 use crate::types::{
-    ChainType, ChangesResponse, CreateFrontEndSwapParams, CreateInvoiceData, FrontEndSwap, InvoiceChanges, InvoiceEventType, InvoiceWithReceivedAmount, KalatoriEventExt, PayoutChanges, PublicChangesResponse, Transaction, UpdateInvoiceData, RefundChanges,
+    ChainType,
+    ChangesResponse,
+    CreateFrontEndSwapParams,
+    CreateInvoiceData,
+    FrontEndSwap,
+    InvoiceChanges,
+    InvoiceEventType,
+    InvoiceWithReceivedAmount,
+    KalatoriEventExt,
+    PayoutChanges,
+    PublicChangesResponse,
+    RefundChanges,
+    Transaction,
+    UpdateInvoiceData,
 };
 
 pub struct AppState<D: DaoInterface = DAO> {
@@ -348,19 +361,20 @@ impl<D: DaoInterface> AppState<D> {
         since: Option<chrono::DateTime<Utc>>,
     ) -> Result<PublicChangesResponse, DaoChangesError> {
         let mut internal_response = if let Some(since) = since {
-           self
-                .dao
+            self.dao
                 .get_invoice_changes(since)
                 .await?
         } else {
             let sync_timestamp = Utc::now();
 
-            let invoices = self.dao
+            let invoices = self
+                .dao
                 .get_all_invoices()
                 .await
                 .map_err(|_| DaoChangesError::DatabaseError)?;
 
-            let transactions = self.dao
+            let transactions = self
+                .dao
                 .get_all_transactions()
                 .await
                 .map_err(|_| DaoChangesError::DatabaseError)?;
@@ -374,7 +388,8 @@ impl<D: DaoInterface> AppState<D> {
                     .push(transaction);
             }
 
-            let payouts = self.dao
+            let payouts = self
+                .dao
                 .get_all_payouts()
                 .await
                 .map_err(|_| DaoChangesError::DatabaseError)?;
@@ -384,11 +399,13 @@ impl<D: DaoInterface> AppState<D> {
             for payout in payouts {
                 let transactions = transactions_by_invoice_id
                     .get(&payout.invoice_id)
-                    .map(|trans| trans.iter()
-                        .filter(|trans| trans.origin.payout_id == Some(payout.id))
-                        .cloned()
-                        .collect()
-                    )
+                    .map(|trans| {
+                        trans
+                            .iter()
+                            .filter(|trans| trans.origin.payout_id == Some(payout.id))
+                            .cloned()
+                            .collect()
+                    })
                     .unwrap_or_default();
 
                 let changes = PayoutChanges {
@@ -402,7 +419,8 @@ impl<D: DaoInterface> AppState<D> {
                     .push(changes);
             }
 
-            let refunds = self.dao
+            let refunds = self
+                .dao
                 .get_all_refunds()
                 .await
                 .map_err(|_| DaoChangesError::DatabaseError)?;
@@ -412,11 +430,13 @@ impl<D: DaoInterface> AppState<D> {
             for refund in refunds {
                 let transactions = transactions_by_invoice_id
                     .get(&refund.invoice_id)
-                    .map(|trans| trans.iter()
-                        .filter(|trans| trans.origin.refund_id == Some(refund.id))
-                        .cloned()
-                        .collect()
-                    )
+                    .map(|trans| {
+                        trans
+                            .iter()
+                            .filter(|trans| trans.origin.refund_id == Some(refund.id))
+                            .cloned()
+                            .collect()
+                    })
                     .unwrap_or_default();
 
                 let changes = RefundChanges {
@@ -430,7 +450,8 @@ impl<D: DaoInterface> AppState<D> {
                     .push(changes);
             }
 
-            let swaps = self.dao
+            let swaps = self
+                .dao
                 .get_all_front_end_swaps()
                 .await
                 .map_err(|_| DaoChangesError::DatabaseError)?;
@@ -447,17 +468,24 @@ impl<D: DaoInterface> AppState<D> {
             let invoices_response: Vec<_> = invoices
                 .into_iter()
                 .map(|invoice| {
-                    let payouts = payouts_by_invoice_id.remove(&invoice.id).unwrap_or_default();
-                    let refunds = refunds_by_invoice_id.remove(&invoice.id).unwrap_or_default();
-                    let swaps = swaps_by_invoice_id.remove(&invoice.id).unwrap_or_default();
+                    let payouts = payouts_by_invoice_id
+                        .remove(&invoice.id)
+                        .unwrap_or_default();
+                    let refunds = refunds_by_invoice_id
+                        .remove(&invoice.id)
+                        .unwrap_or_default();
+                    let swaps = swaps_by_invoice_id
+                        .remove(&invoice.id)
+                        .unwrap_or_default();
 
                     let transactions = transactions_by_invoice_id
                         .remove(&invoice.id)
-                        .map(|trans| trans
-                            .into_iter()
-                            .filter(|t| t.is_incoming())
-                            .collect()
-                        )
+                        .map(|trans| {
+                            trans
+                                .into_iter()
+                                .filter(|t| t.is_incoming())
+                                .collect()
+                        })
                         .unwrap_or_default();
 
                     InvoiceChanges {
@@ -476,7 +504,9 @@ impl<D: DaoInterface> AppState<D> {
             }
         };
 
-        internal_response.invoices.sort_by_key(|i| i.invoice.updated_at);
+        internal_response
+            .invoices
+            .sort_by_key(|i| i.invoice.updated_at);
 
         Ok(internal_response.into_public(&self.payments_config.payment_url_base))
     }

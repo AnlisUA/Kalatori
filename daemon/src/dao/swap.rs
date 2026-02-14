@@ -145,7 +145,7 @@ pub trait DaoSwapMethods: DaoExecutor + 'static {
     async fn get_all_front_end_swaps(&self) -> Result<Vec<FrontEndSwap>, DaoSwapError> {
         let query = sqlx::query_as::<_, FrontEndSwapRow>(
             "SELECT *
-            FROM front_end_swaps"
+            FROM front_end_swaps",
         );
 
         self.fetch_all(query)

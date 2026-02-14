@@ -122,7 +122,7 @@ pub trait DaoPayoutMethods: DaoExecutor + 'static {
     async fn get_all_payouts(&self) -> Result<Vec<Payout>, DaoPayoutError> {
         let query = sqlx::query_as::<_, PayoutRow>(
             "SELECT *
-            FROM payouts"
+            FROM payouts",
         );
 
         self.fetch_all(query)

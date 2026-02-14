@@ -126,11 +126,13 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
             })
     }
 
-    async fn get_all_completed_transactions(&self) -> Result<Vec<Transaction>, DaoTransactionError> {
+    async fn get_all_completed_transactions(
+        &self
+    ) -> Result<Vec<Transaction>, DaoTransactionError> {
         let query = sqlx::query_as::<_, TransactionRow>(
             "SELECT *
             FROM transactions
-            WHERE status = 'Completed'"
+            WHERE status = 'Completed'",
         );
 
         self.fetch_all(query)

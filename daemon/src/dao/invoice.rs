@@ -246,7 +246,7 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
     async fn get_all_invoices(&self) -> Result<Vec<Invoice>, DaoInvoiceError> {
         let query = sqlx::query_as::<_, InvoiceRow>(
             "SELECT *
-            FROM invoices"
+            FROM invoices",
         );
 
         self.fetch_all(query)
