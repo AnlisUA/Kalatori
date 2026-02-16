@@ -216,6 +216,10 @@ impl<T: ChainConfig> SignedTransactionUtils for SignedTransaction<T> {
 #[cfg_attr(test, mockall::automock)]
 #[trait_variant::make(Send)]
 pub trait BlockChainClient<T: ChainConfig>: Sync {
+    fn chain_type() -> ChainType {
+        T::CHAIN_TYPE
+    }
+
     fn chain_name(&self) -> &'static str;
 
     fn asset_info_store(&self) -> &AssetInfoStore<T>;

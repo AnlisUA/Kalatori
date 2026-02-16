@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::net::IpAddr;
 use std::str::FromStr;
 
+use rand::prelude::*;
 use rust_decimal::Decimal;
 use secrecy::SecretString;
 use serde::{
@@ -53,8 +54,16 @@ pub struct ChainConfig {
     /// automatically.
     #[serde(default)]
     pub assets: Vec<String>,
+    /// Allow endpoints which starts from `http://` and `ws://` instead of `https://` and `wss://`
     #[serde(default = "default_allow_insecure_endpoints")]
     pub allow_insecure_endpoints: bool,
+}
+
+impl ChainConfig {
+    pub fn get_random_endpoint(&self) -> Option<String> {
+        let mut rng = rand::rng();
+        self.endpoints.choose(&mut rng).cloned()
+    }
 }
 
 #[derive(Deserialize, Clone, Debug)]

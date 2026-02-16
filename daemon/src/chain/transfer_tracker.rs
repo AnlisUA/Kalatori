@@ -406,13 +406,14 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
         }
     }
 
+    #[tracing::instrument(skip(self, token), fields(chain = %T::CHAIN_TYPE))]
     async fn perform(
         mut self,
         assets: Vec<T::AssetId>,
         token: CancellationToken,
     ) {
         tracing::info!(
-            "Starting transfers tracker for chain for {}",
+            "Starting transfers tracker for {}",
             self.client.chain_name()
         );
 
@@ -424,6 +425,9 @@ impl<T: ChainConfig, C: BlockChainClient<T> + 'static, D: DaoInterface + 'static
                 .await;
 
             let Some(poll_subscription) = &mut subscription else {
+                tracing::warn!(
+                    "Failed poll chain subscription, probably it's down. Trying to recreate client and resubscribe..."
+                );
                 // If we couldn't create a subscription, try to recreate the client with another
                 // RPC endpoint
                 match self.client.recreate().await {
