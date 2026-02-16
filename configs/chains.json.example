@@ -1,0 +1,16 @@
+{
+  "chains": {
+    "PolkadotAssetHub": {
+      "endpoints": [
+        "ws://localhost:9000"
+      ],
+      "allow_insecure_endpoints": true
+    },
+    "Polygon": {
+      "endpoints": [
+        "wss://polygon-bor-rpc.publicnode.com"
+      ],
+      "allow_insecure_endpoints": true
+    }
+  }
+}

@@ -1,0 +1,4 @@
+{
+    "directives": "kalatori=trace,info",
+    "loki_url": null
+}

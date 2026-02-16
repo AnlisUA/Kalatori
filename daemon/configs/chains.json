@@ -1,0 +1,13 @@
+{
+  "chains": {
+    "PolkadotAssetHub": {
+      "endpoints": [
+        "wss://asset-hub.polkadot.io",
+        "wss://asset-hub-rpc.polkadot.io",
+        "ws://localhost:9000"
+      ],
+      "assets": ["1984"],
+      "allow_insecure_endpoints": true
+    }
+  }
+}

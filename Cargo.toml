@@ -1,113 +1,36 @@
-[package]
-name = "kalatori"
+[workspace]
+members = [
+    "daemon",
+    "client",
+]
+resolver = "3"
+
+[workspace.package]
 authors = [
 	"Alexander Slesarev <slesarew@gmail.com>",
     	"Vova Lando <vova.lando@gmail.com>",
      	"Artyom Sheviakov <fluidcells@pm.me>",
 ]
-version = "0.4.1"
-edition = "2021"
-description = "A gateway daemon for Kalatori."
 license = "GPL-3.0-or-later"
-homepage = "https://github.com/Kalapaja/Kalatori"
-repository = "https://github.com/Kalapaja/Kalatori"
-documentation = "https://docs.rs/Kalatori"
 readme = "README.md"
+repository = "https://github.com/Kalapaja/Kalatori"
 keywords = ["substrate", "blockchain", "finance", "service", "middleware"]
 categories = ["finance"]
-exclude = [".github", "cliff.toml", "Dockerfile", "chopsticks/", "configs", "is_version_greater.sh", "shoot.sh", "start.sh", "/tests"]
-rust-version = "1.82"
+exclude = [".github", "cliff.toml", "Dockerfile", "chopsticks/", "configs", "is_version_greater.sh", "/tests"]
 
-[dependencies]
-axum = { version = "0.7", default-features = false, features = [
-    "tokio",
-    "http1",
-    "query",
-    "json",
-    "matched-path",
-] }
-tracing-subscriber = { version = "0.3", features = ["env-filter", "time"] }
-names = { version = "0.14", default-features = false }
-tokio-util = { version = "0.7", features = ["rt"] }
-tokio = { version = "1", features = ["rt-multi-thread", "signal", "time"] }
-serde = { version = "1", features = ["derive", "rc"] }
-tracing = "0.1"
-scale-info = "2"
-axum-macros = "0.4"
-primitive-types = { version = "0.13", features = ["codec", "serde"] }
-jsonrpsee = { version = "0.24", features = ["ws-client"] }
-thiserror = "2"
-frame-metadata = { version = "22", features = ["current", "decode", "unstable"] }
-const-hex = "1"
-codec = { package = "parity-scale-codec", version = "3", features = [
-    "chain-error",
-    "derive",
-] }
-serde_json = { version = "1", features = ["raw_value"] }
-hashing = { package = "sp-crypto-hashing", version = "0.1" }
-toml_edit = { version = "0.22", default-features = false, features = [
-    "serde",
-    "parse",
-    "perf",
-] }
-sled = "0.34"
-zeroize = "1"
-clap = { version = "4", features = [
-    "derive",
-    "cargo",
-    "env",
-    "string",
-    "wrap_help",
-    "deprecated",
-] }
-# Don't forget to update me in `[build-dependencies]`!
-shadow-rs = { version = "0.36", default-features = false }
-ahash = "0.8"
-indoc = "2"
-async-lock = "3"
-time = "0.3"
-reqwest = "0.12"
-# This crate bumbped MSRV in minor update
-base64ct = "=1.6.0"
-
-substrate_parser = { git = "https://github.com/Vovke/substrate-parser" }
-substrate-constructor = "0.2.0"
-mnemonic-external = "0.1.0"
-substrate-crypto-light = "0.2.0"
-
-[build-dependencies]
-# Don't forget to update me in `[dependencies]`!
-shadow-rs = { version = "0.36", default-features = false }
-
-[patch.crates-io]
-substrate_parser = { git = "https://github.com/Vovke/substrate-parser" } # TODO: switch to Kalapaja
-substrate-constructor = { git = "https://github.com/Kalapaja/substrate-constructor.git" }
-
-[profile.release]
-strip = true
-lto = true
-codegen-units = 1
-panic = "abort"
-overflow-checks = true
-
-[lints.rust]
+[workspace.lints.rust]
 future_incompatible = "warn"
 let_underscore = "warn"
 rust_2018_idioms = "warn"
 unused = "warn"
-# TODO: https://github.com/rust-lang/cargo/issues/12918
-rust-2024-compatibility = { level = "warn", priority = -1 }
 
-[lints.clippy]
-allow_attributes = "warn"
-shadow_reuse = "warn"
-shadow_same = "warn"
-shadow_unrelated = "warn"
+[workspace.lints.clippy]
+allow_attributes = "deny"
 cargo_common_metadata = "warn"
-arithmetic_side_effects = "warn"
+cast_possible_truncation = "warn"
+ignored_unit_patterns = "warn"
 # Having multiple module layout styles in a project can be confusing. Moreover, `mod.rs` files don't
 # really harmonize with Git as they can be renamed back to self-named modules and Git fundamentally
 # prone to poorly handle the file renaming that can result in their history erasure.
 mod_module_files = "warn"
-# TODO: https://github.com/rust-lang/cargo/issues/12918
-pedantic = { level = "warn", priority = -1 }
+# TODO: we'll add docs and remove this later

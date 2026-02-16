@@ -1,0 +1,6 @@
+{
+  "invoices_webhook_url": "https://shop.example.com/webhooks/invoices",
+  "signature_max_age_secs": 60,
+  "shop_name": "Mega Shop",
+  "reown_project_id": "PLEASE SPECIFY YOUR REOWN PROJECT ID HERE"
+}

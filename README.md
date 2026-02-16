@@ -2,7 +2,7 @@
 
 !!! KALATORI IS IN PUBLIC BETA !!!
 
-Kalatori is an open-source daemon designed to enable secure and scalable blockchain payment processing. Licensed under GPLv3 ([LICENSE](LICENSE)), Kalatori currently supports assets on the Polkadot relay chain and its parachains.
+Kalatori is an open-source daemon designed to enable secure and scalable blockchain payment processing. Licensed under GPLv3 ([LICENSE](LICENSE)), Kalatori currently supports assets on the Asset Hub parachain.
 
 The daemon derives unique accounts for each payment using a provided seed phrase and outputs all payments to a specified recipient wallet. It also offers limited transaction tracking for order management. Kalatori operates in a multithreaded mode and supports multiple currencies configured in a simple TOML-based configuration file.
 
@@ -17,16 +17,50 @@ Download the latest Docker container or x86-64 release from the [GitHub releases
 
 ### Compile from Source
 
-To compile the daemon, ensure you have the latest stable version of the Rust compiler installed. Then, run:
+#### Database Setup
 
+The daemon relies on SQL syntax that is supported starting from SQLite `3.47.0`. At the moment, `sqlx` allows using the bundled (built-in) SQLite with `sqlite` feature enabled, but it enforces an older SQLite dependency. Once selecting the SQLite version is supported by `sqlx` (expected around `sqlx 0.9`), the bundled SQLite will be used, and a local SQLite installation will no longer be required.
+
+If you plan to run the daemon on Linux, it is recommended to build SQLite from source, as the version provided by the package manager may be outdated. Build instructions can be found [here](https://sqlite.org/src/doc/trunk/doc/compile-for-unix.md), the latest version can be downloaded from [this page](https://www.sqlite.org/download.html).
+
+There is a setup example for MacOS, which may be usefull for tests and local development.
+
+1. Install SQLite via `brew`:
 ```sh
-cargo build --release --workspace
+brew install sqlite3
 ```
-The compiled binaries will be located in the `target/release` path.
+
+2. Export the following environmental variables:
+```sh
+export PATH="/opt/homebrew/opt/sqlite/bin:$PATH"
+export SQLITE3_LIB_DIR=/opt/homebrew/opt/sqlite/lib
+export SQLITE3_INCLUDE_DIR=/opt/homebrew/opt/sqlite/include
+```
+
+#### Compilation
+
+To compile the daemon, ensure you have the latest stable version of the Rust compiler installed. In order to compile
+the daemon it also required to have blockchain node's metadata which can be fetched using `subxt-cli`. Step by step
+workflow to compile the project will be following:
+
+1. Install `subxt-cli` locally, into the `bin` folder:
+```sh
+make install-subxt-cli
+```
+2. Download Asset Hub's node metadata:
+```sh
+make download-node-metadata-ci
+```
+3. Build the daemon:
+```sh
+make build-release
+```
+
+The compiled binaries will be located in the `target/release` folder.
 
 ### Project Structure
 
-- `chopsticks`: Contains configuration files for the Chopsticks tool and a Docker Compose setup for spawning Polkadot and AssetHub test chains.
+- `chopsticks`: Contains configuration files for the Chopsticks tool and a Docker Compose setup for spawning AssetHub test chain.
 - `configs`: Contains configuration files for supported chains and assets.
 - `docs`: Includes project documentation.
 - `src`: The source code for the Kalatori daemon.
@@ -35,59 +69,57 @@ The compiled binaries will be located in the `target/release` path.
 
 ### Configuration File Example
 
-For Polkadot and Asset Hub chains, the configuration file should look like this:
+You can use `.json` files or environment variables for daemon configuration.
+Required configs are:
+- `chain.json`: `name`, `endpoints` and `assets` fields are mandatory. `assets` can not be reconfigured over env vars;
+- `payments.json`: only `recipient` field is mandatory;
+- `seed.json`: only `seed` field is mandatory.
 
-```toml
-account-lifetime = 604800000 # 1 week.
-debug = true
-depth = 86400000 # 1 day.
+Non-required configs are optional. If you don’t set them, default values will be used.
 
-[[chain]]
-name = "polkadot"
-native-token = "DOT"
-decimals = 10
-endpoints = [
-    "wss://rpc.polkadot.io",
-    "wss://1rpc.io/dot",
-]
+All config examples can be found in `configs` folder of this project.
+Any config field (except `chain.json`'s `assets`) can be overridden using environment variables. If both value in `.json` file and env var present,
+daemon will use the one from env var.
+If any value is already set in env var it's not required to be present in config file.
 
-[[chain]]
-name = "statemint"
-endpoints = [
-    "wss://polkadot-asset-hub-rpc.polkadot.io",
-    "wss://statemint-rpc.dwellir.com",
-]
+In order to make daemon read some field from env var, var's name should be named in convenient `{ENV_PREFIX}{CONFIG_FILE_NAME}{CONFIG_FIELD_NAME}={CONFIG_VALUE}`.
 
-[[chain.asset]]
-name = "USDC"
-id = 1337
-
-[[chain.asset]]
-name = "USDt"
-id = 1984
+Default `ENV_PREFIX` is `KALATORI`, so to set `recipient` field of `payments` config you can use the following sentence:
+```sh
+export KALATORI_PAYMENTS_RECIPIENT=your_recipient_here
 ```
-
-### Environment variables
-
-Kalatori requires the following environment variables for configuration:
-- `KALATORI_HOST`: Address for the daemon's TCP socket server.
-- `KALATORI_SEED`: Seed phrase for account derivation.
-- `KALATORI_CONFIG`: Path to the chain configuration file in the configs directory.
-- `KALATORI_RECIPIENT`: The hexadecimal address to which received payments will be transferred.
-- `KALATORI_REMARK`: A string added to the transaction's remark field.
+`ENV_PREFIX` also can be overridden using env var `KALATORI_APP_ENV_PREFIX`. For example if you set the prefix to `MY_SUPER_KALATORI` using `export KALATORI_APP_ENV_PREFIX=MY_SUPER_KALATORI` then you can use following sentence to override config from previous example:
+```sh
+export MY_SUPER_KALATORI_RECIPIENT=your_recipient_here
+```
 
 ### Usage Example
 
-Run Kalatori for the Polkadot chain:
-
+For development and testing purposes Kalatori can be configured to connect to `chopsticks` instead of real chain.
+In order to run Kalatori with `chopsticks` connection follow next steps:
+1. Copy configs from example files:
 ```sh
-KALATORI_HOST="127.0.0.1:16726" \
-KALATORI_CONFIG="configs/polkadot.toml" \
-KALATORI_SEED="bottom drive obey lake curtain smoke basket hold race lonely fit walk" \
-KALATORI_RECIPIENT="5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY" \
-KALATORI_REMARK="test" \
-kalatori
-````
+make copy-configs
+```
+2. Run `chopsticks` in docker and build and run Kalatori daemon locally:
+```sh
+make run
+```
+3. When you finished, clean up `chopsticks` containers:
+```sh
+make stop-chopsticks
+```
+
+Another way is to run Kalatori for the Asset Hub parachain (without chopsticks):
+1. We still can copy example configs but also use real chain RPC nodes:
+```sh
+make copy-configs
+make copy-ah-production-config
+```
+2. Feel free to update any configs you need. After that we're ready to run Kalatori daemon:
+```sh
+make run-release
+```
 
 ### Testing
 
@@ -130,4 +162,3 @@ Refer to the Kalatori project [board](https://github.com/orgs/Kalapaja/projects/
 
 - Polkadot community
 - Liberland team
-

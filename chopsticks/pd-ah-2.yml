@@ -1,4 +1,4 @@
-endpoint: wss://statemint-rpc.dwellir.com
+endpoint: wss://polkadot-asset-hub-rpc.polkadot.io
 
 import-storage:
   System:

@@ -1,59 +1,24 @@
 version: '3.8'
 
 services:
-  chopsticks-polkadot:
+  chopsticks-asset-hub:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: chopsticks-polkadot
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./pd.yml:/app/config.yml
-    command: ["chopsticks", "-c", "/app/config.yml", "-p", "8000", "--addr", "0.0.0.0"]
-    networks:
-      - kalatori-network
-
-  chopsticks-polkadot-2:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: chopsticks-polkadot-2
-    ports:
-      - "8500:8500"
-    volumes:
-      - ./pd-2.yml:/app/config.yml
-    command: [ "chopsticks", "-c", "/app/config.yml", "-p", "8500", "--addr", "0.0.0.0" ]
-    networks:
-      - kalatori-network
-
-  chopsticks-statemint:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: chopsticks-statemint
+    container_name: chopsticks-asset-hub
     ports:
       - "9000:9000"
     volumes:
       - ./pd-ah.yml:/app/config.yml
-    command: ["chopsticks", "-c", "/app/config.yml", "-p", "9000", "--addr", "0.0.0.0"]
-    networks:
-      - kalatori-network
+    command: ["chopsticks", "-c", "/app/config.yml", "--port", "9000", "--host", "0.0.0.0"]
 
-  chopsticks-statemint-2:
+  chopsticks-asset-hub-2:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: chopsticks-statemint-2
+    container_name: chopsticks-asset-hub-2
     ports:
       - "9500:9500"
     volumes:
       - ./pd-ah-2.yml:/app/config.yml
-    command: [ "chopsticks", "-c", "/app/config.yml", "-p", "9500", "--addr", "0.0.0.0" ]
-    networks:
-      - kalatori-network
-
-
-networks:
-  kalatori-network:
-    external: true
+    command: [ "chopsticks", "-c", "/app/config.yml", "--port", "9500", "--host", "0.0.0.0" ]
