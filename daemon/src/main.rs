@@ -4,13 +4,17 @@ mod chain_client;
 mod configs;
 mod dao;
 mod error;
+mod etherscan_client;
 mod expiration_detector;
 mod state;
 mod types;
 mod utils;
 mod webhook_sender;
 
-use std::collections::HashMap;
+use std::collections::{
+    HashMap,
+    HashSet,
+};
 use std::process::ExitCode;
 
 use kalatori_client::types::ChainType;
@@ -48,6 +52,7 @@ use error::{
     Error,
     PrettyCause,
 };
+use etherscan_client::EtherscanClient;
 use expiration_detector::ExpirationDetector;
 use state::AppState;
 use utils::logger;
@@ -58,6 +63,8 @@ use utils::shutdown::{
 };
 use utils::task_tracker::TaskTracker;
 
+use crate::chain::TransactionsRecorder;
+use crate::configs::etherscan_client_config_with_prefix;
 use crate::dao::DaoInterface;
 
 const DEFAULT_ENV_PREFIX: &str = "KALATORI";
@@ -145,7 +152,7 @@ async fn init_invoice_registry(dao: &impl DaoInterface) -> Result<InvoiceRegistr
 fn validate_and_extend_configs(
     chains_config: &mut ChainsConfig,
     payments_config: &mut PaymentsConfig,
-    restored_asset_ids: HashMap<ChainType, Vec<String>>,
+    restored_asset_ids: HashMap<ChainType, HashSet<String>>,
 ) -> Result<(), Error> {
     // Ensure that we have recipients for all chains from restored invoices and for
     // default chain
@@ -199,6 +206,7 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
     let web_server_config = web_server_config_with_prefix(&configs_path, &env_prefix);
     let database_config = database_config_with_prefix(&configs_path, &env_prefix);
     let shop_config = shop_config_with_prefix(&configs_path, &env_prefix);
+    let etherscan_client_config = etherscan_client_config_with_prefix(&configs_path, &env_prefix);
 
     let hmac_config = HmacConfig::new(
         secrets_config
@@ -298,10 +306,22 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
     // keep graceful shutdown working.
     let (keyring_handle, keyring_client) = keyring.ignite();
 
-    let expiration_detector = ExpirationDetector::new(
+    let etherscan_client = EtherscanClient::new(etherscan_client_config);
+
+    let transactions_recorder = TransactionsRecorder::new(
         dao.clone(),
         invoice_registry.clone(),
         payments_config.clone(),
+    );
+
+    let expiration_detector = ExpirationDetector::new(
+        dao.clone(),
+        invoice_registry.clone(),
+        asset_hub_client.clone(),
+        polygon_client.clone(),
+        etherscan_client,
+        payments_config.clone(),
+        transactions_recorder.clone(),
     );
 
     let expiration_detector_handle =
@@ -310,9 +330,8 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
     // Start Asset Hub transfers tracker
     let asset_hub_tracker = TransfersTracker::new(
         asset_hub_client.clone(),
-        dao.clone(),
         invoice_registry.clone(),
-        payments_config.clone(),
+        transactions_recorder.clone(),
     );
 
     let asset_hub_tracker_handle = asset_hub_tracker.ignite(
@@ -323,9 +342,8 @@ async fn async_try_main(shutdown_notification: ShutdownNotification) -> Result<(
     // Start Polygon transfers tracker
     let polygon_tracker = TransfersTracker::new(
         polygon_client.clone(),
-        dao.clone(),
         invoice_registry.clone(),
-        payments_config.clone(),
+        transactions_recorder,
     );
 
     let polygon_tracker_handle = polygon_tracker.ignite(

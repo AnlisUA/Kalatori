@@ -10,6 +10,7 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use crate::types::{
+    ChainType,
     GeneralTransactionId,
     Transaction,
     TransactionRow,
@@ -41,6 +42,13 @@ pub enum DaoTransactionError {
     StatusConstraintViolation {
         current_status: TransactionStatus,
         attempted_status: TransactionStatus,
+    },
+
+    /// Transaction with the same blockchain coordinates already exists
+    #[error("Duplicate transaction")]
+    DuplicateTransaction {
+        chain: ChainType,
+        general_transaction_id: GeneralTransactionId,
     },
 
     /// Database operation failed
@@ -116,6 +124,13 @@ pub trait DaoTransactionMethods: DaoExecutor + 'static {
                         if message.contains("FOREIGN KEY") {
                             return DaoTransactionError::InvoiceNotFound {
                                 invoice_id: transaction.invoice_id,
+                            };
+                        }
+
+                        if db_err.kind() == sqlx::error::ErrorKind::UniqueViolation {
+                            return DaoTransactionError::DuplicateTransaction {
+                                chain: transaction.transfer_info.chain,
+                                general_transaction_id: transaction.transaction_id,
                             };
                         }
 

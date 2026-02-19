@@ -448,13 +448,11 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
             })
     }
 
-    async fn update_invoices_expired(&self) -> Result<Vec<Invoice>, DaoInvoiceError> {
+    async fn get_expired_invoices(&self) -> Result<Vec<Invoice>, DaoInvoiceError> {
         let query = sqlx::query_as::<_, InvoiceRow>(
-            "UPDATE invoices
-            SET status = 'UnpaidExpired',
-                updated_at = datetime('now')
-            WHERE status = 'Waiting' AND valid_till < datetime('now')
-            RETURNING *",
+            "SELECT *
+            FROM invoices
+            WHERE status = 'Waiting' AND valid_till < datetime('now')",
         );
 
         self.fetch_all(query)
@@ -462,9 +460,9 @@ pub trait DaoInvoiceMethods: DaoExecutor + 'static {
             .map_err(|e| {
                 tracing::debug!(
                     error.category = "dao.invoice",
-                    error.operation = "update_invoices_expired",
+                    error.operation = "get_expired_invoices",
                     error.source = ?e,
-                    "Failed to update expired invoices"
+                    "Failed to get expired invoices"
                 );
                 DaoInvoiceError::DatabaseError
             })
