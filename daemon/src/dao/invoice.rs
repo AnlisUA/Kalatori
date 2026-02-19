@@ -510,6 +510,8 @@ mod tests {
 
         let tx1_amount = Decimal::new(10050, 2); // 100.50
         tx1.transfer_info.amount = tx1_amount;
+        tx1.transaction_id.block_number = Some(100);
+        tx1.transaction_id.tx_hash = Some(Uuid::new_v4().to_string());
 
         dao.create_transaction(tx1)
             .await
@@ -524,6 +526,8 @@ mod tests {
 
         let tx2_amount = Decimal::new(5025, 2); // 50.25
         tx2.transfer_info.amount = tx2_amount;
+        tx2.transaction_id.block_number = Some(300);
+        tx2.transaction_id.tx_hash = Some(Uuid::new_v4().to_string());
 
         dao.create_transaction(tx2)
             .await
@@ -553,6 +557,8 @@ mod tests {
 
         let tx3_amount = Decimal::new(7599, 2); // 75.99
         tx3.transfer_info.amount = tx3_amount;
+        tx3.transaction_id.block_number = Some(500);
+        tx3.transaction_id.tx_hash = Some(Uuid::new_v4().to_string());
 
         dao.create_transaction(tx3)
             .await
@@ -583,6 +589,8 @@ mod tests {
         };
 
         tx4_outgoing.transfer_info.amount = Decimal::new(10000, 2); // 100.00
+        tx4_outgoing.transaction_id.block_number = Some(700);
+        tx4_outgoing.transaction_id.tx_hash = Some(Uuid::new_v4().to_string());
 
         dao.create_transaction(tx4_outgoing)
             .await

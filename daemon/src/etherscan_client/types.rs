@@ -103,10 +103,7 @@ impl EtherscanTransaction {
             chain: ChainType::Polygon,
             asset_id: self.contract_address,
             asset_name: self.token_symbol,
-            amount: Decimal::new(
-                self.value as i64,
-                self.token_decimal,
-            ),
+            amount: Decimal::new(self.value as i64, self.token_decimal),
             source_address: self.from,
             destination_address: self.to,
         };
