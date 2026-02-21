@@ -1,5 +1,5 @@
 {
-  "name": "kalatori-webhook-simulator",
+  "name": "@kalatori/webhook-simulator",
   "version": "1.0.0",
   "description": "Test your webhook endpoint against Kalatori's exact signing and delivery behavior",
   "bin": "./bin.js",
@@ -12,5 +12,20 @@
     "server.js",
     "ui.js",
     "test-vectors.js"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Kalapaja/Kalatori.git",
+    "directory": "tools/webhook-simulator"
+  },
+  "keywords": [
+    "kalatori",
+    "webhook",
+    "hmac",
+    "testing",
+    "payments"
   ]
 }

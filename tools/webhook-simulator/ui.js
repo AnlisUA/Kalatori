@@ -516,7 +516,7 @@ async function sendWebhook() {
         'Request timed out after 60 seconds.\\nTime: ' + result.elapsed + 'ms',
         '<strong>Production behavior:</strong> ' +
         'Request timeout (60 seconds). ' +
-        'In production, Kalatori would retry this event indefinitely (no backoff, polling every ~100ms). ' +
+        'In production, Kalatori would continuously retry this event until it succeeds. ' +
         'All subsequent webhook events for this same invoice would be held in queue ' +
         'until this one succeeds.'
       );
@@ -525,8 +525,8 @@ async function sendWebhook() {
         requestText,
         'Error: ' + result.message + '\\nTime: ' + result.elapsed + 'ms',
         '<strong>Production behavior:</strong> ' +
-        'Connection failed. In production, Kalatori would retry this event indefinitely ' +
-        '(no backoff, polling every ~100ms). All subsequent webhook events for this same invoice ' +
+        'Connection failed. In production, Kalatori would continuously retry this event until it succeeds. ' +
+        'All subsequent webhook events for this same invoice ' +
         'would be held in queue until this one succeeds.'
       );
     } else if (result.status !== undefined) {
@@ -548,7 +548,7 @@ async function sendWebhook() {
         productionHtml =
           '<strong>Production behavior:</strong> ' +
           'Server responded with <strong>' + result.status + '</strong>. ' +
-          'In production, Kalatori would retry this event indefinitely (no backoff, polling every ~100ms). ' +
+          'In production, Kalatori would continuously retry this event until it succeeds. ' +
           'All subsequent webhook events for this same invoice would be held in queue ' +
           'until this one succeeds (FIFO ordering per entity). ' +
           'Up to 10 concurrent webhook deliveries are allowed across different invoices.';
