@@ -114,6 +114,8 @@ pub(crate) fn timestamp_secs() -> u64 {
         .as_secs()
 }
 
+// TODO: it's used in example only. Probably will be better to move it out of
+// here
 /// Computes a hex-encoded HMAC-SHA256 webhook signature using the same
 /// algorithm as production webhook delivery.
 ///

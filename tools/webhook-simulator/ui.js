@@ -247,11 +247,13 @@ function generatePayload(eventType, status) {
 }
 
 function makeSampleTransaction(invoiceId, amount, date) {
+  let blockNumber = 12345678 + Math.floor(Math.random() * 1000);
+  let positionInBlock = Math.floor(Math.random() * 10);
   return {
     id: uuidv4(),
     invoice_id: invoiceId,
-    block_number: 12345678 + Math.floor(Math.random() * 1000),
-    position_in_block: Math.floor(Math.random() * 10),
+    block_number: blockNumber,
+    position_in_block: positionInBlock,
     tx_hash: '0x' + Array.from(crypto.getRandomValues(new Uint8Array(32)))
       .map(b => b.toString(16).padStart(2, '0')).join(''),
     transaction_type: 'Incoming',
@@ -263,7 +265,8 @@ function makeSampleTransaction(invoiceId, amount, date) {
     destination_address: '5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY',
     created_at: date.toISOString().replace(/\\.\\d{3}Z$/, 'Z'),
     updated_at: date.toISOString().replace(/\\.\\d{3}Z$/, 'Z'),
-    status: 'Confirmed'
+    status: 'Completed',
+    transaction_link: 'https://assethub-polkadot.subscan.io/extrinsic/' + blockNumber + '-' + positionInBlock
   };
 }
 
