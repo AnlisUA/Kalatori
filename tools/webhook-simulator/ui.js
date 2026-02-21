@@ -1,5 +1,7 @@
 'use strict';
 
+const TEST_VECTORS = require('./test-vectors');
+
 function getHtml() {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -45,11 +47,22 @@ textarea#payload-editor.invalid { border-color: #d32f2f; background: #fff5f5; }
 .production-note strong { color: #92400e; }
 .info-box { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 4px; padding: 12px; font-size: 0.85rem; margin-bottom: 16px; }
 .error-text { color: #dc2626; font-size: 0.8rem; margin-top: 4px; }
-.self-test-results { margin-top: 8px; font-size: 0.85rem; }
-.test-pass { color: #16a34a; }
-.test-fail { color: #dc2626; }
 .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #93c5fd; border-top-color: #2563eb; border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: middle; margin-right: 6px; }
 @keyframes spin { to { transform: rotate(360deg); } }
+.log-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid #eee; padding-bottom: 8px; }
+.log-header h2 { margin-bottom: 0; border-bottom: none; padding-bottom: 0; }
+.log-count { font-size: 0.75rem; font-weight: 500; color: #666; background: #e5e7eb; border-radius: 10px; padding: 1px 8px; margin-left: 8px; vertical-align: middle; }
+.log-entry { border: 1px solid #e5e5e5; border-radius: 6px; padding: 12px; margin-bottom: 10px; border-left: 4px solid #d1d5db; }
+.log-entry.success { border-left-color: #16a34a; }
+.log-entry.failure { border-left-color: #dc2626; }
+.log-entry-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+.log-badge { font-size: 0.75rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; white-space: nowrap; }
+.log-badge.success { background: #dcfce7; color: #166534; }
+.log-badge.failure { background: #fee2e2; color: #991b1b; }
+.log-badge.pending { background: #e0e7ff; color: #3730a3; }
+.log-url { font-family: "SF Mono", "Fira Code", monospace; font-size: 0.8rem; color: #555; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+.log-time { font-size: 0.78rem; color: #888; white-space: nowrap; }
+.log-entry .production-note { margin-top: 8px; }
 </style>
 </head>
 <body>
@@ -121,52 +134,16 @@ textarea#payload-editor.invalid { border-color: #d32f2f; background: #fff5f5; }
   <button class="btn btn-primary" id="send-btn" onclick="sendWebhook()">Send Webhook</button>
 </div>
 
-<!-- Result -->
-<div class="section" id="result-panel">
-  <h2>Result</h2>
-  <div id="result-status" class="result-status"></div>
-
-  <details class="result-detail" open>
-    <summary>Request Details</summary>
-    <pre id="request-details"></pre>
-  </details>
-
-  <details class="result-detail" open>
-    <summary>Response</summary>
-    <pre id="response-details"></pre>
-  </details>
-
-  <div id="production-note" class="production-note"></div>
-</div>
-
-<!-- Self-Test -->
-<div class="section">
-  <h2>Self-Test (HMAC Verification)</h2>
-  <p style="font-size: 0.85rem; margin-bottom: 8px;">
-    Verify that this tool's HMAC-SHA256 implementation matches Kalatori's Rust implementation
-    using pre-computed test vectors.
-  </p>
-  <button class="btn btn-secondary btn-small" onclick="runSelfTest()">Run Self-Test</button>
-  <div id="self-test-results" class="self-test-results"></div>
+<!-- Request Log -->
+<div class="section" id="log-section" style="display:none">
+  <div class="log-header">
+    <h2>Request Log <span id="log-count" class="log-count"></span></h2>
+    <button class="btn btn-secondary btn-small" onclick="clearLog()">Clear Log</button>
+  </div>
+  <div id="request-log"></div>
 </div>
 
 <script>
-// ============================================================================
-// Test Vectors (generated from Rust code via generate_hmac_test_vectors.rs)
-// ============================================================================
-const TEST_VECTORS = [
-  {"body":"{\\"id\\":\\"test\\"}","expected_signature":"4c6738b4a89261548d5b7a031a4c61c092a6a4adaa6487a708cdc59e95d7d391","method":"POST","path":"/webhooks/invoices","secret":"secret","timestamp":"1706745600"},
-  {"body":"","expected_signature":"79f3f1c0508a9936b7679445c534f9d8809f81405f9f938db7cc7ffd274254e5","method":"POST","path":"/webhooks/invoices","secret":"secret","timestamp":"1706745600"},
-  {"body":"{\\"event_type\\":\\"created\\",\\"payload\\":{\\"amount\\":\\"100.00\\"}}","expected_signature":"ed859d57b84464396bcafdae8e1f826cc8f978f65a68121d4f4a055c9266290f","method":"POST","path":"/api/v3/webhooks","secret":"my-webhook-secret-key-2024","timestamp":"1700000000"},
-  {"body":"","expected_signature":"edca57bf46268d48a7997fdee7a90786fa724e255f6bd57992dffb17875ace0a","method":"GET","path":"/webhooks/invoices","secret":"secret","timestamp":"1706745600"},
-  {"body":"{\\"test\\":true}","expected_signature":"62186c90aad3845be9c5ef87e45d60259efc87650e0d71962edfd136cef550f0","method":"POST","path":"/webhooks/invoices","secret":"a-very-long-secret-key-that-is-longer-than-sixty-four-bytes-to-test-hmac-key-hashing-behavior","timestamp":"1706745600"},
-  {"body":"{\\"name\\":\\"caf\\u00e9\\",\\"price\\":\\"\\u20ac100.00\\",\\"note\\":\\"line1\\\\nline2\\"}","expected_signature":"5e95ff1d2f1d58b81be6d29bfce1f0cde0fc7c5009bbddc891727c4cb8e080de","method":"POST","path":"/webhooks/invoices","secret":"secret","timestamp":"1706745600"},
-  {"body":"{\\"event_entity\\":\\"invoice\\",\\"event_type\\":\\"created\\",\\"id\\":\\"550e8400-e29b-41d4-a716-446655440000\\",\\"payload\\":{\\"amount\\":\\"100.00\\",\\"asset_id\\":\\"1984\\",\\"asset_name\\":\\"USDT\\",\\"cart\\":{\\"items\\":[{\\"name\\":\\"Widget Pro\\",\\"price\\":\\"50.00\\",\\"quantity\\":2}]},\\"chain\\":\\"PolkadotAssetHub\\",\\"created_at\\":\\"2024-01-31T12:00:00Z\\",\\"id\\":\\"7c9e6679-7425-40de-944b-e07fc1f90ae7\\",\\"order_id\\":\\"order-12345\\",\\"payment_address\\":\\"5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY\\",\\"payment_url\\":\\"https://app.kalatori.com/invoice/7c9e6679-7425-40de-944b-e07fc1f90ae7\\",\\"redirect_url\\":\\"https://example.com/thank-you\\",\\"status\\":\\"Waiting\\",\\"total_received_amount\\":\\"0\\",\\"transactions\\":[],\\"updated_at\\":\\"2024-01-31T12:00:00Z\\",\\"valid_till\\":\\"2024-02-01T12:00:00Z\\"},\\"timestamp\\":\\"2024-01-31T12:00:00Z\\"}","expected_signature":"6c5e53f66e85f8f5b5fe5aa4bb971c889e168cff0a17f049d903e0c389aa4592","method":"POST","path":"/webhooks/invoices","secret":"production-secret-abc123","timestamp":"1706702400"},
-  {"body":"{\\"event_entity\\":\\"invoice\\",\\"event_type\\":\\"paid\\",\\"id\\":\\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\\",\\"payload\\":{\\"amount\\":\\"250.50\\",\\"asset_id\\":\\"1984\\",\\"asset_name\\":\\"USDT\\",\\"cart\\":{\\"items\\":[]},\\"chain\\":\\"PolkadotAssetHub\\",\\"created_at\\":\\"2024-01-31T12:00:00Z\\",\\"id\\":\\"deadbeef-1234-5678-9abc-def012345678\\",\\"order_id\\":\\"ORD-2024-0042\\",\\"payment_address\\":\\"5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty\\",\\"payment_url\\":\\"https://pay.example.com/inv/deadbeef\\",\\"redirect_url\\":\\"https://shop.example.com/order/42/complete\\",\\"status\\":\\"Paid\\",\\"total_received_amount\\":\\"250.50\\",\\"transactions\\":[{\\"amount\\":\\"250.50\\",\\"asset_id\\":\\"1984\\",\\"asset_name\\":\\"USDT\\",\\"block_number\\":12345678,\\"chain\\":\\"PolkadotAssetHub\\",\\"created_at\\":\\"2024-01-31T14:30:00Z\\",\\"destination_address\\":\\"5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty\\",\\"id\\":\\"11111111-2222-3333-4444-555555555555\\",\\"invoice_id\\":\\"deadbeef-1234-5678-9abc-def012345678\\",\\"position_in_block\\":2,\\"source_address\\":\\"5DAAnrj7VHTznn2AWBemMuyBwZWs6FNFjdyVXUeYum3PTXFy\\",\\"status\\":\\"Confirmed\\",\\"transaction_type\\":\\"Incoming\\",\\"tx_hash\\":\\"0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890\\",\\"updated_at\\":\\"2024-01-31T14:30:00Z\\"}],\\"updated_at\\":\\"2024-01-31T14:30:00Z\\",\\"valid_till\\":\\"2024-02-01T12:00:00Z\\"},\\"timestamp\\":\\"2024-01-31T14:30:00Z\\"}","expected_signature":"e8599841e652b41bbee8f4d74b7d8183935359351dde1b5cd8e3d368a1d7ece9","method":"POST","path":"/hooks/kalatori","secret":"merchant-secret-xyz","timestamp":"1706711400"},
-  {"body":"{\\"minimal\\":true}","expected_signature":"cf8ac5477c3f9d1b5fc9f6a551854fa3e27421b0d6a0cf418197dbd7d0b973fc","method":"POST","path":"/webhooks/invoices","secret":"secret","timestamp":"0"},
-  {"body":"{\\"id\\":\\"test\\"}","expected_signature":"780cee1a41d32cfb041d816b8496ce547708e62f98fec8b9bb8aac6d135b4e48","method":"POST","path":"/webhooks/invoices/","secret":"secret","timestamp":"1706745600"}
-];
-
 // ============================================================================
 // Event Type -> Status Mapping
 // ============================================================================
@@ -366,43 +343,103 @@ function toggleSecret() {
 // ============================================================================
 let attemptCounter = 0;
 
-function showResult(statusText, statusClass, requestText, responseText, productionHtml) {
-  const resultPanel = document.getElementById('result-panel');
-  const resultStatus = document.getElementById('result-status');
-  const requestDetails = document.getElementById('request-details');
-  const responseDetails = document.getElementById('response-details');
-  const productionNote = document.getElementById('production-note');
+function addLogEntry(id, badgeText, badgeClass, url, requestText, responseText, productionHtml) {
+  const logSection = document.getElementById('log-section');
+  const logContainer = document.getElementById('request-log');
+  const logCount = document.getElementById('log-count');
 
-  resultPanel.style.display = '';
-  resultPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  resultStatus.textContent = statusText;
-  resultStatus.className = 'result-status ' + (statusClass || '');
-  requestDetails.textContent = requestText || '';
-  responseDetails.textContent = responseText || '';
-  productionNote.innerHTML = productionHtml || '';
+  logSection.style.display = '';
+
+  // Collapse details on previously-newest entry
+  const prevNewest = logContainer.firstElementChild;
+  if (prevNewest) {
+    prevNewest.querySelectorAll('details[open]').forEach(d => d.removeAttribute('open'));
+  }
+
+  const entry = document.createElement('div');
+  entry.className = 'log-entry ' + (badgeClass || '');
+  entry.id = 'log-entry-' + id;
+
+  const timeStr = new Date().toLocaleTimeString();
+
+  entry.innerHTML =
+    '<div class="log-entry-header">' +
+      '<span class="log-badge ' + (badgeClass || 'pending') + '">' + escapeHtml(badgeText) + '</span>' +
+      '<span class="log-url">POST ' + escapeHtml(url) + '</span>' +
+      '<span class="log-time">#' + id + ' at ' + timeStr + '</span>' +
+    '</div>' +
+    '<details class="result-detail" open>' +
+      '<summary>Request</summary>' +
+      '<pre>' + escapeHtml(requestText || '') + '</pre>' +
+    '</details>' +
+    '<details class="result-detail" open>' +
+      '<summary>Response</summary>' +
+      '<pre>' + escapeHtml(responseText || '') + '</pre>' +
+    '</details>' +
+    (productionHtml ? '<div class="production-note">' + productionHtml + '</div>' : '');
+
+  logContainer.prepend(entry);
+
+  const count = logContainer.children.length;
+  logCount.textContent = count + (count === 1 ? ' request' : ' requests');
+
+  entry.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function updateLogEntry(id, badgeText, badgeClass, requestText, responseText, productionHtml) {
+  const entry = document.getElementById('log-entry-' + id);
+  if (!entry) return;
+
+  entry.className = 'log-entry ' + (badgeClass || '');
+
+  const badge = entry.querySelector('.log-badge');
+  if (badge) {
+    badge.className = 'log-badge ' + (badgeClass || 'pending');
+    badge.textContent = badgeText;
+  }
+
+  const pres = entry.querySelectorAll('details.result-detail pre');
+  if (pres[0] && requestText !== undefined) pres[0].textContent = requestText;
+  if (pres[1] && responseText !== undefined) pres[1].textContent = responseText;
+
+  const note = entry.querySelector('.production-note');
+  if (productionHtml) {
+    if (note) {
+      note.innerHTML = productionHtml;
+    } else {
+      const div = document.createElement('div');
+      div.className = 'production-note';
+      div.innerHTML = productionHtml;
+      entry.appendChild(div);
+    }
+  }
+
+  entry.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function clearLog() {
+  document.getElementById('request-log').innerHTML = '';
+  document.getElementById('log-count').textContent = '';
+  document.getElementById('log-section').style.display = 'none';
+  attemptCounter = 0;
+}
+
+function escapeHtml(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 async function sendWebhook() {
   attemptCounter++;
   const attempt = attemptCounter;
-  const attemptLabel = 'Attempt #' + attempt;
 
-  const resultPanel = document.getElementById('result-panel');
   const sendBtn = document.getElementById('send-btn');
-
-  resultPanel.style.display = '';
-  resultPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-
   const url = document.getElementById('webhook-url').value.trim();
   const secret = document.getElementById('secret-key').value;
   const body = payloadEditor.value;
 
   // Validate inputs
   if (!url) {
-    showResult(
-      attemptLabel + ' — Validation Error', 'failure',
-      '', 'Webhook URL is empty. Please enter a URL above.', ''
-    );
+    addLogEntry(attempt, 'Validation Error', 'failure', '(empty)', '', 'Webhook URL is empty. Please enter a URL above.', '');
     return;
   }
 
@@ -410,10 +447,7 @@ async function sendWebhook() {
   try {
     parsedUrl = new URL(url);
   } catch {
-    showResult(
-      attemptLabel + ' — Validation Error', 'failure',
-      '', 'Invalid URL format: "' + url + '"', ''
-    );
+    addLogEntry(attempt, 'Validation Error', 'failure', url, '', 'Invalid URL format: "' + url + '"', '');
     return;
   }
 
@@ -422,10 +456,7 @@ async function sendWebhook() {
   } catch (e) {
     payloadEditor.classList.add('invalid');
     jsonError.textContent = 'Invalid JSON: ' + e.message;
-    showResult(
-      attemptLabel + ' — Validation Error', 'failure',
-      '', 'Payload is not valid JSON:\\n' + e.message, ''
-    );
+    addLogEntry(attempt, 'Validation Error', 'failure', url, '', 'Payload is not valid JSON:\\n' + e.message, '');
     return;
   }
 
@@ -442,29 +473,22 @@ async function sendWebhook() {
   try {
     signature = await computeSignature(secret, 'POST', path, body, timestamp);
   } catch (e) {
-    showResult(
-      attemptLabel + ' — Signing Error', 'failure',
-      '', 'Failed to compute HMAC signature: ' + e.message, ''
-    );
+    addLogEntry(attempt, 'Signing Error', 'failure', url, '', 'Failed to compute HMAC signature: ' + e.message, '');
     sendBtn.disabled = false;
     sendBtn.textContent = 'Send Webhook';
     return;
   }
 
   const requestText =
-    attemptLabel + ' at ' + new Date().toLocaleTimeString() + '\\n\\n' +
     'POST ' + url + '\\n' +
     'Content-Type: application/json\\n' +
     'X-KALATORI-SIGNATURE: ' + signature + '\\n' +
     'X-KALATORI-TIMESTAMP: ' + timestamp + '\\n' +
+    '\\nBody:\\n' + body + '\\n' +
     '\\nHMAC signed message (for debugging):\\n' +
-    'POST\\\\n' + path + '\\\\n<body>\\\\n' + timestamp + '\\n' +
-    '\\nPath extracted from URL: ' + path;
+    'POST\\\\n' + path + '\\\\n' + body + '\\\\n' + timestamp;
 
-  showResult(
-    attemptLabel + ' — Sending...', '',
-    requestText, '(waiting for response...)', ''
-  );
+  addLogEntry(attempt, 'Sending...', 'pending', url, requestText, '(waiting for response...)', '');
 
   const startTime = performance.now();
 
@@ -487,8 +511,7 @@ async function sendWebhook() {
     const result = await proxyResponse.json();
 
     if (result.error === 'timeout') {
-      showResult(
-        attemptLabel + ' — Timeout', 'failure',
+      updateLogEntry(attempt, 'Timeout', 'failure',
         requestText,
         'Request timed out after 60 seconds.\\nTime: ' + result.elapsed + 'ms',
         '<strong>Production behavior:</strong> ' +
@@ -498,8 +521,7 @@ async function sendWebhook() {
         'until this one succeeds.'
       );
     } else if (result.error === 'connection_error') {
-      showResult(
-        attemptLabel + ' — Connection Error', 'failure',
+      updateLogEntry(attempt, 'Connection Error', 'failure',
         requestText,
         'Error: ' + result.message + '\\nTime: ' + result.elapsed + 'ms',
         '<strong>Production behavior:</strong> ' +
@@ -532,22 +554,20 @@ async function sendWebhook() {
           'Up to 10 concurrent webhook deliveries are allowed across different invoices.';
       }
 
-      showResult(
-        attemptLabel + ' — ' + result.status + ' ' + result.statusText,
+      updateLogEntry(attempt,
+        result.status + ' ' + result.statusText,
         isSuccess ? 'success' : 'failure',
         requestText, responseText, productionHtml
       );
     } else {
-      showResult(
-        attemptLabel + ' — Unexpected Error', 'failure',
+      updateLogEntry(attempt, 'Unexpected Error', 'failure',
         requestText,
         'Unexpected proxy response: ' + JSON.stringify(result), ''
       );
     }
   } catch (e) {
     const elapsed = Math.round(performance.now() - startTime);
-    showResult(
-      attemptLabel + ' — Proxy Error', 'failure',
+    updateLogEntry(attempt, 'Proxy Error', 'failure',
       requestText,
       'Error communicating with local proxy: ' + e.message + '\\nTime: ' + elapsed + 'ms\\n\\n' +
       'Make sure the webhook simulator server is still running.',
@@ -557,44 +577,6 @@ async function sendWebhook() {
 
   sendBtn.disabled = false;
   sendBtn.textContent = 'Send Webhook';
-}
-
-// ============================================================================
-// Self-Test
-// ============================================================================
-async function runSelfTest() {
-  const resultsDiv = document.getElementById('self-test-results');
-  resultsDiv.innerHTML = '<span class="spinner"></span> Running ' + TEST_VECTORS.length + ' test vectors...';
-
-  let passed = 0;
-  let failed = 0;
-  let details = '';
-
-  for (let i = 0; i < TEST_VECTORS.length; i++) {
-    const tv = TEST_VECTORS[i];
-    try {
-      const computed = await computeSignature(
-        tv.secret, tv.method, tv.path, tv.body, tv.timestamp
-      );
-      if (computed === tv.expected_signature) {
-        passed++;
-        details += '<div class="test-pass">  #' + (i + 1) + ' PASS</div>';
-      } else {
-        failed++;
-        details += '<div class="test-fail">  #' + (i + 1) + ' FAIL — expected ' +
-          tv.expected_signature.slice(0, 16) + '..., got ' + computed.slice(0, 16) + '...</div>';
-      }
-    } catch (e) {
-      failed++;
-      details += '<div class="test-fail">  #' + (i + 1) + ' ERROR — ' + e.message + '</div>';
-    }
-  }
-
-  const summary = failed === 0
-    ? '<strong class="test-pass">All ' + passed + ' tests passed.</strong> HMAC implementation matches Kalatori.'
-    : '<strong class="test-fail">' + failed + ' of ' + (passed + failed) + ' tests failed.</strong> HMAC implementation may not match Kalatori.';
-
-  resultsDiv.innerHTML = summary + '<br>' + details;
 }
 </script>
 
