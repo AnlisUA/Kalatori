@@ -1,7 +1,5 @@
 'use strict';
 
-const TEST_VECTORS = require('./test-vectors');
-
 function getHtml() {
   return `<!DOCTYPE html>
 <html lang="en">

@@ -51,11 +51,18 @@ That is: `METHOD`, `PATH`, `BODY`, and `TIMESTAMP` joined by literal newline cha
 Pseudocode for your webhook handler:
 
 ```python
-import hmac, hashlib
+import hmac, hashlib, time
+
+MAX_SKEW_SECONDS = 300  # 5 minutes
 
 def verify(request, secret):
     signature = request.headers["X-KALATORI-SIGNATURE"]
     timestamp = request.headers["X-KALATORI-TIMESTAMP"]
+
+    # Reject stale or far-future timestamps to limit replay window
+    if abs(time.time() - int(timestamp)) > MAX_SKEW_SECONDS:
+        return False
+
     message = f"{request.method}\n{request.path}\n{request.body}\n{timestamp}"
     expected = hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
     return hmac.compare_digest(signature, expected)

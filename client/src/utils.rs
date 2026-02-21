@@ -120,6 +120,10 @@ pub(crate) fn timestamp_secs() -> u64 {
 /// This is useful for generating test vectors or verifying signatures
 /// outside of the `reqwest` middleware flow.
 ///
+/// **Note**: This function always signs the raw `body` bytes and is intended
+/// for POST webhooks only. For GET requests (which sign sorted query
+/// parameters instead of the body), use [`hmac_from_request_parts`].
+///
 /// The signed message is: `{method}\n{path}\n{body}\n{timestamp}`
 pub fn compute_webhook_signature(
     secret: &[u8],
