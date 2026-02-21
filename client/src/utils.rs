@@ -133,7 +133,13 @@ pub fn compute_webhook_signature(
     timestamp: &str,
 ) -> String {
     let secret_key: SecretSlice<u8> = secret.to_vec().into();
-    let mac = calculate_hmac(&secret_key, method, path, body, timestamp);
+    let mac = calculate_hmac(
+        &secret_key,
+        method,
+        path,
+        body,
+        timestamp,
+    );
     const_hex::encode(mac.finalize().into_bytes())
 }
 
