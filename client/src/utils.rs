@@ -114,6 +114,25 @@ pub(crate) fn timestamp_secs() -> u64 {
         .as_secs()
 }
 
+/// Computes a hex-encoded HMAC-SHA256 webhook signature using the same
+/// algorithm as production webhook delivery.
+///
+/// This is useful for generating test vectors or verifying signatures
+/// outside of the `reqwest` middleware flow.
+///
+/// The signed message is: `{method}\n{path}\n{body}\n{timestamp}`
+pub fn compute_webhook_signature(
+    secret: &[u8],
+    method: &str,
+    path: &str,
+    body: &[u8],
+    timestamp: &str,
+) -> String {
+    let secret_key: SecretSlice<u8> = secret.to_vec().into();
+    let mac = calculate_hmac(&secret_key, method, path, body, timestamp);
+    const_hex::encode(mac.finalize().into_bytes())
+}
+
 pub fn add_headers_to_reqwest(
     config: &HmacConfig,
     request: &mut reqwest::Request,
