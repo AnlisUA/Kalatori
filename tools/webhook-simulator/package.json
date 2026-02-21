@@ -1,0 +1,15 @@
+{
+  "name": "kalatori-webhook-simulator",
+  "version": "1.0.0",
+  "description": "Test your webhook endpoint against Kalatori's exact signing and delivery behavior",
+  "bin": "./bin.js",
+  "license": "GPL-3.0",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "bin.js",
+    "server.js",
+    "ui.js"
+  ]
+}

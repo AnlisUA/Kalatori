@@ -1,4 +1,7 @@
-<!DOCTYPE html>
+'use strict';
+
+function getHtml() {
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -45,10 +48,6 @@ textarea#payload-editor.invalid { border-color: #d32f2f; background: #fff5f5; }
 .self-test-results { margin-top: 8px; font-size: 0.85rem; }
 .test-pass { color: #16a34a; }
 .test-fail { color: #dc2626; }
-details.cors-help { margin-top: 16px; }
-details.cors-help summary { cursor: pointer; font-weight: 600; font-size: 0.9rem; color: #555; }
-details.cors-help .content { padding: 12px; margin-top: 8px; font-size: 0.85rem; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 4px; }
-details.cors-help code { background: #e5e7eb; padding: 2px 5px; border-radius: 3px; font-size: 0.82rem; }
 .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #93c5fd; border-top-color: #2563eb; border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: middle; margin-right: 6px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 </style>
@@ -60,8 +59,9 @@ details.cors-help code { background: #e5e7eb; padding: 2px 5px; border-radius: 3
 
 <div class="info-box">
   This tool sends a single webhook request with a properly signed HMAC-SHA256 payload, matching
-  Kalatori's production behavior. It does <strong>not</strong> retry on failure &mdash; instead it reports
-  what would happen in production.
+  Kalatori's production behavior. Requests are sent server-side (via local proxy), so there are no
+  CORS restrictions &mdash; just like production. It does <strong>not</strong> retry on failure &mdash;
+  instead it reports what would happen in production.
 </div>
 
 <!-- Configuration -->
@@ -150,62 +150,25 @@ details.cors-help code { background: #e5e7eb; padding: 2px 5px; border-radius: 3
   <div id="self-test-results" class="self-test-results"></div>
 </div>
 
-<!-- CORS Help -->
-<details class="cors-help">
-  <summary>CORS Troubleshooting</summary>
-  <div class="content">
-    <p style="margin-bottom: 8px;">
-      <strong>Why does my request fail with a network error?</strong>
-    </p>
-    <p style="margin-bottom: 8px;">
-      This tool runs in your browser, but Kalatori sends webhooks <em>server-to-server</em>.
-      Browsers enforce CORS (Cross-Origin Resource Sharing) restrictions that don't apply to
-      server-to-server requests. Your webhook endpoint likely doesn't include CORS headers
-      because it doesn't need them in production.
-    </p>
-    <p style="margin-bottom: 8px;"><strong>Workarounds:</strong></p>
-    <ol style="padding-left: 20px; margin-bottom: 8px;">
-      <li style="margin-bottom: 6px;">
-        <strong>Add temporary CORS headers</strong> to your webhook endpoint's response (including the <code>OPTIONS</code> preflight):
-        <pre style="margin-top: 4px;">Access-Control-Allow-Origin: *
-Access-Control-Allow-Methods: POST, OPTIONS
-Access-Control-Allow-Headers: Content-Type, X-KALATORI-SIGNATURE, X-KALATORI-TIMESTAMP</pre>
-      </li>
-      <li style="margin-bottom: 6px;">
-        <strong>Serve this HTML file</strong> from the same origin as your endpoint (e.g., <code>python3 -m http.server 8080</code>).
-      </li>
-      <li style="margin-bottom: 6px;">
-        <strong>Use the companion Kalatori webhook receiver example</strong> which already handles CORS:
-        <pre style="margin-top: 4px;">cargo run --example webhook -p kalatori-client --features axum-middleware</pre>
-        Then point this tool at <code>http://localhost:8000/webhooks/invoices</code> with secret <code>secret</code>.
-      </li>
-    </ol>
-    <p style="font-size: 0.82rem; color: #666;">
-      Note: If you open this file from <code>file://</code>, some browsers restrict <code>fetch()</code> entirely.
-      Serve it via a local HTTP server instead.
-    </p>
-  </div>
-</details>
-
 <script>
 // ============================================================================
 // Test Vectors (generated from Rust code via generate_hmac_test_vectors.rs)
 // ============================================================================
 const TEST_VECTORS = [
-  {"body":"{\"id\":\"test\"}","expected_signature":"4c6738b4a89261548d5b7a031a4c61c092a6a4adaa6487a708cdc59e95d7d391","method":"POST","path":"/webhooks/invoices","secret":"secret","timestamp":"1706745600"},
+  {"body":"{\\"id\\":\\"test\\"}","expected_signature":"4c6738b4a89261548d5b7a031a4c61c092a6a4adaa6487a708cdc59e95d7d391","method":"POST","path":"/webhooks/invoices","secret":"secret","timestamp":"1706745600"},
   {"body":"","expected_signature":"79f3f1c0508a9936b7679445c534f9d8809f81405f9f938db7cc7ffd274254e5","method":"POST","path":"/webhooks/invoices","secret":"secret","timestamp":"1706745600"},
-  {"body":"{\"event_type\":\"created\",\"payload\":{\"amount\":\"100.00\"}}","expected_signature":"ed859d57b84464396bcafdae8e1f826cc8f978f65a68121d4f4a055c9266290f","method":"POST","path":"/api/v3/webhooks","secret":"my-webhook-secret-key-2024","timestamp":"1700000000"},
+  {"body":"{\\"event_type\\":\\"created\\",\\"payload\\":{\\"amount\\":\\"100.00\\"}}","expected_signature":"ed859d57b84464396bcafdae8e1f826cc8f978f65a68121d4f4a055c9266290f","method":"POST","path":"/api/v3/webhooks","secret":"my-webhook-secret-key-2024","timestamp":"1700000000"},
   {"body":"","expected_signature":"edca57bf46268d48a7997fdee7a90786fa724e255f6bd57992dffb17875ace0a","method":"GET","path":"/webhooks/invoices","secret":"secret","timestamp":"1706745600"},
-  {"body":"{\"test\":true}","expected_signature":"62186c90aad3845be9c5ef87e45d60259efc87650e0d71962edfd136cef550f0","method":"POST","path":"/webhooks/invoices","secret":"a-very-long-secret-key-that-is-longer-than-sixty-four-bytes-to-test-hmac-key-hashing-behavior","timestamp":"1706745600"},
-  {"body":"{\"name\":\"caf\u00e9\",\"price\":\"\u20ac100.00\",\"note\":\"line1\\nline2\"}","expected_signature":"5e95ff1d2f1d58b81be6d29bfce1f0cde0fc7c5009bbddc891727c4cb8e080de","method":"POST","path":"/webhooks/invoices","secret":"secret","timestamp":"1706745600"},
-  {"body":"{\"event_entity\":\"invoice\",\"event_type\":\"created\",\"id\":\"550e8400-e29b-41d4-a716-446655440000\",\"payload\":{\"amount\":\"100.00\",\"asset_id\":\"1984\",\"asset_name\":\"USDT\",\"cart\":{\"items\":[{\"name\":\"Widget Pro\",\"price\":\"50.00\",\"quantity\":2}]},\"chain\":\"PolkadotAssetHub\",\"created_at\":\"2024-01-31T12:00:00Z\",\"id\":\"7c9e6679-7425-40de-944b-e07fc1f90ae7\",\"order_id\":\"order-12345\",\"payment_address\":\"5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY\",\"payment_url\":\"https://app.kalatori.com/invoice/7c9e6679-7425-40de-944b-e07fc1f90ae7\",\"redirect_url\":\"https://example.com/thank-you\",\"status\":\"Waiting\",\"total_received_amount\":\"0\",\"transactions\":[],\"updated_at\":\"2024-01-31T12:00:00Z\",\"valid_till\":\"2024-02-01T12:00:00Z\"},\"timestamp\":\"2024-01-31T12:00:00Z\"}","expected_signature":"6c5e53f66e85f8f5b5fe5aa4bb971c889e168cff0a17f049d903e0c389aa4592","method":"POST","path":"/webhooks/invoices","secret":"production-secret-abc123","timestamp":"1706702400"},
-  {"body":"{\"event_entity\":\"invoice\",\"event_type\":\"paid\",\"id\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"payload\":{\"amount\":\"250.50\",\"asset_id\":\"1984\",\"asset_name\":\"USDT\",\"cart\":{\"items\":[]},\"chain\":\"PolkadotAssetHub\",\"created_at\":\"2024-01-31T12:00:00Z\",\"id\":\"deadbeef-1234-5678-9abc-def012345678\",\"order_id\":\"ORD-2024-0042\",\"payment_address\":\"5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty\",\"payment_url\":\"https://pay.example.com/inv/deadbeef\",\"redirect_url\":\"https://shop.example.com/order/42/complete\",\"status\":\"Paid\",\"total_received_amount\":\"250.50\",\"transactions\":[{\"amount\":\"250.50\",\"asset_id\":\"1984\",\"asset_name\":\"USDT\",\"block_number\":12345678,\"chain\":\"PolkadotAssetHub\",\"created_at\":\"2024-01-31T14:30:00Z\",\"destination_address\":\"5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty\",\"id\":\"11111111-2222-3333-4444-555555555555\",\"invoice_id\":\"deadbeef-1234-5678-9abc-def012345678\",\"position_in_block\":2,\"source_address\":\"5DAAnrj7VHTznn2AWBemMuyBwZWs6FNFjdyVXUeYum3PTXFy\",\"status\":\"Confirmed\",\"transaction_type\":\"Incoming\",\"tx_hash\":\"0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890\",\"updated_at\":\"2024-01-31T14:30:00Z\"}],\"updated_at\":\"2024-01-31T14:30:00Z\",\"valid_till\":\"2024-02-01T12:00:00Z\"},\"timestamp\":\"2024-01-31T14:30:00Z\"}","expected_signature":"e8599841e652b41bbee8f4d74b7d8183935359351dde1b5cd8e3d368a1d7ece9","method":"POST","path":"/hooks/kalatori","secret":"merchant-secret-xyz","timestamp":"1706711400"},
-  {"body":"{\"minimal\":true}","expected_signature":"cf8ac5477c3f9d1b5fc9f6a551854fa3e27421b0d6a0cf418197dbd7d0b973fc","method":"POST","path":"/webhooks/invoices","secret":"secret","timestamp":"0"},
-  {"body":"{\"id\":\"test\"}","expected_signature":"780cee1a41d32cfb041d816b8496ce547708e62f98fec8b9bb8aac6d135b4e48","method":"POST","path":"/webhooks/invoices/","secret":"secret","timestamp":"1706745600"}
+  {"body":"{\\"test\\":true}","expected_signature":"62186c90aad3845be9c5ef87e45d60259efc87650e0d71962edfd136cef550f0","method":"POST","path":"/webhooks/invoices","secret":"a-very-long-secret-key-that-is-longer-than-sixty-four-bytes-to-test-hmac-key-hashing-behavior","timestamp":"1706745600"},
+  {"body":"{\\"name\\":\\"caf\\u00e9\\",\\"price\\":\\"\\u20ac100.00\\",\\"note\\":\\"line1\\\\nline2\\"}","expected_signature":"5e95ff1d2f1d58b81be6d29bfce1f0cde0fc7c5009bbddc891727c4cb8e080de","method":"POST","path":"/webhooks/invoices","secret":"secret","timestamp":"1706745600"},
+  {"body":"{\\"event_entity\\":\\"invoice\\",\\"event_type\\":\\"created\\",\\"id\\":\\"550e8400-e29b-41d4-a716-446655440000\\",\\"payload\\":{\\"amount\\":\\"100.00\\",\\"asset_id\\":\\"1984\\",\\"asset_name\\":\\"USDT\\",\\"cart\\":{\\"items\\":[{\\"name\\":\\"Widget Pro\\",\\"price\\":\\"50.00\\",\\"quantity\\":2}]},\\"chain\\":\\"PolkadotAssetHub\\",\\"created_at\\":\\"2024-01-31T12:00:00Z\\",\\"id\\":\\"7c9e6679-7425-40de-944b-e07fc1f90ae7\\",\\"order_id\\":\\"order-12345\\",\\"payment_address\\":\\"5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY\\",\\"payment_url\\":\\"https://app.kalatori.com/invoice/7c9e6679-7425-40de-944b-e07fc1f90ae7\\",\\"redirect_url\\":\\"https://example.com/thank-you\\",\\"status\\":\\"Waiting\\",\\"total_received_amount\\":\\"0\\",\\"transactions\\":[],\\"updated_at\\":\\"2024-01-31T12:00:00Z\\",\\"valid_till\\":\\"2024-02-01T12:00:00Z\\"},\\"timestamp\\":\\"2024-01-31T12:00:00Z\\"}","expected_signature":"6c5e53f66e85f8f5b5fe5aa4bb971c889e168cff0a17f049d903e0c389aa4592","method":"POST","path":"/webhooks/invoices","secret":"production-secret-abc123","timestamp":"1706702400"},
+  {"body":"{\\"event_entity\\":\\"invoice\\",\\"event_type\\":\\"paid\\",\\"id\\":\\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\\",\\"payload\\":{\\"amount\\":\\"250.50\\",\\"asset_id\\":\\"1984\\",\\"asset_name\\":\\"USDT\\",\\"cart\\":{\\"items\\":[]},\\"chain\\":\\"PolkadotAssetHub\\",\\"created_at\\":\\"2024-01-31T12:00:00Z\\",\\"id\\":\\"deadbeef-1234-5678-9abc-def012345678\\",\\"order_id\\":\\"ORD-2024-0042\\",\\"payment_address\\":\\"5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty\\",\\"payment_url\\":\\"https://pay.example.com/inv/deadbeef\\",\\"redirect_url\\":\\"https://shop.example.com/order/42/complete\\",\\"status\\":\\"Paid\\",\\"total_received_amount\\":\\"250.50\\",\\"transactions\\":[{\\"amount\\":\\"250.50\\",\\"asset_id\\":\\"1984\\",\\"asset_name\\":\\"USDT\\",\\"block_number\\":12345678,\\"chain\\":\\"PolkadotAssetHub\\",\\"created_at\\":\\"2024-01-31T14:30:00Z\\",\\"destination_address\\":\\"5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty\\",\\"id\\":\\"11111111-2222-3333-4444-555555555555\\",\\"invoice_id\\":\\"deadbeef-1234-5678-9abc-def012345678\\",\\"position_in_block\\":2,\\"source_address\\":\\"5DAAnrj7VHTznn2AWBemMuyBwZWs6FNFjdyVXUeYum3PTXFy\\",\\"status\\":\\"Confirmed\\",\\"transaction_type\\":\\"Incoming\\",\\"tx_hash\\":\\"0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890\\",\\"updated_at\\":\\"2024-01-31T14:30:00Z\\"}],\\"updated_at\\":\\"2024-01-31T14:30:00Z\\",\\"valid_till\\":\\"2024-02-01T12:00:00Z\\"},\\"timestamp\\":\\"2024-01-31T14:30:00Z\\"}","expected_signature":"e8599841e652b41bbee8f4d74b7d8183935359351dde1b5cd8e3d368a1d7ece9","method":"POST","path":"/hooks/kalatori","secret":"merchant-secret-xyz","timestamp":"1706711400"},
+  {"body":"{\\"minimal\\":true}","expected_signature":"cf8ac5477c3f9d1b5fc9f6a551854fa3e27421b0d6a0cf418197dbd7d0b973fc","method":"POST","path":"/webhooks/invoices","secret":"secret","timestamp":"0"},
+  {"body":"{\\"id\\":\\"test\\"}","expected_signature":"780cee1a41d32cfb041d816b8496ce547708e62f98fec8b9bb8aac6d135b4e48","method":"POST","path":"/webhooks/invoices/","secret":"secret","timestamp":"1706745600"}
 ];
 
 // ============================================================================
-// Event Type → Status Mapping
+// Event Type -> Status Mapping
 // ============================================================================
 const EVENT_STATUS_MAP = {
   created:            [{ value: 'Waiting', label: 'Waiting' }],
@@ -227,7 +190,7 @@ function uuidv4() {
 // ============================================================================
 // HMAC-SHA256 Signing (matches client/src/utils.rs calculate_hmac exactly)
 //
-// Message format: METHOD\nPATH\nBODY\nTIMESTAMP
+// Message format: METHOD\\nPATH\\nBODY\\nTIMESTAMP
 // Output: hex-encoded HMAC-SHA256
 // ============================================================================
 async function computeSignature(secret, method, path, body, timestamp) {
@@ -239,7 +202,7 @@ async function computeSignature(secret, method, path, body, timestamp) {
     false,
     ['sign']
   );
-  const message = method + '\n' + path + '\n' + body + '\n' + timestamp;
+  const message = method + '\\n' + path + '\\n' + body + '\\n' + timestamp;
   const sig = await crypto.subtle.sign('HMAC', key, enc.encode(message));
   return Array.from(new Uint8Array(sig))
     .map(b => b.toString(16).padStart(2, '0'))
@@ -251,8 +214,8 @@ async function computeSignature(secret, method, path, body, timestamp) {
 // ============================================================================
 function generatePayload(eventType, status) {
   const now = new Date();
-  const createdAt = new Date(now.getTime() - 3600000); // 1 hour ago
-  const validTill = new Date(createdAt.getTime() + 86400000); // +24h from creation
+  const createdAt = new Date(now.getTime() - 3600000);
+  const validTill = new Date(createdAt.getTime() + 86400000);
   const invoiceId = uuidv4();
   const eventId = uuidv4();
   const amount = '100.00';
@@ -298,11 +261,11 @@ function generatePayload(eventType, status) {
       },
       total_received_amount: totalReceived,
       transactions: transactions,
-      valid_till: validTill.toISOString().replace(/\.\d{3}Z$/, 'Z'),
-      created_at: createdAt.toISOString().replace(/\.\d{3}Z$/, 'Z'),
-      updated_at: now.toISOString().replace(/\.\d{3}Z$/, 'Z'),
+      valid_till: validTill.toISOString().replace(/\\.\\d{3}Z$/, 'Z'),
+      created_at: createdAt.toISOString().replace(/\\.\\d{3}Z$/, 'Z'),
+      updated_at: now.toISOString().replace(/\\.\\d{3}Z$/, 'Z'),
     },
-    timestamp: now.toISOString().replace(/\.\d{3}Z$/, 'Z'),
+    timestamp: now.toISOString().replace(/\\.\\d{3}Z$/, 'Z'),
   };
 
   return event;
@@ -323,8 +286,8 @@ function makeSampleTransaction(invoiceId, amount, date) {
     amount: amount,
     source_address: '5DAAnrj7VHTznn2AWBemMuyBwZWs6FNFjdyVXUeYum3PTXFy',
     destination_address: '5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY',
-    created_at: date.toISOString().replace(/\.\d{3}Z$/, 'Z'),
-    updated_at: date.toISOString().replace(/\.\d{3}Z$/, 'Z'),
+    created_at: date.toISOString().replace(/\\.\\d{3}Z$/, 'Z'),
+    updated_at: date.toISOString().replace(/\\.\\d{3}Z$/, 'Z'),
     status: 'Confirmed'
   };
 }
@@ -399,7 +362,7 @@ function toggleSecret() {
 }
 
 // ============================================================================
-// Send Webhook
+// Send Webhook (via local proxy — no CORS issues)
 // ============================================================================
 let attemptCounter = 0;
 
@@ -427,7 +390,6 @@ async function sendWebhook() {
   const resultPanel = document.getElementById('result-panel');
   const sendBtn = document.getElementById('send-btn');
 
-  // Always show the result panel immediately so user sees something happened
   resultPanel.style.display = '';
   resultPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
@@ -435,7 +397,7 @@ async function sendWebhook() {
   const secret = document.getElementById('secret-key').value;
   const body = payloadEditor.value;
 
-  // Validate inputs — show errors in result panel, not alerts
+  // Validate inputs
   if (!url) {
     showResult(
       attemptLabel + ' — Validation Error', 'failure',
@@ -462,7 +424,7 @@ async function sendWebhook() {
     jsonError.textContent = 'Invalid JSON: ' + e.message;
     showResult(
       attemptLabel + ' — Validation Error', 'failure',
-      '', 'Payload is not valid JSON:\n' + e.message, ''
+      '', 'Payload is not valid JSON:\\n' + e.message, ''
     );
     return;
   }
@@ -490,14 +452,14 @@ async function sendWebhook() {
   }
 
   const requestText =
-    attemptLabel + ' at ' + new Date().toLocaleTimeString() + '\n\n' +
-    'POST ' + url + '\n' +
-    'Content-Type: application/json\n' +
-    'X-KALATORI-SIGNATURE: ' + signature + '\n' +
-    'X-KALATORI-TIMESTAMP: ' + timestamp + '\n' +
-    '\nHMAC signed message (for debugging):\n' +
-    'POST\\n' + path + '\\n<body>\\n' + timestamp + '\n' +
-    '\nPath extracted from URL: ' + path;
+    attemptLabel + ' at ' + new Date().toLocaleTimeString() + '\\n\\n' +
+    'POST ' + url + '\\n' +
+    'Content-Type: application/json\\n' +
+    'X-KALATORI-SIGNATURE: ' + signature + '\\n' +
+    'X-KALATORI-TIMESTAMP: ' + timestamp + '\\n' +
+    '\\nHMAC signed message (for debugging):\\n' +
+    'POST\\\\n' + path + '\\\\n<body>\\\\n' + timestamp + '\\n' +
+    '\\nPath extracted from URL: ' + path;
 
   showResult(
     attemptLabel + ' — Sending...', '',
@@ -507,89 +469,90 @@ async function sendWebhook() {
   const startTime = performance.now();
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60000);
-
-    const response = await fetch(url, {
+    const proxyResponse = await fetch('/api/proxy', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-KALATORI-SIGNATURE': signature,
-        'X-KALATORI-TIMESTAMP': timestamp,
-      },
-      body: body,
-      signal: controller.signal,
-      mode: 'cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: url,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-KALATORI-SIGNATURE': signature,
+          'X-KALATORI-TIMESTAMP': timestamp,
+        },
+        body: body,
+      }),
     });
 
-    clearTimeout(timeoutId);
-    const elapsed = Math.round(performance.now() - startTime);
+    const result = await proxyResponse.json();
 
-    let responseBody;
-    try {
-      responseBody = await response.text();
-    } catch {
-      responseBody = '(could not read response body)';
-    }
-
-    const isSuccess = response.status >= 200 && response.status < 300;
-
-    const responseText =
-      'Status: ' + response.status + ' ' + response.statusText + '\n' +
-      'Time: ' + elapsed + 'ms\n\n' +
-      'Body:\n' + (responseBody.length > 2000 ? responseBody.slice(0, 2000) + '\n... (truncated)' : responseBody);
-
-    let productionHtml;
-    if (isSuccess) {
-      productionHtml =
-        '<strong>Production behavior:</strong> ' +
-        'This event would be marked as delivered and removed from the queue. ' +
-        'No retries.';
-    } else {
-      productionHtml =
-        '<strong>Production behavior:</strong> ' +
-        'Server responded with <strong>' + response.status + '</strong>. ' +
-        'In production, Kalatori would retry this event indefinitely (no backoff, polling every ~100ms). ' +
-        'All subsequent webhook events for this same invoice would be held in queue ' +
-        'until this one succeeds (FIFO ordering per entity). ' +
-        'Up to 10 concurrent webhook deliveries are allowed across different invoices.';
-    }
-
-    showResult(
-      attemptLabel + ' — ' + response.status + ' ' + response.statusText,
-      isSuccess ? 'success' : 'failure',
-      requestText, responseText, productionHtml
-    );
-
-  } catch (e) {
-    const elapsed = Math.round(performance.now() - startTime);
-
-    if (e.name === 'AbortError') {
+    if (result.error === 'timeout') {
       showResult(
         attemptLabel + ' — Timeout', 'failure',
         requestText,
-        'Request timed out after 60 seconds.\nTime: ' + elapsed + 'ms',
+        'Request timed out after 60 seconds.\\nTime: ' + result.elapsed + 'ms',
         '<strong>Production behavior:</strong> ' +
         'Request timeout (60 seconds). ' +
         'In production, Kalatori would retry this event indefinitely (no backoff, polling every ~100ms). ' +
         'All subsequent webhook events for this same invoice would be held in queue ' +
         'until this one succeeds.'
       );
+    } else if (result.error === 'connection_error') {
+      showResult(
+        attemptLabel + ' — Connection Error', 'failure',
+        requestText,
+        'Error: ' + result.message + '\\nTime: ' + result.elapsed + 'ms',
+        '<strong>Production behavior:</strong> ' +
+        'Connection failed. In production, Kalatori would retry this event indefinitely ' +
+        '(no backoff, polling every ~100ms). All subsequent webhook events for this same invoice ' +
+        'would be held in queue until this one succeeds.'
+      );
+    } else if (result.status !== undefined) {
+      const isSuccess = result.status >= 200 && result.status < 300;
+      const responseBody = result.responseBody || '';
+
+      const responseText =
+        'Status: ' + result.status + ' ' + result.statusText + '\\n' +
+        'Time: ' + result.elapsed + 'ms\\n\\n' +
+        'Body:\\n' + (responseBody.length > 2000 ? responseBody.slice(0, 2000) + '\\n... (truncated)' : responseBody);
+
+      let productionHtml;
+      if (isSuccess) {
+        productionHtml =
+          '<strong>Production behavior:</strong> ' +
+          'This event would be marked as delivered and removed from the queue. ' +
+          'No retries.';
+      } else {
+        productionHtml =
+          '<strong>Production behavior:</strong> ' +
+          'Server responded with <strong>' + result.status + '</strong>. ' +
+          'In production, Kalatori would retry this event indefinitely (no backoff, polling every ~100ms). ' +
+          'All subsequent webhook events for this same invoice would be held in queue ' +
+          'until this one succeeds (FIFO ordering per entity). ' +
+          'Up to 10 concurrent webhook deliveries are allowed across different invoices.';
+      }
+
+      showResult(
+        attemptLabel + ' — ' + result.status + ' ' + result.statusText,
+        isSuccess ? 'success' : 'failure',
+        requestText, responseText, productionHtml
+      );
     } else {
       showResult(
-        attemptLabel + ' — Network Error', 'failure',
+        attemptLabel + ' — Unexpected Error', 'failure',
         requestText,
-        'Error: ' + e.message + '\nTime: ' + elapsed + 'ms\n\n' +
-        'This is likely a CORS error (see troubleshooting below) or a connection failure.',
-        '<strong>Production behavior:</strong> ' +
-        'Connection failed. In production, Kalatori sends webhooks server-to-server (no CORS). ' +
-        'If the endpoint is genuinely unreachable, Kalatori would retry this event indefinitely ' +
-        '(no backoff, polling every ~100ms). All subsequent webhook events for this same invoice ' +
-        'would be held in queue until this one succeeds. ' +
-        '<br><br><em>Note: If this is a CORS error, it would not occur in production. ' +
-        'See CORS Troubleshooting below.</em>'
+        'Unexpected proxy response: ' + JSON.stringify(result), ''
       );
     }
+  } catch (e) {
+    const elapsed = Math.round(performance.now() - startTime);
+    showResult(
+      attemptLabel + ' — Proxy Error', 'failure',
+      requestText,
+      'Error communicating with local proxy: ' + e.message + '\\nTime: ' + elapsed + 'ms\\n\\n' +
+      'Make sure the webhook simulator server is still running.',
+      ''
+    );
   }
 
   sendBtn.disabled = false;
@@ -636,4 +599,7 @@ async function runSelfTest() {
 </script>
 
 </body>
-</html>
+</html>`;
+}
+
+module.exports = { getHtml };

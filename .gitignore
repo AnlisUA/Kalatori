@@ -11,6 +11,8 @@ kalatori.toml
 
 .vscode
 .idea
+.serena
+.claude
 
 # dev
 substrate-parser
