@@ -105,3 +105,14 @@ cargo-fmt: # Run cargo fmt checks
 
 cargo-deny: # Run cargo deny checks
 	cargo deny -L error check
+
+######################
+### Documentation  ###
+######################
+
+install-mkdocs: # Install mkdocs with material theme into local .venv
+	python3 -m venv .venv
+	.venv/bin/pip install mkdocs-materialx
+
+docs-serve: # Serve documentation locally with live reload
+	.venv/bin/mkdocs serve --livereload -o

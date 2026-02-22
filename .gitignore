@@ -23,6 +23,9 @@ substrate-constructor
 # locally installed binaries
 /bin
 
+# python virtual environment
+/.venv
+
 # asset hub node metadata required for subxt compilation
 /metadata.scale
 
