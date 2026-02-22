@@ -112,3 +112,14 @@ cargo-deny: # Run cargo deny checks
 
 generate-hmac-test-vectors: # Generate HMAC test vectors for the webhook simulator
 	cargo run --example generate_hmac_test_vectors -p kalatori-client
+
+######################
+### Documentation  ###
+######################
+
+install-mkdocs: # Install mkdocs with material theme into local .venv
+	python3 -m venv .venv
+	.venv/bin/pip install mkdocs-materialx
+
+docs-serve: # Serve documentation locally with live reload
+	.venv/bin/mkdocs serve --livereload -o
