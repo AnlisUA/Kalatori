@@ -116,3 +116,10 @@ install-mkdocs: # Install mkdocs with material theme into local .venv
 
 docs-serve: # Serve documentation locally with live reload
 	.venv/bin/mkdocs serve --livereload -o
+
+#############
+### Tools ###
+#############
+
+generate-hmac-test-vectors: # Generate HMAC test vectors for the webhook simulator
+	cargo run --example generate_hmac_test_vectors -p kalatori-client
