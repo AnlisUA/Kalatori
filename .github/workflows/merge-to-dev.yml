@@ -1,0 +1,27 @@
+name: Merge to dev
+
+on:
+  push:
+    branches:
+      - develop
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  cargo-test:
+    uses: ./.github/workflows/_job-cargo-test.yml
+
+  docker-build:
+    needs: cargo-test
+    uses: ./.github/workflows/_job-docker-build.yml
+    with:
+      image_tags: >-
+        ghcr.io/${{ github.repository_owner }}/kalatori:dev-${{ github.sha }},
+        ghcr.io/${{ github.repository_owner }}/kalatori:dev,
+        ghcr.io/${{ github.repository_owner }}/kalatori:latest
+      push: true
+    permissions:
+      contents: read
+      packages: write

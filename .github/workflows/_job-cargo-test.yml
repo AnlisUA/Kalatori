@@ -1,0 +1,30 @@
+name: Cargo test
+
+on:
+  workflow_call:
+
+jobs:
+  test:
+    name: Run unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v5
+
+      - name: Setup SQLite
+        uses: ./.github/actions/setup-sqlite
+
+      - name: Setup Rust build environment
+        uses: ./.github/actions/setup-rust-build-env
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2.7.5
+
+      - name: Install cargo-nextest
+        uses: baptiste0928/cargo-install@v3
+        with:
+          crate: cargo-nextest
+          version: "0.9"
+
+      - name: Run tests
+        run: cargo nextest run
