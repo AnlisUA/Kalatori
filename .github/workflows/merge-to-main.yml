@@ -1,0 +1,46 @@
+name: Merge to main
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  cargo-test:
+    uses: ./.github/workflows/_job-cargo-test.yml
+
+  integration-test:
+    uses: ./.github/workflows/_job-integration-test.yml
+
+  release-prepare:
+    needs: [cargo-test, integration-test]
+    uses: ./.github/workflows/_job-release-prepare.yml
+    permissions:
+      contents: write
+
+  docker-build:
+    needs: release-prepare
+    uses: ./.github/workflows/_job-docker-build.yml
+    with:
+      image_tags: >-
+        ghcr.io/${{ github.repository_owner }}/kalatori:${{ needs.release-prepare.outputs.version }},
+        ghcr.io/${{ github.repository_owner }}/kalatori:stable
+      push: true
+    permissions:
+      contents: read
+      packages: write
+
+  github-release:
+    needs:
+      - release-prepare
+      - docker-build
+    uses: ./.github/workflows/_job-github-release.yml
+    with:
+      version: ${{ needs.release-prepare.outputs.version }}
+      changelog_body: ${{ needs.release-prepare.outputs.changelog_body }}
+    permissions:
+      contents: write

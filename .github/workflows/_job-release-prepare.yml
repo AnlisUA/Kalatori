@@ -1,0 +1,64 @@
+name: Prepare release
+
+on:
+  workflow_call:
+    outputs:
+      version:
+        description: The release version extracted from Cargo.toml
+        value: ${{ jobs.prepare.outputs.version }}
+      changelog_body:
+        description: The changelog section for this release
+        value: ${{ jobs.prepare.outputs.changelog_body }}
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    name: Prepare release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      changelog_body: ${{ steps.changelog.outputs.body }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Fetch all tags
+        run: git fetch --tags origin
+
+      - name: Extract version
+        id: version
+        run: |
+          VERSION=$(grep '^version' daemon/Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Extracted version: $VERSION"
+
+      - name: Check tag does not already exist
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
+            echo "::error::Tag v${VERSION} already exists. This should have been caught by PR checks."
+            exit 1
+          fi
+
+      - name: Extract changelog section
+        id: changelog
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          BODY=$(sed -n "/^## \\[${VERSION}\\]/,/^## \\[/{/^## \\[${VERSION}\\]/d;/^## \\[/d;p;}" CHANGELOG.md)
+
+          {
+            echo "body<<CHANGELOG_EOF"
+            echo "$BODY"
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create and push tag
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          git tag "v${VERSION}"
+          git push origin "v${VERSION}"
