@@ -13,8 +13,11 @@ jobs:
   cargo-test:
     uses: ./.github/workflows/_job-cargo-test.yml
 
+  integration-test:
+    uses: ./.github/workflows/_job-integration-test.yml
+
   release-prepare:
-    needs: cargo-test
+    needs: [cargo-test, integration-test]
     uses: ./.github/workflows/_job-release-prepare.yml
     permissions:
       contents: write
