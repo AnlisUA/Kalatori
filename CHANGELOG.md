@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 **Please note:**
 This is a public beta release of the Kalatori daemon. While it adheres to the [API specs](https://kalapaja.github.io/kalatori-api), it is still under active development. We encourage you to test it and provide feedback.
 
+## [0.8.2] - 2026-02-23
+
+### ⚙️ CI/CD
+
+- Restructure CI/CD pipeline into modular workflows
+- Add reusable job workflows and composite actions
+- Add PR validation for releases (version, changelog, branch checks)
+- Automate Docker image builds to GHCR on merge
+- Automate GitHub release creation on merge to main
+
 ## [0.4.1] - 2025-09-26
 
 ### 🐛 Bug Fixes
