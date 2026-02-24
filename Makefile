@@ -9,6 +9,8 @@ subxt_cli_version := 0.44.0
 # Keep in sync with sqlx version in Cargo.toml
 sqlx_cli_version := 0.8.6
 
+nextest_version := 0.9.129
+
 # Front end release version compatible with current daemon version
 front_end_version := 0.0.4
 
@@ -24,6 +26,9 @@ install-subxt-cli: # Install subxt-cli into the project directory
 
 install-sqlx-cli: # Install sqlx-cli into the project directory
 	cargo install --root $(mkfile_path) --version $(sqlx_cli_version) --locked sqlx-cli --no-default-features --features sqlite,completions
+
+install-nextest: # Install cargo-nextest into the project directory
+	cargo install --root $(mkfile_path) --version $(nextest_version) --locked cargo-nextest
 
 # TODO: read URL from json config and/or env var instead of hardcode
 download-node-metadata: # Download metadata of configured Asset Hub node. Required for subxt compilation. By default use ws://localhost:9000 url.
@@ -92,6 +97,9 @@ run-test-examples:
 ##############
 ### Checks ###
 ##############
+
+cargo-test: # Run cargo tests using nextest
+	PATH="${PWD}/bin:${PATH}" cargo nextest run
 
 cargo-check: # Run cargo check for all targets
 	cargo check --all-targets --all-features

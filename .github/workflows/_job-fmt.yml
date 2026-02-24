@@ -17,4 +17,4 @@ jobs:
           rustup override set nightly
 
       - name: Check formatting
-        run: cargo +nightly fmt --all -- --check
+        run: make cargo-fmt

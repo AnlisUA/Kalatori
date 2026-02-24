@@ -7,8 +7,6 @@ jobs:
   clippy:
     name: Lint with clippy
     runs-on: ubuntu-latest
-    env:
-      RUSTFLAGS: "-Dwarnings"
     steps:
       - name: Checkout sources
         uses: actions/checkout@v5
@@ -20,4 +18,4 @@ jobs:
         uses: Swatinem/rust-cache@v2.7.5
 
       - name: Run clippy
-        run: cargo clippy --all-targets --all-features
+        run: make cargo-clippy
