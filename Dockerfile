@@ -69,6 +69,7 @@ RUN mkdir -p client/examples
 COPY Cargo.toml Cargo.toml
 COPY daemon/Cargo.toml daemon/Cargo.toml
 COPY client/Cargo.toml client/Cargo.toml
+COPY Cargo.lock Cargo.lock
 
 # Create dummy source and examples to cache dependencies
 RUN echo "fn main() {}" > daemon/src/main.rs
