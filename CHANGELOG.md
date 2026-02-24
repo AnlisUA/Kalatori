@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 **Please note:**
 This is a public beta release of the Kalatori daemon. While it adheres to the [API specs](https://kalapaja.github.io/kalatori-api), it is still under active development. We encourage you to test it and provide feedback.
 
+## [0.8.2] - 2026-02-24
+
+### ⚙️ Miscellaneous Tasks
+
+- Test release pipeline
+
 ## [0.4.1] - 2025-09-26
 
 ### 🐛 Bug Fixes
