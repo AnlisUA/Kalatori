@@ -251,6 +251,27 @@ impl<D: DaoInterface + 'static> TransactionsRecorder<D> {
 }
 
 #[cfg(test)]
+mockall::mock! {
+    pub TransactionsRecorder<D: 'static> {
+        pub fn new(
+            dao: D,
+            registry: InvoiceRegistry,
+            config: PaymentsConfig,
+        ) -> Self;
+
+        pub async fn process_invoice_transaction(
+            &self,
+            invoice: &mut InvoiceWithReceivedAmount,
+            transaction: IncomingTransaction,
+        ) -> Result<(), TransactionsRecorderError>;
+    }
+
+    impl<D> Clone for TransactionsRecorder<D> {
+        fn clone(&self) -> Self;
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use std::collections::HashMap;
 

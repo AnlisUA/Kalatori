@@ -11,6 +11,8 @@ sqlx_cli_version := 0.8.6
 
 nextest_version := 0.9.129
 
+llvm_cov_version := 0.8.4
+
 # Front end release version compatible with current daemon version
 front_end_version := 0.0.4
 
@@ -29,6 +31,9 @@ install-sqlx-cli: # Install sqlx-cli into the project directory
 
 install-nextest: # Install cargo-nextest into the project directory
 	cargo install --root $(mkfile_path) --version $(nextest_version) --locked cargo-nextest
+
+install-llvm-cov: # Install llvm-cov into the project directory
+	cargo install --root $(mkfile_path) --version $(llvm_cov_version) --locked cargo-llvm-cov
 
 # TODO: read URL from json config and/or env var instead of hardcode
 download-node-metadata: # Download metadata of configured Asset Hub node. Required for subxt compilation. By default use ws://localhost:9000 url.
@@ -120,3 +125,6 @@ cargo-deny: # Run cargo deny checks
 
 generate-hmac-test-vectors: # Generate HMAC test vectors for the webhook simulator
 	cargo run --example generate_hmac_test_vectors -p kalatori-client
+
+open-coverage-report: # Generate and open test coverage report
+	PATH="${PWD}/bin:${PATH}" cargo llvm-cov nextest -p kalatori --open
