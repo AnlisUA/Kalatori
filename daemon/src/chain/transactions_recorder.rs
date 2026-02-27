@@ -203,21 +203,7 @@ impl<D: DaoInterface + 'static> TransactionsRecorder<D> {
                 invoice.status = updated_status;
                 *total_received_amount = updated_received_amount;
             },
-            Ok(()) => {
-                // This should not happen
-                tracing::error!(
-                    invoice_id = %invoice.id,
-                    "Unexpected invoice status after storing transaction"
-                );
-
-                self.registry
-                    .update_filled_amount(&invoice.id, updated_received_amount)
-                    .await;
-
-                invoice.status = updated_status;
-                *total_received_amount = updated_received_amount;
-            },
-            // TODO: handle different errors separately. Behavior may differ based on the error
+            Ok(()) => unreachable!(),
             Err(TransactionsRecorderError::TransactionDuplication {
                 chain,
                 general_transaction_id,
@@ -601,21 +587,7 @@ mod tests {
         let config = default_payments_config();
         let dao = MockDaoInterface::default();
 
-        let invoice = Invoice {
-            amount: Decimal::ONE_THOUSAND,
-            ..default_invoice()
-        };
-
-        let invoice_id = invoice.id;
-        let mut invoice_with_amount = invoice
-            .clone()
-            .with_amount(Decimal::ZERO);
-
         let registry = InvoiceRegistry::new();
-        registry
-            .add_invoice(invoice_with_amount.clone())
-            .await;
-
         let mut recorder = TransactionsRecorder::new(dao, registry.clone(), config);
 
         // Test case 1:
@@ -628,6 +600,20 @@ mod tests {
         //   - Invoice remains in registry with updated total received amount
         {
             // Setup test
+            let invoice = Invoice {
+                amount: Decimal::ONE_THOUSAND,
+                ..default_invoice()
+            };
+
+            let invoice_id = invoice.id;
+            let mut invoice_with_amount = invoice
+                .clone()
+                .with_amount(Decimal::ZERO);
+
+            registry
+                .add_invoice(invoice_with_amount.clone())
+                .await;
+
             let mut transaction = default_incoming_transaction(invoice_id);
             transaction.transfer_info.amount = Decimal::ONE_HUNDRED;
             let amount = transaction.transfer_info.amount;
@@ -674,9 +660,23 @@ mod tests {
         //   - Invoice is removed from registry
         {
             // Setup test
+            let invoice = Invoice {
+                amount: Decimal::ONE_THOUSAND,
+                ..default_invoice()
+            };
+
+            let invoice_id = invoice.id;
+            let mut invoice_with_amount = invoice
+                .clone()
+                .with_amount(Decimal::ONE_HUNDRED);
+
+            registry
+                .add_invoice(invoice_with_amount.clone())
+                .await;
+
             let mut transaction = default_incoming_transaction(invoice_id);
             transaction.transfer_info.amount = Decimal::ONE_HUNDRED * Decimal::new(9, 0);
-            // A hundred from previous test case + 900 from current one
+            // A hundred from previous already existing amount + 900 from current one
             let expected_amount = Decimal::ONE_THOUSAND;
 
             let dao_transaction = paid_dao_transaction_mock(&invoice, expected_amount);
