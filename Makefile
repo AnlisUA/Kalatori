@@ -137,5 +137,8 @@ cargo-mutants-for-diff: # Run cargo mutants for git diff
 generate-hmac-test-vectors: # Generate HMAC test vectors for the webhook simulator
 	cargo run --example generate_hmac_test_vectors -p kalatori-client
 
+generate-coverage-report: # Generate test coverage report as lcov.info
+	PATH="${PWD}/bin:${PATH}" cargo llvm-cov nextest -p kalatori --lcov --output-path lcov.info
+
 open-coverage-report: # Generate and open test coverage report
 	PATH="${PWD}/bin:${PATH}" cargo llvm-cov nextest -p kalatori --open
