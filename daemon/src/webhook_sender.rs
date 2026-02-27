@@ -261,12 +261,21 @@ impl<D: DaoInterface + 'static> WebhookSender<D> {
 #[cfg(test)]
 mod tests {
     use httpmock::prelude::*;
+    use kalatori_client::types::{
+        InvoiceEventType,
+        KalatoriEventExt,
+    };
+    use kalatori_client::utils::{
+        SIGNATURE_HEADER,
+        TIMESTAMP_HEADER,
+    };
     use mockall::predicate::eq;
-    use kalatori_client::types::{InvoiceEventType, KalatoriEventExt};
-    use kalatori_client::utils::{SIGNATURE_HEADER, TIMESTAMP_HEADER};
     use rust_decimal::Decimal;
 
-    use crate::dao::{MockDaoInterface, DaoWebhookEventError};
+    use crate::dao::{
+        DaoWebhookEventError,
+        MockDaoInterface,
+    };
     use crate::types::default_invoice;
 
     use super::*;
@@ -308,7 +317,10 @@ mod tests {
                 is_ok: true,
             };
 
-            let request = client.request(reqwest::Method::GET, &server.base_url()).build().unwrap();
+            let request = client
+                .request(reqwest::Method::GET, server.base_url())
+                .build()
+                .unwrap();
 
             let result = send_webhook(client.clone(), request, event_id).await;
 
@@ -333,7 +345,10 @@ mod tests {
                 is_ok: false,
             };
 
-            let request = client.request(reqwest::Method::POST, &server.base_url()).build().unwrap();
+            let request = client
+                .request(reqwest::Method::POST, server.base_url())
+                .build()
+                .unwrap();
 
             let result = send_webhook(client.clone(), request, event_id).await;
 
@@ -352,7 +367,13 @@ mod tests {
                 is_ok: false,
             };
 
-            let request = client.request(reqwest::Method::POST, "http://bad.example.com").build().unwrap();
+            let request = client
+                .request(
+                    reqwest::Method::POST,
+                    "http://bad.example.com",
+                )
+                .build()
+                .unwrap();
 
             let result = send_webhook(client.clone(), request, event_id).await;
 
@@ -365,7 +386,11 @@ mod tests {
         let dao = MockDaoInterface::default();
         let hmac_config = HmacConfig::new(b"test".to_vec(), 10);
 
-        let sender = WebhookSender::new(dao, "http://webhook.example.com".to_string(), hmac_config);
+        let sender = WebhookSender::new(
+            dao,
+            "http://webhook.example.com".to_string(),
+            hmac_config,
+        );
 
         let event: WebhookEvent = default_invoice()
             .with_amount(Decimal::ZERO)
@@ -376,12 +401,32 @@ mod tests {
         let expected_body_string = event.payload.to_string();
 
         let result = sender.build_request(event);
-        assert!(matches!(*result.method(), reqwest::Method::POST));
-        assert_eq!(*result.url(), "http://webhook.example.com".parse().unwrap());
+        assert!(matches!(
+            *result.method(),
+            reqwest::Method::POST
+        ));
+        assert_eq!(
+            *result.url(),
+            "http://webhook.example.com"
+                .parse()
+                .unwrap()
+        );
         assert!(result.timeout().is_some());
-        assert_eq!(*result.timeout().unwrap(), WEBHOOK_SENDER_REQUEST_TIMEOUT);
+        assert_eq!(
+            *result.timeout().unwrap(),
+            WEBHOOK_SENDER_REQUEST_TIMEOUT
+        );
         assert!(result.body().is_some());
-        assert_eq!(String::from_utf8_lossy(result.body().unwrap().as_bytes().unwrap()), expected_body_string);
+        assert_eq!(
+            String::from_utf8_lossy(
+                result
+                    .body()
+                    .unwrap()
+                    .as_bytes()
+                    .unwrap()
+            ),
+            expected_body_string
+        );
 
         let result_headers = result.headers();
         assert!(result_headers.contains_key(TIMESTAMP_HEADER));
@@ -390,11 +435,16 @@ mod tests {
 
     #[tokio::test]
     #[tracing_test::traced_test]
+    #[expect(clippy::cast_possible_truncation)]
     async fn test_prepare_webhook_events() {
         let dao = MockDaoInterface::default();
         let hmac_config = HmacConfig::new(b"test".to_vec(), 10);
 
-        let mut sender = WebhookSender::new(dao, "http://webhook.example.com".to_string(), hmac_config);
+        let mut sender = WebhookSender::new(
+            dao,
+            "http://webhook.example.com".to_string(),
+            hmac_config,
+        );
 
         // Test case 1:
         // - Empty sender internal queue
@@ -410,9 +460,12 @@ mod tests {
             let events = generate_events(returned_events_count);
             let events_ids: HashSet<_> = events.iter().map(|e| e.id).collect();
 
-            sender.dao
+            sender
+                .dao
                 .expect_get_webhook_events_to_send()
-                .with(eq(WEBHOOK_SENDER_MAX_CONCURRENT_REQUESTS as u32))
+                .with(eq(
+                    WEBHOOK_SENDER_MAX_CONCURRENT_REQUESTS as u32,
+                ))
                 .return_once(|_| Ok(events));
 
             let result = sender.prepare_webhook_events().await;
@@ -434,7 +487,8 @@ mod tests {
             let events = generate_events(returned_events_count);
             let events_ids: HashSet<_> = events.iter().map(|e| e.id).collect();
 
-            sender.dao
+            sender
+                .dao
                 .expect_get_webhook_events_to_send()
                 .with(eq(returned_events_count as u32))
                 .return_once(|_| Ok(events));
@@ -442,8 +496,15 @@ mod tests {
             let result = sender.prepare_webhook_events().await;
             sender.dao.checkpoint();
             assert_eq!(result.len(), returned_events_count);
-            assert_eq!(sender.processing_events_ids.len(), WEBHOOK_SENDER_MAX_CONCURRENT_REQUESTS);
-            assert!(sender.processing_events_ids.is_superset(&events_ids));
+            assert_eq!(
+                sender.processing_events_ids.len(),
+                WEBHOOK_SENDER_MAX_CONCURRENT_REQUESTS
+            );
+            assert!(
+                sender
+                    .processing_events_ids
+                    .is_superset(&events_ids)
+            );
         }
 
         // Test case 3:
@@ -455,7 +516,10 @@ mod tests {
         {
             let result = sender.prepare_webhook_events().await;
             assert!(result.is_empty());
-            assert_eq!(sender.processing_events_ids.len(), WEBHOOK_SENDER_MAX_CONCURRENT_REQUESTS);
+            assert_eq!(
+                sender.processing_events_ids.len(),
+                WEBHOOK_SENDER_MAX_CONCURRENT_REQUESTS
+            );
         }
 
         // Test case 4:
@@ -463,7 +527,8 @@ mod tests {
         // - Expectations:
         //   - Dao is called for (max - 1) limit
         //   - Dao returns 2 events
-        //   - One of 2 events returned from dao has id which is already in internal queue
+        //   - One of 2 events returned from dao has id which is already in internal
+        //     queue
         //   - Internal queue contains 2 ids
         //   - Function returns 1 future in vec
         {
@@ -473,17 +538,25 @@ mod tests {
             let events = generate_events(returned_events_count);
             let events_ids: HashSet<_> = events.iter().map(|e| e.id).collect();
             // insert one of events ids into the internal queue
-            sender.processing_events_ids.insert(events.first().as_ref().unwrap().id);
+            sender
+                .processing_events_ids
+                .insert(events.first().as_ref().unwrap().id);
 
-            sender.dao
+            sender
+                .dao
                 .expect_get_webhook_events_to_send()
-                .with(eq((WEBHOOK_SENDER_MAX_CONCURRENT_REQUESTS - 1 ) as u32))
+                .with(eq(
+                    (WEBHOOK_SENDER_MAX_CONCURRENT_REQUESTS - 1) as u32,
+                ))
                 .return_once(|_| Ok(events));
 
             let result = sender.prepare_webhook_events().await;
             sender.dao.checkpoint();
             assert_eq!(result.len(), 1);
-            assert_eq!(sender.processing_events_ids.len(), returned_events_count);
+            assert_eq!(
+                sender.processing_events_ids.len(),
+                returned_events_count
+            );
             assert_eq!(sender.processing_events_ids, events_ids);
         }
 
@@ -496,18 +569,25 @@ mod tests {
         //   - Empty vec returned
         {
             let queue = sender.processing_events_ids.clone();
-            assert!(!logs_contain("Failed to fetch pending webhook events from database"));
+            assert!(!logs_contain(
+                "Failed to fetch pending webhook events from database"
+            ));
 
-            sender.dao
+            sender
+                .dao
                 .expect_get_webhook_events_to_send()
-                .with(eq((WEBHOOK_SENDER_MAX_CONCURRENT_REQUESTS - 2) as u32))
+                .with(eq(
+                    (WEBHOOK_SENDER_MAX_CONCURRENT_REQUESTS - 2) as u32,
+                ))
                 .return_once(|_| Err(DaoWebhookEventError::DatabaseError));
 
             let result = sender.prepare_webhook_events().await;
             sender.dao.checkpoint();
             assert!(result.is_empty());
             assert_eq!(sender.processing_events_ids, queue);
-            assert!(logs_contain("Failed to fetch pending webhook events from database"));
+            assert!(logs_contain(
+                "Failed to fetch pending webhook events from database"
+            ));
         }
     }
 
@@ -517,13 +597,27 @@ mod tests {
         let dao = MockDaoInterface::default();
         let hmac_config = HmacConfig::new(b"test".to_vec(), 10);
 
-        let mut sender = WebhookSender::new(dao, "http://webhook.example.com".to_string(), hmac_config);
+        let mut sender = WebhookSender::new(
+            dao,
+            "http://webhook.example.com".to_string(),
+            hmac_config,
+        );
 
         let mut events = generate_events(3);
-        let (event_1, event_2, event_3) = (events.remove(2), events.remove(1), events.remove(0));
-        sender.processing_events_ids.insert(event_1.id);
-        sender.processing_events_ids.insert(event_2.id);
-        sender.processing_events_ids.insert(event_3.id);
+        let (event_1, event_2, event_3) = (
+            events.remove(2),
+            events.remove(1),
+            events.remove(0),
+        );
+        sender
+            .processing_events_ids
+            .insert(event_1.id);
+        sender
+            .processing_events_ids
+            .insert(event_2.id);
+        sender
+            .processing_events_ids
+            .insert(event_3.id);
 
         // Test case 1:
         // - Webhook with ok result
@@ -538,15 +632,22 @@ mod tests {
                 is_ok: true,
             };
 
-            sender.dao
+            sender
+                .dao
                 .expect_mark_webhook_event_as_sent()
                 .with(eq(event_id))
                 .return_once(move |_| Ok(event_1));
 
-            sender.handle_send_webhook_result(webhook_result).await;
+            sender
+                .handle_send_webhook_result(webhook_result)
+                .await;
             sender.dao.checkpoint();
             assert_eq!(sender.processing_events_ids.len(), 2);
-            assert!(!sender.processing_events_ids.contains(&event_id));
+            assert!(
+                !sender
+                    .processing_events_ids
+                    .contains(&event_id)
+            );
         }
 
         // Test case 2:
@@ -561,10 +662,16 @@ mod tests {
                 is_ok: false,
             };
 
-            sender.handle_send_webhook_result(webhook_result).await;
+            sender
+                .handle_send_webhook_result(webhook_result)
+                .await;
             sender.dao.checkpoint();
             assert_eq!(sender.processing_events_ids.len(), 1);
-            assert!(!sender.processing_events_ids.contains(&event_id));
+            assert!(
+                !sender
+                    .processing_events_ids
+                    .contains(&event_id)
+            );
         }
 
         // Test case 3:
@@ -574,22 +681,29 @@ mod tests {
         //   - Single DAO call
         //   - Error log recorded
         {
-            assert!(!logs_contain("Failed to mark webhook event as sent in database. It might be resent"));
+            assert!(!logs_contain(
+                "Failed to mark webhook event as sent in database. It might be resent"
+            ));
             let event_id = event_3.id;
             let webhook_result = SendWebhookResult {
                 event_id,
                 is_ok: true,
             };
 
-            sender.dao
+            sender
+                .dao
                 .expect_mark_webhook_event_as_sent()
                 .with(eq(event_id))
                 .return_once(move |_| Err(DaoWebhookEventError::DatabaseError));
 
-            sender.handle_send_webhook_result(webhook_result).await;
+            sender
+                .handle_send_webhook_result(webhook_result)
+                .await;
             sender.dao.checkpoint();
             assert!(sender.processing_events_ids.is_empty());
-            assert!(logs_contain("Failed to mark webhook event as sent in database. It might be resent"));
+            assert!(logs_contain(
+                "Failed to mark webhook event as sent in database. It might be resent"
+            ));
         }
     }
 }

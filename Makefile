@@ -134,6 +134,9 @@ cargo-mutants-for-diff: # Run cargo mutants for git diff
 ### Tools ###
 #############
 
+cargo-fmt-apply: # Apply cargo fmt style changes
+	cargo +nightly fmt --all
+
 generate-hmac-test-vectors: # Generate HMAC test vectors for the webhook simulator
 	cargo run --example generate_hmac_test_vectors -p kalatori-client
 

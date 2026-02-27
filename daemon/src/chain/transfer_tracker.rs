@@ -258,9 +258,18 @@ mod tests {
     use mockall::predicate::eq;
     use rust_decimal::Decimal;
 
-    use crate::chain_client::{AssetHubChainConfig, MockBlockChainClient, PolygonChainConfig, default_general_chain_transfer};
+    use crate::chain_client::{
+        AssetHubChainConfig,
+        MockBlockChainClient,
+        PolygonChainConfig,
+        default_general_chain_transfer,
+    };
     use crate::dao::DAO;
-    use crate::types::{default_invoice, Invoice, ChainType};
+    use crate::types::{
+        ChainType,
+        Invoice,
+        default_invoice,
+    };
 
     use super::*;
 
@@ -282,10 +291,18 @@ mod tests {
         let transfer = default_general_chain_transfer();
 
         tracker.process_transfer(transfer).await;
-        tracker.transactions_recorder.checkpoint();
-        assert!(!logs_contain("Transfer has been stored in database successfully, invoice has been updated"));
-        assert!(!logs_contain("Transfer is already presented in database, invoice hasn't been updated"));
-        assert!(!logs_contain("Error while trying to store transfer in database, invoice hasn't been updated"));
+        tracker
+            .transactions_recorder
+            .checkpoint();
+        assert!(!logs_contain(
+            "Transfer has been stored in database successfully, invoice has been updated"
+        ));
+        assert!(!logs_contain(
+            "Transfer is already presented in database, invoice hasn't been updated"
+        ));
+        assert!(!logs_contain(
+            "Error while trying to store transfer in database, invoice hasn't been updated"
+        ));
 
         // Test case 2:
         // - Successful flow
@@ -295,25 +312,43 @@ mod tests {
         //   - Respective log record
         let invoice = default_invoice().with_amount(Decimal::ZERO);
         let invoice_id = invoice.invoice.id;
-        registry.add_invoice(invoice.clone()).await;
+        registry
+            .add_invoice(invoice.clone())
+            .await;
 
         let transfer = GeneralChainTransfer {
             recipient: invoice.invoice.payment_address.clone(),
             ..default_general_chain_transfer()
         };
 
-        let expected_transaction = IncomingTransaction::from_chain_transfer(invoice_id, transfer.clone());
+        let expected_transaction =
+            IncomingTransaction::from_chain_transfer(invoice_id, transfer.clone());
 
-        tracker.transactions_recorder.expect_process_invoice_transaction()
-            .with(eq(invoice.clone()), eq(expected_transaction.clone()))
+        tracker
+            .transactions_recorder
+            .expect_process_invoice_transaction()
+            .with(
+                eq(invoice.clone()),
+                eq(expected_transaction.clone()),
+            )
             .once()
             .returning(|_, _| Ok(()));
 
-        tracker.process_transfer(transfer.clone()).await;
-        tracker.transactions_recorder.checkpoint();
-        assert!(logs_contain("Transfer has been stored in database successfully, invoice has been updated"));
-        assert!(!logs_contain("Transfer is already presented in database, invoice hasn't been updated"));
-        assert!(!logs_contain("Error while trying to store transfer in database, invoice hasn't been updated"));
+        tracker
+            .process_transfer(transfer.clone())
+            .await;
+        tracker
+            .transactions_recorder
+            .checkpoint();
+        assert!(logs_contain(
+            "Transfer has been stored in database successfully, invoice has been updated"
+        ));
+        assert!(!logs_contain(
+            "Transfer is already presented in database, invoice hasn't been updated"
+        ));
+        assert!(!logs_contain(
+            "Error while trying to store transfer in database, invoice hasn't been updated"
+        ));
 
         // Test case 3:
         // - Duplicated transaction error
@@ -321,18 +356,35 @@ mod tests {
         // - Expectations:
         //   - Recorded called and respond duplication error
         //   - Respective log record
-        tracker.transactions_recorder.expect_process_invoice_transaction()
-            .with(eq(invoice.clone()), eq(expected_transaction.clone()))
+        tracker
+            .transactions_recorder
+            .expect_process_invoice_transaction()
+            .with(
+                eq(invoice.clone()),
+                eq(expected_transaction.clone()),
+            )
             .once()
-            .returning(|_invoice, transaction| Err(TransactionsRecorderError::TransactionDuplication {
-                chain: transaction.transfer_info.chain,
-                general_transaction_id: transaction.transaction_id,
-            }));
+            .returning(|_invoice, transaction| {
+                Err(
+                    TransactionsRecorderError::TransactionDuplication {
+                        chain: transaction.transfer_info.chain,
+                        general_transaction_id: transaction.transaction_id,
+                    },
+                )
+            });
 
-        tracker.process_transfer(transfer.clone()).await;
-        tracker.transactions_recorder.checkpoint();
-        assert!(logs_contain("Transfer is already presented in database, invoice hasn't been updated"));
-        assert!(!logs_contain("Error while trying to store transfer in database, invoice hasn't been updated"));
+        tracker
+            .process_transfer(transfer.clone())
+            .await;
+        tracker
+            .transactions_recorder
+            .checkpoint();
+        assert!(logs_contain(
+            "Transfer is already presented in database, invoice hasn't been updated"
+        ));
+        assert!(!logs_contain(
+            "Error while trying to store transfer in database, invoice hasn't been updated"
+        ));
 
         // Test case 4:
         // - Database error
@@ -340,14 +392,23 @@ mod tests {
         // - Expectations:
         //   - Recorded called and respond duplication error
         //   - Respective log record
-        tracker.transactions_recorder.expect_process_invoice_transaction()
-            .with(eq(invoice), eq(expected_transaction.clone()))
+        tracker
+            .transactions_recorder
+            .expect_process_invoice_transaction()
+            .with(
+                eq(invoice),
+                eq(expected_transaction.clone()),
+            )
             .once()
             .returning(|_, _| Err(TransactionsRecorderError::DaoTransactionError));
 
         tracker.process_transfer(transfer).await;
-        tracker.transactions_recorder.checkpoint();
-        assert!(logs_contain("Error while trying to store transfer in database, invoice hasn't been updated"));
+        tracker
+            .transactions_recorder
+            .checkpoint();
+        assert!(logs_contain(
+            "Error while trying to store transfer in database, invoice hasn't been updated"
+        ));
     }
 
     #[tokio::test]
@@ -367,33 +428,37 @@ mod tests {
             asset_id: 1984,
             asset_name: "USDt".to_string(),
             amount: Decimal::TEN,
-            sender: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".parse().unwrap(),
-            recipient: "5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty".parse().unwrap(),
+            sender: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
+                .parse()
+                .unwrap(),
+            recipient: "5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty"
+                .parse()
+                .unwrap(),
             transaction_id: (1000, 2),
             timestamp: 1000,
         };
 
-        let transfers = vec![
-            transfer.clone(),
-            transfer.clone(),
-            transfer.clone(),
-        ];
+        let transfers = vec![transfer.clone(), transfer.clone(), transfer.clone()];
 
         let invoice = Invoice {
             payment_address: "5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty".to_string(),
             chain: ChainType::PolkadotAssetHub,
             asset_id: 1984.to_string(),
             ..default_invoice()
-        }.with_amount(Decimal::ZERO);
+        }
+        .with_amount(Decimal::ZERO);
 
         registry.add_invoice(invoice).await;
 
-        tracker.transactions_recorder
+        tracker
+            .transactions_recorder
             .expect_process_invoice_transaction()
             .times(transfers.len())
             .returning(|_, _| Ok(()));
 
-        let result = tracker.handle_subscription_event(Some(Ok(transfers))).await;
+        let result = tracker
+            .handle_subscription_event(Some(Ok(transfers)))
+            .await;
         assert_eq!(result, Ok(()));
 
         // Test case 2:
@@ -402,8 +467,13 @@ mod tests {
         // - Expectations:
         //   - Err result
         //   - StreamClosed error
-        let result = tracker.handle_subscription_event(None).await;
-        assert_eq!(result, Err(SubscriptionError::StreamClosed));
+        let result = tracker
+            .handle_subscription_event(None)
+            .await;
+        assert_eq!(
+            result,
+            Err(SubscriptionError::StreamClosed)
+        );
 
         // Test case 3:
         // - Unsuccessful case
@@ -411,7 +481,14 @@ mod tests {
         // - Expectations:
         //   - Err result
         //   - Provided error returned
-        let result = tracker.handle_subscription_event(Some(Err(SubscriptionError::SubscriptionFailed))).await;
-        assert_eq!(result, Err(SubscriptionError::SubscriptionFailed));
+        let result = tracker
+            .handle_subscription_event(Some(Err(
+                SubscriptionError::SubscriptionFailed,
+            )))
+            .await;
+        assert_eq!(
+            result,
+            Err(SubscriptionError::SubscriptionFailed)
+        );
     }
 }
