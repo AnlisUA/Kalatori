@@ -7,7 +7,9 @@ on:
 
 jobs:
   cargo-test:
-    uses: ./.github/workflows/_job-cargo-test.yml
+    uses: ./.github/workflows/_job-cargo-test-coverage.yml
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   integration-test:
     uses: ./.github/workflows/_job-integration-test.yml
