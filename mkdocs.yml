@@ -36,6 +36,7 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - Configuration: configuration.md
   - Policies:
       - Release: policies/release.md
       - Git: policies/git.md
