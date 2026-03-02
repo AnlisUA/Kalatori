@@ -18,7 +18,7 @@
 5. Open a PR into `dev`. Team reviews changelog and version bump.
 6. After merge into `dev`, open a PR from `dev` into `main`.
 7. CI validates version, changelog, source branch, and runs all checks.
-8. After merge, CI automatically creates git tag, builds artifacts, and publishes GitHub release.
+8. After merge, the project owner creates a signed `vX.Y.Z` tag on the merge commit. The tag push triggers CI to run tests, build artifacts, and publish a GitHub release.
 
 ## Hotfix Flow
 
@@ -28,5 +28,5 @@
 4. Add the changelog entry for the new patch version.
 5. Open a PR into `main`.
 6. CI validates version, changelog, and runs all checks.
-7. After merge, CI creates tag, builds artifacts, publishes release.
+7. After merge, the project owner creates a signed `vX.Y.Z` tag. The tag push triggers CI to run tests, build artifacts, and publish a GitHub release.
 8. Immediately merge `main` back into `dev` to sync the fix, version bump, and changelog.

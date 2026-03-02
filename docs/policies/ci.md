@@ -25,17 +25,18 @@
     - Generated via tooling (e.g., `git-cliff`).
     - Reviewed and edited by a human before committing.
 
-5. On merge into `main`, CI automatically:
-    - Creates a git tag (`vX.Y.Z`) from the version in the project manifest.
-    - Builds release artifacts with the release version.
-    - Extracts the relevant changelog section.
-    - Creates a GitHub release with changelog as release notes and artifacts attached.
-    - Release artifacts may also be tagged as `stable` if the artifact type supports it (e.g., Docker images).
+5. On merge into `main`, CI runs tests (with coverage) and integration tests. Release is a separate step triggered by a tag push:
+    - The project owner manually creates a signed `vX.Y.Z` tag on the merge commit.
+    - On tag push, CI runs tests, builds release artifacts with the release version.
+    - CI extracts the relevant changelog section.
+    - CI creates a GitHub release with changelog as release notes and artifacts attached.
+    - Release artifacts may also be tagged as `latest` if the artifact type supports it (e.g., Docker images).
 
 6. On merge into `dev`, CI automatically:
-    - Builds artifacts with version `dev-${SHORT_SHA}` (first 7 characters of commit hash).
+    - Runs tests (with coverage) and integration tests.
+    - Builds artifacts with version `dev-${COMMIT_SHA}` (full commit hash).
     - Each artifact must be able to report this exact version at runtime (e.g., `--version` flag, `/health` endpoint, embedded metadata).
-    - If the artifact supports multiple tags (e.g., Docker images), also apply `dev` and/or `latest` tags.
+    - Dev artifacts use a separate image name (e.g., `kalatori-dev`) and are also tagged as `latest`.
 
 7. Projects should pin their build toolchain versions to ensure reproducible builds across local development, CI, and Docker environments. Examples:
     - **Rust**: `rust-toolchain.toml`
@@ -43,7 +44,7 @@
     - **Python**: `.python-version`
     - **Ruby**: `.ruby-version`
 
-8. (Optional) Test coverage reports with degradation tracking. Not required but encouraged.
+8. Test coverage reports with degradation tracking. Currently integrated via Codecov on PR, merge-to-dev, and merge-to-main workflows.
 
 9. (Optional) Benchmark tracking with degradation alerts. Not required but encouraged.
 
