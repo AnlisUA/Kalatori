@@ -34,6 +34,10 @@ markdown_extensions:
   - toc:
       permalink: true
 
+extra:
+  version:
+    provider: mike
+
 nav:
   - Home: index.md
   - Configuration: configuration.md

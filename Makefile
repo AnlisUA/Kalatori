@@ -150,9 +150,12 @@ open-coverage-report: # Generate and open test coverage report
 ### Documentation  ###
 ######################
 
-install-mkdocs: # Install mkdocs with material theme into local .venv
-		python3 -m venv .venv
-		.venv/bin/pip install mkdocs-materialx
+install-mkdocs: # Install mkdocs with material theme and mike into local .venv
+	python3 -m venv .venv
+	.venv/bin/pip install mkdocs-materialx mike
 
 docs-serve: # Serve documentation locally with live reload
-		.venv/bin/mkdocs serve --livereload -o
+	.venv/bin/mkdocs serve --livereload -o
+
+docs-build: # Build documentation locally
+	.venv/bin/mkdocs build
