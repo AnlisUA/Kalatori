@@ -257,6 +257,7 @@ type PolygonProvider = FillProvider<JoinedRecommendedFillers, RootProvider>;
 /// Client for interacting with Polygon PoS network
 #[derive(Clone)]
 pub struct PolygonClient {
+    config: crate::configs::ChainConfig,
     asset_info_store: AssetInfoStore<PolygonChainConfig>,
     provider: PolygonProvider,
     pimlico_client: PimlicoClient,
@@ -270,12 +271,16 @@ impl PolygonClient {
         asset_info_store: AssetInfoStore<PolygonChainConfig>,
     ) -> Result<Self, ClientError> {
         let endpoint = config
-            .endpoints
-            .first()
+            .get_random_endpoint()
             .ok_or(ClientError::InvalidConfiguration {
                 field: "endpoints".to_string(),
-            })?
-            .clone();
+            })?;
+
+        tracing::debug!(
+            url = endpoint,
+            chain = %Self::chain_type(),
+            "Trying to connect to endpoint...",
+        );
 
         // Test connection and get chain ID
         let ws_connect = WsConnect::new(&endpoint);
@@ -288,10 +293,17 @@ impl PolygonClient {
                     error.operation = "connect_client",
                     error.source = ?e,
                     endpoint = %endpoint,
+                    chain = %Self::chain_type(),
                     "Failed to connect to Polygon RPC endpoint"
                 );
             })
             .map_err(|_| ClientError::AllEndpointsUnreachable)?;
+
+        tracing::debug!(
+            url = endpoint,
+            chain = %Self::chain_type(),
+            "Connection successful"
+        );
 
         // Get chain ID for transaction signing
         let chain_id = provider
@@ -313,6 +325,7 @@ impl PolygonClient {
         );
 
         Ok(Self {
+            config: config.clone(),
             asset_info_store,
             provider,
             pimlico_client: PimlicoClient::new(),
@@ -583,7 +596,11 @@ impl BlockChainClient<PolygonChainConfig> for PolygonClient {
     async fn recreate(&self) -> Result<Self, ClientError> {
         // For now, just return a clone
         // TODO: Implement proper reconnection logic
-        Ok(self.clone())
+        Self::from_config(
+            &self.config,
+            self.asset_info_store.clone(),
+        )
+        .await
     }
 
     #[instrument(skip(self))]

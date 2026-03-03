@@ -1,15 +1,15 @@
 .git
 .github
 .gitignore
-.idea
+.venv
 
 chopsticks
 docs
 target
-tests
 bin
 static
 database
+tools
 
 Dockerfile
 
