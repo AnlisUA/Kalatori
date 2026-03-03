@@ -51,7 +51,7 @@ jobs:
 
       - name: Deploy docs
         run: |
-          if [ -n "${{ inputs.alias }}" ]; then
+          if [ -n "${{ inputs.alias }}" ] && [ "${{ inputs.alias }}" != "${{ inputs.version }}" ]; then
             mike deploy --push --update-aliases ${{ inputs.version }} ${{ inputs.alias }}
           else
             mike deploy --push ${{ inputs.version }}
