@@ -29,3 +29,11 @@ jobs:
     permissions:
       contents: read
       packages: write
+
+  docs-deploy:
+    uses: ./.github/workflows/_job-docs-deploy.yml
+    with:
+      version: dev
+      alias: dev
+    permissions:
+      contents: write
