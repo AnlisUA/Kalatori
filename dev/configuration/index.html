@@ -1,0 +1,1630 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Documentation for the Kalatori payment gateway">
+      
+      
+      
+      
+        <link rel="prev" href="..">
+      
+      
+        <link rel="next" href="../policies/release/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-materialx-10.0.9">
+    
+    
+      
+        <title>Configuration - Kalatori Docs</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.90ee4e44.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.63c7e8c3.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo" data-mx-topbar="glass">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="toc" type="checkbox" id="__toc" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <label class="md-overlay" for="__toc"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#configuration" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Kalatori Docs" class="md-header__button md-logo" aria-label="Kalatori Docs" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Kalatori Docs
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Configuration
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+        
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10.25 2a8.25 8.25 0 0 1 6.34 13.53l5.69 5.69a.749.749 0 0 1-.326 1.275.75.75 0 0 1-.734-.215l-5.69-5.69A8.25 8.25 0 1 1 10.25 2M3.5 10.25a6.75 6.75 0 1 0 13.5 0 6.75 6.75 0 0 0-13.5 0"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10.25 2a8.25 8.25 0 0 1 6.34 13.53l5.69 5.69a.749.749 0 0 1-.326 1.275.75.75 0 0 1-.734-.215l-5.69-5.69A8.25 8.25 0 1 1 10.25 2M3.5 10.25a6.75 6.75 0 1 0 13.5 0 6.75 6.75 0 0 0-13.5 0"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0">
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/Kalapaja/Kalatori" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Kalapaja/Kalatori
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Kalatori Docs" class="md-nav__button md-logo" aria-label="Kalatori Docs" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Kalatori Docs
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/Kalapaja/Kalatori" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Kalapaja/Kalatori
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list">
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc">
+      
+        <li class="md-nav__item">
+  <a href="#quick-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick Start
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Quick Start">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#for-development-testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        For Development / Testing
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#for-real-transfers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        For Real Transfers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#for-production" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        For Production
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#config-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Config Files
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Config Files">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#secretsjson" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        secrets.json
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#paymentsjson" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        payments.json
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#shopjson" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        shop.json
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#chainsjson" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        chains.json
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#etherscan_clientjson" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        etherscan_client.json
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#web_serverjson" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        web_server.json
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#databasejson" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        database.json
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#loggerjson" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        logger.json
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#environment-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment Variables
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Environment Variables">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#special-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Special Variables
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#priority" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Priority
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#slippage-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Slippage Parameters
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#supported-chains" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Supported Chains
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Policies
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Policies
+  
+
+          </label>
+          <ul class="md-nav__list">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../policies/release/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../policies/git/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Git
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../policies/ci/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../policies/flows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Flows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc">
+      
+        <li class="md-nav__item">
+  <a href="#quick-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick Start
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Quick Start">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#for-development-testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        For Development / Testing
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#for-real-transfers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        For Real Transfers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#for-production" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        For Production
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#config-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Config Files
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Config Files">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#secretsjson" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        secrets.json
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#paymentsjson" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        payments.json
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#shopjson" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        shop.json
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#chainsjson" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        chains.json
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#etherscan_clientjson" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        etherscan_client.json
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#web_serverjson" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        web_server.json
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#databasejson" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        database.json
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#loggerjson" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        logger.json
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#environment-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment Variables
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Environment Variables">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#special-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Special Variables
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#priority" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Priority
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#slippage-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Slippage Parameters
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#supported-chains" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Supported Chains
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h1>
+<p>Kalatori is configured through JSON files and/or environment variables. Environment variables take precedence over file values.</p>
+<h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Copy example configs</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>make<span class="w"> </span>copy-configs
+</code></pre></div>
+<h3 id="for-development-testing">For Development / Testing<a class="headerlink" href="#for-development-testing" title="Permanent link">&para;</a></h3>
+<p>The example configs work out of the box for local development and API testing without real transfers. Just copy them and run the daemon:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>make<span class="w"> </span>setup
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>make<span class="w"> </span>run
+</code></pre></div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The payment page (front-end) requires a valid Reown project ID to work correctly. Without it, wallet connection will fail. Get one for free at <a href="https://cloud.reown.com/">cloud.reown.com</a> and set it in <code>shop.json</code> → <code>reown_project_id</code>.</p>
+</div>
+<h3 id="for-real-transfers">For Real Transfers<a class="headerlink" href="#for-real-transfers" title="Permanent link">&para;</a></h3>
+<p>When handling real money, you <strong>must</strong> configure the following:</p>
+<table>
+<thead>
+<tr>
+<th>What</th>
+<th>Where</th>
+<th>How to Get</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Seed phrase</td>
+<td><code>secrets.json</code> → <code>seed</code></td>
+<td>Generate a unique BIP39 mnemonic — the example seed is publicly known and must not be used for real funds</td>
+</tr>
+<tr>
+<td>Recipient address</td>
+<td><code>payments.json</code> → <code>recipient</code></td>
+<td>Your own wallet address for used chain (Polygon by default)</td>
+</tr>
+<tr>
+<td>Reown project ID</td>
+<td><code>shop.json</code> → <code>reown_project_id</code></td>
+<td>Register at <a href="https://cloud.reown.com/">cloud.reown.com</a> (free)</td>
+</tr>
+<tr>
+<td>Etherscan API key</td>
+<td><code>etherscan_client.json</code> → <code>api_key</code></td>
+<td>Register at <a href="https://polygonscan.com/apis">polygonscan.com/apis</a> (free, required for Polygon)</td>
+</tr>
+<tr>
+<td>Webhook URL</td>
+<td><code>shop.json</code> → <code>invoices_webhook_url</code></td>
+<td>Your e-commerce platform's endpoint, or use <a href="https://webhook.site">webhook.site</a> for testing</td>
+</tr>
+</tbody>
+</table>
+<h3 id="for-production">For Production<a class="headerlink" href="#for-production" title="Permanent link">&para;</a></h3>
+<p>On top of the above, for a production deployment you should also:</p>
+<ul>
+<li><strong>Generate a new API secret key</strong> (<code>secrets.json</code> → <code>api_secret_key</code>) — use a strong random value, e.g.: <code>openssl rand -base64 32</code></li>
+<li><strong>Set your public URL</strong> (<code>payments.json</code> → <code>payment_url_base</code>) — the externally accessible URL of your Kalatori instance</li>
+<li><strong>Set your shop name and logo</strong> (<code>shop.json</code> → <code>shop_name</code>, <code>logo_url</code>) — displayed on the payment page</li>
+</ul>
+<h2 id="config-files">Config Files<a class="headerlink" href="#config-files" title="Permanent link">&para;</a></h2>
+<p>All files are loaded from the <code>configs/</code> directory (override with <code>KALATORI_CONFIG_DIR_PATH</code> env var). Every file is optional on the filesystem — you can provide all values via environment variables instead.</p>
+<h3 id="secretsjson">secrets.json<a class="headerlink" href="#secretsjson" title="Permanent link">&para;</a></h3>
+<p>Sensitive credentials. Both fields are required.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="p">{</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">&quot;seed&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;your twelve or twenty four word mnemonic phrase here&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span><span class="nt">&quot;api_secret_key&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;your-api-secret-key&quot;</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="p">}</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>seed</code></td>
+<td>Yes</td>
+<td>BIP39 mnemonic phrase (12 or 24 words). Used to deterministically derive unique payment accounts for each invoice. The same seed always produces the same accounts, so it's safe to restart the daemon without losing track of payments.</td>
+</tr>
+<tr>
+<td><code>api_secret_key</code></td>
+<td>Yes</td>
+<td>Secret key for webhook HMAC signature verification. Must match the key configured in your e-commerce platform.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Where to get values:</strong></p>
+<ul>
+<li><strong>seed</strong>: Generate a BIP39 mnemonic using any trusted tool. For production, use an offline generator or a hardware wallet. Never reuse a seed phrase that holds personal funds.</li>
+<li><strong>api_secret_key</strong>: Generate a random string, e.g.: <code>openssl rand -base64 32</code></li>
+</ul>
+<div class="admonition warning">
+<p class="admonition-title">Security</p>
+<p>Both values are automatically removed from environment variables after loading to prevent accidental exposure. They are stored in memory using <code>SecretString</code> which zeroes memory on drop.</p>
+</div>
+<h3 id="paymentsjson">payments.json<a class="headerlink" href="#paymentsjson" title="Permanent link">&para;</a></h3>
+<p>Payment routing and invoice settings.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="p">{</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">&quot;recipient&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span><span class="nt">&quot;PolkadotAssetHub&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY&quot;</span><span class="p">,</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span><span class="nt">&quot;Polygon&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;0x0E3Ca7fD040144900AdaA5f9B8917f3933A4F5e9&quot;</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span><span class="p">},</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">  </span><span class="nt">&quot;payment_url_base&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;https://pay.example.com&quot;</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="p">}</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Required</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>recipient</code></td>
+<td>Yes</td>
+<td>—</td>
+<td>Wallet addresses where paid invoices are swept to, one per chain. At minimum, the address for the default chain must be set.</td>
+</tr>
+<tr>
+<td><code>payment_url_base</code></td>
+<td>Yes</td>
+<td>—</td>
+<td>Public URL of your Kalatori instance. Used to generate payment page links.</td>
+</tr>
+<tr>
+<td><code>invoice_lifetime_millis</code></td>
+<td>No</td>
+<td><code>86400000</code> (24h)</td>
+<td>How long an invoice stays active before expiring, in milliseconds.</td>
+</tr>
+<tr>
+<td><code>default_chain</code></td>
+<td>No</td>
+<td><code>Polygon</code></td>
+<td>Which chain to use when creating invoices without specifying a chain.</td>
+</tr>
+<tr>
+<td><code>default_asset_id</code></td>
+<td>No</td>
+<td>Per-chain built-in</td>
+<td>Default asset for each chain. PolkadotAssetHub: <code>1337</code>, Polygon: <code>0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359</code> (native USDC).</td>
+</tr>
+<tr>
+<td><code>slippage_params</code></td>
+<td>No</td>
+<td>All zeros</td>
+<td>Per-asset underpay/overpay tolerance. See <a href="#slippage-parameters">Slippage Parameters</a>.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Where to get values:</strong></p>
+<ul>
+<li><strong>recipient (Polygon)</strong>: Your Ethereum/Polygon wallet address in 0x format. Get from MetaMask, Ledger, etc.</li>
+<li><strong>recipient (PolkadotAssetHub)</strong>: Your Polkadot wallet address in ss58 format (prefix 0). Get from Polkadot.js, Nova Wallet, Ledger, etc. Note: the front-end payment page does not support Polkadot Asset Hub yet.</li>
+</ul>
+<h3 id="shopjson">shop.json<a class="headerlink" href="#shopjson" title="Permanent link">&para;</a></h3>
+<p>Shop metadata and webhook integration for the payment page.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="p">{</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="nt">&quot;invoices_webhook_url&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;https://mystore.com/webhooks/kalatori&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span><span class="nt">&quot;shop_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;My Store&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span><span class="nt">&quot;logo_url&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;https://mystore.com/logo.png&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">  </span><span class="nt">&quot;reown_project_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;da9b8666eec49849ccb28bca96afdefa&quot;</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="p">}</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Required</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>invoices_webhook_url</code></td>
+<td>Yes</td>
+<td>—</td>
+<td>URL where Kalatori sends invoice status updates (paid, expired, etc.).</td>
+</tr>
+<tr>
+<td><code>shop_name</code></td>
+<td>Yes</td>
+<td>—</td>
+<td>Display name shown on the payment page.</td>
+</tr>
+<tr>
+<td><code>reown_project_id</code></td>
+<td>Yes</td>
+<td>—</td>
+<td>Reown (formerly WalletConnect) project ID for wallet connection on the payment page.</td>
+</tr>
+<tr>
+<td><code>logo_url</code></td>
+<td>No</td>
+<td><code>null</code></td>
+<td>URL to shop logo image displayed on the payment page.</td>
+</tr>
+<tr>
+<td><code>signature_max_age_secs</code></td>
+<td>No</td>
+<td><code>300</code> (5 min)</td>
+<td>Maximum age of webhook HMAC signature before rejection. Prevents replay attacks.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Where to get values:</strong></p>
+<ul>
+<li><strong>reown_project_id</strong>: Register at <a href="https://cloud.reown.com/">cloud.reown.com</a>, create a project, and copy the Project ID. Free tier is available.</li>
+<li><strong>invoices_webhook_url</strong>: Your e-commerce platform's endpoint that will receive invoice status notifications.</li>
+</ul>
+<h3 id="chainsjson">chains.json<a class="headerlink" href="#chainsjson" title="Permanent link">&para;</a></h3>
+<p>Blockchain RPC endpoints and monitored assets. Fully optional — defaults are provided for all chains.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="p">{</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">&quot;chains&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">    </span><span class="nt">&quot;PolkadotAssetHub&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">      </span><span class="nt">&quot;endpoints&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;wss://asset-hub-polkadot-rpc.n.dwellir.com&quot;</span><span class="p">],</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">      </span><span class="nt">&quot;allow_insecure_endpoints&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">    </span><span class="p">},</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">    </span><span class="nt">&quot;Polygon&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">      </span><span class="nt">&quot;endpoints&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;wss://polygon-bor-rpc.publicnode.com&quot;</span><span class="p">],</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">      </span><span class="nt">&quot;allow_insecure_endpoints&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="p">}</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Required</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>chains.[ChainType].endpoints</code></td>
+<td>No</td>
+<td>Built-in public RPCs</td>
+<td>WebSocket RPC endpoints. Multiple endpoints enable automatic failover.</td>
+</tr>
+<tr>
+<td><code>chains.[ChainType].assets</code></td>
+<td>No</td>
+<td>Default USDC per chain</td>
+<td>Asset IDs to monitor. Cannot be overridden via env vars — only via JSON.</td>
+</tr>
+<tr>
+<td><code>chains.[ChainType].allow_insecure_endpoints</code></td>
+<td>No</td>
+<td><code>false</code></td>
+<td>Allow <code>ws://</code> and <code>http://</code> endpoints. Set to <code>true</code> only for local development.</td>
+</tr>
+</tbody>
+</table>
+<p>Default endpoints:</p>
+<ul>
+<li><strong>PolkadotAssetHub</strong>: <code>wss://asset-hub-polkadot-rpc.n.dwellir.com</code>, <code>wss://polkadot-asset-hub-rpc.polkadot.io</code></li>
+<li><strong>Polygon</strong>: <code>wss://polygon-bor-rpc.publicnode.com</code>, <code>wss://polygon.drpc.org</code></li>
+</ul>
+<h3 id="etherscan_clientjson">etherscan_client.json<a class="headerlink" href="#etherscan_clientjson" title="Permanent link">&para;</a></h3>
+<p>Required for Polygon chain support. Not needed if you only use Polkadot Asset Hub.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="p">{</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span><span class="nt">&quot;api_key&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;YOUR_POLYGONSCAN_API_KEY&quot;</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="p">}</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Required</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>api_key</code></td>
+<td>Yes (for Polygon)</td>
+<td>—</td>
+<td>API key for Polygonscan, used to track token transfers.</td>
+</tr>
+<tr>
+<td><code>requests_per_second</code></td>
+<td>No</td>
+<td><code>3</code></td>
+<td>Rate limit for API calls. Free tier allows 3 req/s.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Where to get values:</strong></p>
+<ul>
+<li><strong>api_key</strong>: Register at <a href="https://polygonscan.com/apis">polygonscan.com/apis</a>, create an API key in your account settings. Free tier is sufficient.</li>
+</ul>
+<h3 id="web_serverjson">web_server.json<a class="headerlink" href="#web_serverjson" title="Permanent link">&para;</a></h3>
+<p>HTTP server binding. Fully optional.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="p">{</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="nt">&quot;host&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;0.0.0.0&quot;</span><span class="p">,</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span><span class="nt">&quot;port&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">8080</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="p">}</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Required</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>host</code></td>
+<td>No</td>
+<td><code>0.0.0.0</code></td>
+<td>IP address to bind to. Use <code>127.0.0.1</code> to restrict to localhost.</td>
+</tr>
+<tr>
+<td><code>port</code></td>
+<td>No</td>
+<td><code>8080</code></td>
+<td>TCP port for the HTTP server.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="databasejson">database.json<a class="headerlink" href="#databasejson" title="Permanent link">&para;</a></h3>
+<p>SQLite database settings. Fully optional.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="p">{</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="nt">&quot;dir&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;database&quot;</span><span class="p">,</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">  </span><span class="nt">&quot;temporary&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="p">}</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Required</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>dir</code></td>
+<td>No</td>
+<td><code>./database</code></td>
+<td>Directory where <code>kalatori_db.sqlite</code> is stored.</td>
+</tr>
+<tr>
+<td><code>temporary</code></td>
+<td>No</td>
+<td><code>false</code></td>
+<td>Use in-memory database (data lost on shutdown). Useful for testing only.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="loggerjson">logger.json<a class="headerlink" href="#loggerjson" title="Permanent link">&para;</a></h3>
+<p>Logging configuration. Fully optional.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="p">{</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span><span class="nt">&quot;directives&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;kalatori=trace,info&quot;</span><span class="p">,</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">  </span><span class="nt">&quot;loki_url&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="p">}</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Required</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>directives</code></td>
+<td>No</td>
+<td><code>kalatori=trace,info</code></td>
+<td><a href="https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html">Tracing filter directives</a> controlling log verbosity.</td>
+</tr>
+<tr>
+<td><code>loki_url</code></td>
+<td>No</td>
+<td><code>null</code></td>
+<td>Grafana Loki URL for centralized log aggregation. If <code>null</code>, logs go to stdout only.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="environment-variables">Environment Variables<a class="headerlink" href="#environment-variables" title="Permanent link">&para;</a></h2>
+<p>Flat config fields can be set via environment variables. Fields with nested structure (like <code>recipient</code>, <code>chains</code>, <code>slippage_params</code>, <code>assets</code>) should be configured via JSON files. The pattern is:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>{PREFIX}_{CONFIG}_{FIELD}
+</code></pre></div>
+<p>where <code>PREFIX</code> defaults to <code>KALATORI</code>.</p>
+<h3 id="examples">Examples<a class="headerlink" href="#examples" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="c1"># Secrets</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">KALATORI_SECRETS_SEED</span><span class="o">=</span><span class="s2">&quot;your mnemonic phrase here&quot;</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="nb">export</span><span class="w"> </span><span class="nv">KALATORI_SECRETS_API_SECRET_KEY</span><span class="o">=</span><span class="s2">&quot;your-secret-key&quot;</span>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="c1"># Payments (flat fields only — recipient and slippage_params should be set via JSON)</span>
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="nb">export</span><span class="w"> </span><span class="nv">KALATORI_PAYMENTS_PAYMENT_URL_BASE</span><span class="o">=</span><span class="s2">&quot;https://pay.example.com&quot;</span>
+<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="nb">export</span><span class="w"> </span><span class="nv">KALATORI_PAYMENTS_INVOICE_LIFETIME_MILLIS</span><span class="o">=</span><span class="m">86400000</span>
+<a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="nb">export</span><span class="w"> </span><span class="nv">KALATORI_PAYMENTS_DEFAULT_CHAIN</span><span class="o">=</span>Polygon
+<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a>
+<a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a><span class="c1"># Shop</span>
+<a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a><span class="nb">export</span><span class="w"> </span><span class="nv">KALATORI_SHOP_SHOP_NAME</span><span class="o">=</span><span class="s2">&quot;My Store&quot;</span>
+<a id="__codelineno-11-12" name="__codelineno-11-12" href="#__codelineno-11-12"></a><span class="nb">export</span><span class="w"> </span><span class="nv">KALATORI_SHOP_INVOICES_WEBHOOK_URL</span><span class="o">=</span><span class="s2">&quot;https://mystore.com/webhooks&quot;</span>
+<a id="__codelineno-11-13" name="__codelineno-11-13" href="#__codelineno-11-13"></a><span class="nb">export</span><span class="w"> </span><span class="nv">KALATORI_SHOP_REOWN_PROJECT_ID</span><span class="o">=</span><span class="s2">&quot;da9b8666eec49849ccb28bca96afdefa&quot;</span>
+<a id="__codelineno-11-14" name="__codelineno-11-14" href="#__codelineno-11-14"></a>
+<a id="__codelineno-11-15" name="__codelineno-11-15" href="#__codelineno-11-15"></a><span class="c1"># Web server</span>
+<a id="__codelineno-11-16" name="__codelineno-11-16" href="#__codelineno-11-16"></a><span class="nb">export</span><span class="w"> </span><span class="nv">KALATORI_WEB_SERVER_HOST</span><span class="o">=</span><span class="m">0</span>.0.0.0
+<a id="__codelineno-11-17" name="__codelineno-11-17" href="#__codelineno-11-17"></a><span class="nb">export</span><span class="w"> </span><span class="nv">KALATORI_WEB_SERVER_PORT</span><span class="o">=</span><span class="m">8080</span>
+<a id="__codelineno-11-18" name="__codelineno-11-18" href="#__codelineno-11-18"></a>
+<a id="__codelineno-11-19" name="__codelineno-11-19" href="#__codelineno-11-19"></a><span class="c1"># Database</span>
+<a id="__codelineno-11-20" name="__codelineno-11-20" href="#__codelineno-11-20"></a><span class="nb">export</span><span class="w"> </span><span class="nv">KALATORI_DATABASE_DIR</span><span class="o">=</span>/var/lib/kalatori
+<a id="__codelineno-11-21" name="__codelineno-11-21" href="#__codelineno-11-21"></a>
+<a id="__codelineno-11-22" name="__codelineno-11-22" href="#__codelineno-11-22"></a><span class="c1"># Etherscan</span>
+<a id="__codelineno-11-23" name="__codelineno-11-23" href="#__codelineno-11-23"></a><span class="nb">export</span><span class="w"> </span><span class="nv">KALATORI_ETHERSCAN_CLIENT_API_KEY</span><span class="o">=</span><span class="s2">&quot;your-api-key&quot;</span>
+<a id="__codelineno-11-24" name="__codelineno-11-24" href="#__codelineno-11-24"></a>
+<a id="__codelineno-11-25" name="__codelineno-11-25" href="#__codelineno-11-25"></a><span class="c1"># Logger</span>
+<a id="__codelineno-11-26" name="__codelineno-11-26" href="#__codelineno-11-26"></a><span class="nb">export</span><span class="w"> </span><span class="nv">KALATORI_LOGGER_DIRECTIVES</span><span class="o">=</span><span class="s2">&quot;kalatori=debug,info&quot;</span>
+<a id="__codelineno-11-27" name="__codelineno-11-27" href="#__codelineno-11-27"></a><span class="nb">export</span><span class="w"> </span><span class="nv">KALATORI_LOGGER_LOKI_URL</span><span class="o">=</span><span class="s2">&quot;http://localhost:3100&quot;</span>
+</code></pre></div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Fields with nested structure (<code>recipient</code>, <code>slippage_params</code>, <code>chains</code>) should be configured via JSON files rather than environment variables.</p>
+</div>
+<h3 id="special-variables">Special Variables<a class="headerlink" href="#special-variables" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>KALATORI_APP_ENV_PREFIX</code></td>
+<td>Change the prefix from <code>KALATORI</code> to a custom value. All other env vars must then use the new prefix.</td>
+</tr>
+<tr>
+<td><code>KALATORI_CONFIG_DIR_PATH</code></td>
+<td>Override the config files directory (default: <code>configs</code>).</td>
+</tr>
+</tbody>
+</table>
+<h3 id="priority">Priority<a class="headerlink" href="#priority" title="Permanent link">&para;</a></h3>
+<p>Environment variables override JSON file values. Built-in defaults apply when neither is set.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>Environment variable &gt; JSON file &gt; Built-in default
+</code></pre></div>
+<h2 id="slippage-parameters">Slippage Parameters<a class="headerlink" href="#slippage-parameters" title="Permanent link">&para;</a></h2>
+<p>Slippage parameters control how the daemon handles payments that don't exactly match the invoice amount. Configured per asset in <code>payments.json</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="p">{</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="w">  </span><span class="nt">&quot;slippage_params&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="w">    </span><span class="nt">&quot;Polygon&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="w">      </span><span class="nt">&quot;0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="w">        </span><span class="nt">&quot;underpayment_tolerance&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;0.05&quot;</span><span class="p">,</span>
+<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="w">        </span><span class="nt">&quot;overpayment_tolerance&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;0.10&quot;</span>
+<a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="w">      </span><span class="p">}</span>
+<a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a><span class="p">}</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>underpayment_tolerance</code></td>
+<td><code>0</code></td>
+<td>Maximum amount below the invoice that is still accepted as paid. <code>0</code> means exact amount required.</td>
+</tr>
+<tr>
+<td><code>overpayment_tolerance</code></td>
+<td><code>0</code></td>
+<td>Maximum excess above the invoice before triggering a partial refund. <code>0</code> means any overpayment triggers refund.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="supported-chains">Supported Chains<a class="headerlink" href="#supported-chains" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Chain</th>
+<th>Address Format</th>
+<th>Default Asset</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PolkadotAssetHub</code></td>
+<td>ss58 (prefix 0), e.g. <code>5Grwva...</code></td>
+<td><code>1337</code> (USDC)</td>
+</tr>
+<tr>
+<td><code>Polygon</code></td>
+<td>0x hex (ERC-20), e.g. <code>0x0E3C...</code></td>
+<td><code>0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359</code> (native USDC)</td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+          <div class="md-top" data-md-component="top" hidden>
+  <div class="md-top__center">
+    <button type="button" class="md-top__button md-top__button--main" data-md-action="top">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+      <span>Back to top</span>
+    </button>
+    
+      
+      
+      <label class="md-top__button md-top__side md-top__side--nav" for="__drawer" >
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2m0 14H9V6h11Z"/></svg>
+      </label>
+    
+    
+      
+      
+      
+        
+      
+      
+        
+        
+        <label class="md-top__button md-top__side md-top__side--toc" for="__toc" >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2m-5 14H4V6h11Z"/></svg>
+        </label>
+      
+    
+  </div>
+</div>
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://jaywhj.github.io/mkdocs-materialx/" target="_blank" rel="noopener">
+      MaterialX for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.expand", "search.suggest", "content.code.copy"], "search": "../assets/javascripts/workers/search.7a47a382.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.6a56f36d.min.js"></script>
+      
+    
+  </body>
+</html>
